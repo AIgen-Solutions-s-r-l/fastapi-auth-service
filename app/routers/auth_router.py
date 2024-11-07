@@ -1,42 +1,38 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
-from app.services.models import User
-from passlib.context import CryptContext
+from app.services.user_service import create_user
+from app.core.security import create_access_token
 from pydantic import BaseModel
-from sqlalchemy.future import select
+from datetime import timedelta
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class UserCreate(BaseModel):
+    """
+    Pydantic model for creating a new user.
+    """
     username: str
     email: str
     password: str
 
-def hash_password(password: str):
-    return pwd_context.hash(password)
-
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
-    # Verifica se l'utente esiste già
-    result = await db.execute(select(User).filter(User.username == user.username))
-    existing_user = result.scalar_one_or_none()
+    """
+    Registers a new user by creating a record in the database.
 
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already registered"
-        )
+    Args:
+        user (UserCreate): The user creation details.
+        db (AsyncSession): The database session.
 
-    # Crea il nuovo utente
-    new_user = User(
-        username=user.username,
-        email=user.email,
-        hashed_password=hash_password(user.password)
-    )
-    db.add(new_user)
-    await db.commit()
-    await db.refresh(new_user)
+    Returns:
+        dict: A message indicating the user was successfully registered.
 
-    return {"message": "User registered successfully"}
+    Raises:
+        HTTPException: If the username already exists in the database.
+    """
+    try:
+        new_user = await create_user(db, user.username, user.email, user.password)
+        return {"message": "User registered successfully", "user": new_user.username}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

@@ -1,31 +1,29 @@
-import logging
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
 from app.core.config import Settings
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
+# Load settings
 settings = Settings()
 
-# Create an async engine for PostgreSQL
+# Create the asynchronous engine for PostgreSQL
 engine = create_async_engine(settings.database_url, echo=True)
 
-# Session factory to handle async sessions
-AsyncSessionLocal = sessionmaker(
+# Define an async session factory with the engine
+AsyncSessionLocal = async_sessionmaker(
     bind=engine,
-    class_=AsyncSession,
     expire_on_commit=False
 )
 
+# Base class for models
+Base = declarative_base()
 
-# Dependency to get a database session
 async def get_db():
+    """
+    Dependency to provide a new database session for each request.
+    Uses the async session factory to yield a database session.
+
+    Yields:
+        AsyncSession: The database session.
+    """
     async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        except Exception as e:
-            # Log exception
-            logger.error(f"Database session error: {e}")
-            raise
+        yield session

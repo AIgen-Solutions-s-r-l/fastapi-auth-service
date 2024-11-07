@@ -3,7 +3,8 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.core.config import Settings
 from app.rabbitmq_client import RabbitMQClient
-from app.routers.example_router import router as example_router
+from app.routers.auth_router import router as auth_router
+from threading import Thread
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -13,14 +14,13 @@ def message_callback(ch, method, properties, body):
     """
     Callback function to process each message from RabbitMQ.
 
-    Parameters:
-    - ch: Channel - The RabbitMQ channel
-    - method: - RabbitMQ method frame
-    - properties: - RabbitMQ properties
-    - body: bytes - The message content
+    Args:
+        ch (Channel): The RabbitMQ channel.
+        method: The RabbitMQ method frame.
+        properties: The RabbitMQ properties.
+        body (bytes): The message content.
     """
     logging.info(f"Received message: {body.decode()}")
-    # Process the message (you can add custom logic here)
 
 # Global instance of RabbitMQClient
 rabbit_client = RabbitMQClient(
@@ -32,31 +32,28 @@ rabbit_client = RabbitMQClient(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Lifespan context manager to manage the startup and shutdown events for FastAPI.
+    Lifespan context manager to manage startup and shutdown events for FastAPI.
     Starts and stops the RabbitMQ client connection.
     """
-    # Start the RabbitMQ client I/O loop in a separate thread
-    from threading import Thread
     rabbit_thread = Thread(target=rabbit_client.start)
     rabbit_thread.start()
     logging.info("RabbitMQ client started in background thread")
 
-    yield  # Application will run while paused here
+    yield
 
-    # Stop the RabbitMQ client I/O loop and wait for thread to join
     rabbit_client.stop()
     rabbit_thread.join()
     logging.info("RabbitMQ client connection closed")
 
-# Initialize FastAPI with the lifespan manager
 app = FastAPI(lifespan=lifespan)
 
-# Example FastAPI route for testing
+# Root route for health check
 @app.get("/")
 async def root():
     """
-    Basic root endpoint to test if the service is running.
+    Root endpoint to test if the service is running.
     """
-    return {"message": "coreService is up and running!"}
+    return {"message": "authService is up and running!"}
 
-app.include_router(example_router)
+# Include the authentication router
+app.include_router(auth_router, prefix="/auth")
