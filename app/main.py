@@ -1,7 +1,7 @@
 import logging
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from app.config import Settings
+from app.core.config import Settings
 from app.rabbitmq_client import RabbitMQClient
 from app.routers.example_router import router as example_router
 
