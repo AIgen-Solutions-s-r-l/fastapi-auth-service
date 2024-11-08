@@ -1,123 +1,152 @@
-# CoreService
+# Project Name
 
-CoreService is a Python application that acts as a core service, utilizing RabbitMQ for messaging and providing various endpoints for interaction.
+## Overview
 
-## Table of Contents
+Brief description of the project.
 
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Running the Application](#running-the-application)
-- [Running Tests](#running-tests)
-- [Folder Structure](#folder-structure)
-- [Contributing](#contributing)
-- [License](#license)
+## Setup
 
-## Requirements
+### Prerequisites
 
-- Python 3.12.7
-- RabbitMQ server
-- Virtualenv
+Ensure you have the following installed:
+- Python 3.12.3
+- pip
+- A PostgreSQL database (or another compatible database)
 
-## Installation
+### Installation
 
-1. **Clone the repository:**
+1. Clone the repository:
 
     ```sh
-    git clone https://github.com/yourusername/coreService.git
-    cd coreService
+    git clone https://github.com/your-repo.git
+    cd your-repo
     ```
 
-2. **Create a virtual environment:**
+2. Create a virtual environment and activate it:
 
     ```sh
     python -m venv venv
+    venv\Scripts\activate   # On Windows
+    # or 
+    source venv/bin/activate  # On macOS/Linux
     ```
 
-3. **Activate the virtual environment:**
-
-    - On Windows:
-
-        ```sh
-        venv\Scripts\activate
-        ```
-
-    - On macOS/Linux:
-
-        ```sh
-        source venv/bin/activate
-        ```
-
-4. **Install the dependencies:**
+3. Install the necessary packages:
 
     ```sh
     pip install -r requirements.txt
     ```
 
-## Configuration
+### Database Configuration
 
-1. **Environment Variables:**
+1. Install the required dependencies for SQLAlchemy and async support:
 
-    Create a `.env` file in the project root directory with the following content:
-
-    ```env
-    RABBITMQ_URL=amqp://guest:guest@localhost:5672/
-    SERVICE_NAME=coreService
+    ```sh
+    pip install sqlalchemy sqlalchemy[asyncio] asyncpg
     ```
 
-    Adjust the values as needed.
-
-2. **Settings Configuration:**
-
-    The application settings are managed using `pydantic-settings`. Here is an example configuration class:
+2. Configure your database connection by updating the `DATABASE_URL` in `db.py`:
 
     ```python
-    import os
-    from pydantic_settings import BaseSettings, SettingsConfigDict
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from sqlalchemy.orm import sessionmaker
 
-    class Settings(BaseSettings):
-        rabbitmq_url: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
-        service_name: str = "coreService"
+    DATABASE_URL = "postgresql+asyncpg://user:password@localhost/dbname"
 
-        model_config = SettingsConfigDict(env_file=".env")
+    engine = create_async_engine(DATABASE_URL, future=True, echo=True)
+
+    async_session = sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False
+    )
+
+    async def get_db() -> AsyncSession:
+        async with async_session() as session:
+            yield session
     ```
 
-## Running the Application
+    Replace `"postgresql+asyncpg://user:password@localhost/dbname"` with your actual database connection string.
 
-To run the application, execute the following command:
+### Running the Application
 
-```sh
-python main.py
+You can start your application, for example, if you are using FastAPI:
+
+```python
+from fastapi import FastAPI, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from db import get_db
+from app.core.security import get_password_hash
+from models import User
+
+app = FastAPI()
+
+@app.post("/create-user/")
+async def create_user(username: str, email: str, password: str, db: AsyncSession = Depends(get_db)):
+    user = await create_test_user(db, username, email, password)
+    return user
+
+async def create_test_user(db: AsyncSession, username: str, email: str, password: str):
+    from app.core.security import get_password_hash
+    hashed_password = get_password_hash(password)
+    user = User(
+        username=username,
+        email=email,
+        hashed_password=hashed_password
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
 ```
 
-Ensure RabbitMQ server is running and accessible via the URL specified in your `.env` file.
-
-## Running Tests
-
-To run the test suite, use the following command:
+Run the application:
 
 ```sh
-pytest
+uvicorn app.main:app --reload
 ```
 
-The tests are located in the `tests` directory and are written using the `pytest` framework.
+### Creating and Verifying Password Hashes
 
-## Folder Structure
+The `get_password_hash` function in `app/core/security.py` hashes passwords using `bcrypt`. Here’s the implementation:
 
-- `app/`: Contains the main application code.
-    - `main.py`: Entry point of the application.
-    - `config.py`: Application configuration.
-- `tests/`: Contains unit and integration tests.
+```python
+import bcrypt
 
-## Contributing
+def get_password_hash(password: str) -> str:
+    if not password:
+        raise ValueError("Password must not be empty")
+    
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed_password.decode('utf-8')
 
-1. Fork the repository.
-2. Create a new branch (`git checkout -b feature-branch`)
-3. Make your changes.
-4. Commit your changes (`git commit -am 'Add new feature'`)
-5. Push to the branch (`git push origin feature-branch`)
-6. Create a new Pull Request.
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+```
+
+### Example Usage
+
+```python
+plain_password = "secure_password_here"
+hashed_password = get_password_hash(plain_password)
+
+# Store hashed_password in the database
+print(f"Hashed password: {hashed_password}")
+
+# Verify password
+check = verify_password(plain_password, hashed_password)
+print(f"Passwords match: {check}")
+```
+
+## Testing
+
+Include any relevant testing instructions or commands here.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+Information about the project's license.
+
+---
+
+Feel free to modify this template to better fit your project and organization needs. Let me know if you have any questions or need further assistance!
