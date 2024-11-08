@@ -5,63 +5,62 @@ import sys
 import asyncio
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from app.core.database import Base
 from app.core.config import Settings
+from httpx import AsyncClient
 from app.main import app
 
-# Impostazione del policy del loop per compatibilità su Windows
+# Imposta l’event loop policy per compatibilità su Windows
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
 
 @pytest.fixture(scope="session")
 def event_loop():
     """
-    Crea un event loop per l'intera sessione di test, garantendo la compatibilità su Windows.
+    Crea un event loop per la sessione di test, garantendo la compatibilità su Windows.
     """
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
 
-
-# Configurazione del logging di SQLAlchemy
+# Configura il logging di SQLAlchemy
 logging.basicConfig(level=logging.DEBUG)
-logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)  # Cambiare in DEBUG per output più dettagliato
+logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
 
-# Caricamento delle impostazioni e creazione del motore di database di test
+# Carica le impostazioni e configura il database di test
 settings = Settings()
 test_engine = create_async_engine(settings.test_database_url, echo=True)
 
-# Creazione di una session factory per il database di test
+# Configura il sessionmaker per il database di test
 AsyncSessionLocal = sessionmaker(
     bind=test_engine,
     class_=AsyncSession,
     expire_on_commit=False,
 )
 
-
 @pytest_asyncio.fixture(scope="function")
 async def test_db():
     """
-    Prepara e pulisce il database di test prima e dopo ogni test.
+    Inizializza il database di test e cancella i dati al termine.
     """
+    # Crea tutte le tabelle prima dell'inizio di ogni test
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    # Fornisce una nuova sessione per ogni test
     async with AsyncSessionLocal() as session:
         yield session
 
+    # Rimuove tutte le tabelle al termine del test
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
-
 @pytest_asyncio.fixture(scope="function")
-async def client():
+async def client(test_db):
     """
-    Client per effettuare richieste HTTP asincrone al server di test.
+    Client asincrono per inviare richieste di test, collegato al test_db.
     """
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
