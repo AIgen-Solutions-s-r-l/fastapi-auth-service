@@ -2,6 +2,7 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from app.core.config import Settings
+import bcrypt
 
 settings = Settings()
 
@@ -49,3 +50,27 @@ def create_access_token(data: dict, expires_delta: timedelta = timedelta(minutes
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm="HS256")
     return encoded_jwt
+
+
+def get_password_hash(password: str) -> str:
+    """
+    Hashes a plain-text password using bcrypt.
+
+    Args:
+        password (str): The plain-text password to be hashed.
+
+    Returns:
+        str: The hashed password.
+
+    Raises:
+        ValueError: If the provided password is empty.
+    """
+    if not password:
+        raise ValueError("Password must not be empty")
+
+    # Generate a salt and hash the password
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
+
+    # Decode the hashed password to a UTF-8 string and return
+    return hashed_password.decode('utf-8')
