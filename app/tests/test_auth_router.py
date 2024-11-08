@@ -1,16 +1,18 @@
 # tests/test_auth_router.py
 import logging
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy import text, select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+
 from app.core.config import Settings
 from app.core.database import Base, get_db
+from app.core.security import get_password_hash, verify_jwt_token
 from app.main import app
 from app.models.user import User
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from app.core.security import get_password_hash
-from sqlalchemy import text, select
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -161,3 +163,86 @@ async def test_register_user_duplicate_username(client, db_session):
     response = await client.post("/auth/register", json=payload)
     assert response.status_code == 400
     assert response.json() == {"detail": "Username already exists"}
+
+
+@pytest.mark.asyncio
+async def test_login_success(client, db_session):
+    """Test successful login with correct credentials"""
+    # First create a test user
+    test_username = "testuser"
+    test_password = "testpassword"
+    await create_test_user(
+        db_session,
+        username=test_username,
+        email="test@example.com",
+        password=test_password
+    )
+
+    # Login data
+    form_data = {
+        "username": test_username,
+        "password": test_password,
+    }
+
+    # Attempt login
+    response = await client.post(
+        "/auth/login",
+        data=form_data,  # Note: using data instead of json for form data
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+
+    # Verify response
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+
+    # Verify token is valid
+    token = data["access_token"]
+    payload = verify_jwt_token(token)
+    assert payload["sub"] == test_username
+
+
+@pytest.mark.asyncio
+async def test_login_invalid_credentials(client, db_session):
+    """Test login with invalid credentials"""
+    # Create test user
+    await create_test_user(
+        db_session,
+        username="testuser",
+        email="test@example.com",
+        password="correctpassword"
+    )
+
+    # Try login with wrong password
+    form_data = {
+        "username": "testuser",
+        "password": "wrongpassword",
+    }
+
+    response = await client.post(
+        "/auth/login",
+        data=form_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Incorrect username or password"
+
+
+@pytest.mark.asyncio
+async def test_login_nonexistent_user(client, db_session):
+    """Test login with non-existent user"""
+    form_data = {
+        "username": "nonexistentuser",
+        "password": "anypassword",
+    }
+
+    response = await client.post(
+        "/auth/login",
+        data=form_data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"}
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Incorrect username or password"
