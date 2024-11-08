@@ -5,8 +5,10 @@ from app.services.user_service import create_user
 from app.core.security import create_access_token
 from pydantic import BaseModel
 from datetime import timedelta
+import  logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 class UserCreate(BaseModel):
     """
@@ -31,6 +33,7 @@ async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
     Raises:
         HTTPException: If the username already exists in the database.
     """
+    logger.info(f"Database Data: {db.bind.url}")
     try:
         new_user = await create_user(db, user.username, user.email, user.password)
         return {"message": "User registered successfully", "user": new_user.username}

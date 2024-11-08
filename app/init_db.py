@@ -5,7 +5,7 @@ from app.models.user import Base
 
 # Load the test database URL from settings
 settings = Settings()
-test_engine = create_async_engine(settings.test_database_url, echo=True)
+test_engine = create_async_engine(settings.database_url, echo=True)
 
 
 async def init_test_db():
