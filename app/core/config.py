@@ -44,6 +44,6 @@ class Settings(BaseSettings):
     rabbitmq_url: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
     service_name: str = "authService"
     database_url: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:password@localhost:5432/main_db")
-    test_database_url: str = os.getenv("TEST_DATABASE_URL", "postgresql+asyncpg://user:password@localhost:5432/test_db")
+    test_database_url: str = os.getenv("TEST_DATABASE_URL", "postgresql+asyncpg://testuser:testpassword@172.25.225.13:5432/test_db")
 
     model_config = SettingsConfigDict(env_file=".env")
