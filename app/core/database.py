@@ -1,3 +1,4 @@
+# app/core/database.py
 import os
 import logging
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
@@ -18,14 +19,19 @@ logger.info(f"Using database URL: {database_url}")
 # Create the asynchronous engine for connecting to the PostgreSQL database
 engine = create_async_engine(database_url, echo=True)
 
+# Define the base class for ORM models
+Base = declarative_base()
+
+# Import all models here to ensure they are registered with Base
+from app.models.user import User
+# If you have other models, import them as well
+# from app.models.other_model import OtherModel
+
 # Define an asynchronous session factory bound to the engine
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
     expire_on_commit=False  # Prevents objects from expiring after each commit
 )
-
-# Define the base class for ORM models
-Base = declarative_base()
 
 async def get_db():
     """
