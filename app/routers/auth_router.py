@@ -33,9 +33,9 @@ async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
     Raises:
         HTTPException: If the username already exists in the database.
     """
-    logger.info(f"Database Data: {db.bind.url}")
     try:
         new_user = await create_user(db, user.username, user.email, user.password)
         return {"message": "User registered successfully", "user": new_user.username}
     except ValueError as e:
+        logger.error(f"Validation Error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
