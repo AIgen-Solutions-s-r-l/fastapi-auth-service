@@ -11,6 +11,7 @@ Brief description of the project.
 Ensure you have the following installed:
 - Python 3.12.3
 - pip
+- PostgreSQL
 - MongoDB
 
 ### Installation
@@ -39,13 +40,25 @@ Ensure you have the following installed:
 
 ### Database Configuration
 
-1. Install the required dependencies for MongoDB:
+1. **PostgreSQL**:
+    Configure your database connection:
 
-    ```sh
-    pip install motor
+    ```python
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+    from sqlalchemy.orm import sessionmaker
+
+    DATABASE_URL = "postgresql+asyncpg://user:password@localhost/dbname"
+
+    engine = create_async_engine(DATABASE_URL, future=True, echo=True)
+    async_session = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def get_db() -> AsyncSession:
+        async with async_session() as session:
+            yield session
     ```
 
-2. Configure your MongoDB connection in `mongodb.py`:
+2. **MongoDB**:
+    Configure your MongoDB connection:
 
     ```python
     from motor.motor_asyncio import AsyncIOMotorClient
@@ -65,31 +78,47 @@ Ensure you have the following installed:
 
         inserted_resume = await collection_name.find_one({"_id": result.inserted_id})
         return inserted_resume
+
+    async def get_resume_by_user_id(user_id: str):
+        resume = await collection_name.find_one({"user_id": user_id})
+        if not resume:
+            return {"error": "Resume not found"}
+        return resume
     ```
 
 ### Running the Application
 
-To run the application, simply execute:
+To run the application:
 
 ```sh
 uvicorn main:app --reload
 ```
 
-You can now access the endpoint to ingest resumes at `POST /resume_ingestor/ingest_resume`.
+You can now access the endpoint to ingest resumes at `POST /resume_ingestor/ingest_resume` and get resumes by user ID at `GET /resume_ingestor/resume/{user_id}`.
 
-### Example Usage
+### Creating User and Resume
 
-To ingest a resume, you can send a POST request to `POST /resume_ingestor/ingest_resume` with a JSON body:
+Send a POST request to create a user and their resume at `POST /create-user/`:
 
 ```json
 {
-    "user_id": "12345",
-    "name": "John Doe",
-    "email": "john.doe@example.com",
-    "experience": [{"title": "Software Developer", "company": "Example Corp", "years": 2}],
-    "education": [{"degree": "BSc Computer Science", "institution": "University XYZ", "years": 4}],
-    "skills": ["Python", "FastAPI", "MongoDB"]
+    "username": "johndoe",
+    "email": "johndoe@example.com",
+    "password": "securepassword",
+    "resume": {
+        "name": "John Doe",
+        "email": "johndoe@example.com",
+        "experience": [{"title": "Software Developer", "company": "Example Corp", "years": 2}],
+        "education": [{"degree": "BSc Computer Science", "institution": "University XYZ", "years": 4}],
+        "skills": ["Python", "FastAPI", "MongoDB"]
+    }
 }
+```
+
+Retrieve the user's resume using:
+
+```sh
+GET /resume_ingestor/resume/{user_id}
 ```
 
 ## License
@@ -98,4 +127,4 @@ Information about the project's license.
 
 ---
 
-Feel free to modify this template to better fit your project and organization needs. Let me know if you have any questions or need further assistance!
+Feel free to modify this template to fit your project and organization needs. Let me know if you have any questions or need further assistance!
