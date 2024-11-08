@@ -1,4 +1,6 @@
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
@@ -56,3 +58,26 @@ async def create_user(db: AsyncSession, username: str, email: str, password: str
     await db.commit()
     await db.refresh(new_user)
     return new_user
+
+
+async def get_user_by_username(db: AsyncSession, username: str) -> dict | None:
+    """
+    Retrieve a user by username using a raw SQL query and return the user data as JSON.
+
+    Args:
+        db (AsyncSession): The database session.
+        username (str): The username to look up.
+
+    Returns:
+        dict | None: The user data as a JSON-serializable dictionary if found, None otherwise.
+    """
+    query = text("SELECT * FROM users WHERE username = :username")
+    result = await db.execute(query, {"username": username})
+    user = result.fetchone()
+
+    if user:
+        # Convert SQLAlchemy Row object to dictionary
+        user_dict = dict(user)
+        # Convert to JSON-serializable dictionary
+        return jsonable_encoder(user_dict)
+    return None

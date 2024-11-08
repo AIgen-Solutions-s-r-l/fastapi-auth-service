@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.core.config import Settings
 from app.rabbitmq_client import RabbitMQClient
+from app.routers.resume_ingestor_router import router as resume_ingestor_router
 from app.routers.auth_router import router as auth_router
 from threading import Thread
 
@@ -57,3 +58,4 @@ async def root():
 
 # Include the authentication router
 app.include_router(auth_router, prefix="/auth")
+app.include_router(resume_ingestor_router, tags=["resume_ingestor"], prefix="/resume_ingestor")

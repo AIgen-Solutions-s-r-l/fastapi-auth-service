@@ -11,7 +11,8 @@ Brief description of the project.
 Ensure you have the following installed:
 - Python 3.12.3
 - pip
-- A PostgreSQL database (or another compatible database)
+- PostgreSQL
+- MongoDB
 
 ### Installation
 
@@ -39,109 +40,86 @@ Ensure you have the following installed:
 
 ### Database Configuration
 
-1. Install the required dependencies for SQLAlchemy and async support:
-
-    ```sh
-    pip install sqlalchemy sqlalchemy[asyncio] asyncpg
-    ```
-
-2. Configure your database connection by updating the `DATABASE_URL` in `db.py`:
+1. **PostgreSQL**:
+    Configure your database connection:
 
     ```python
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
     from sqlalchemy.orm import sessionmaker
 
     DATABASE_URL = "postgresql+asyncpg://user:password@localhost/dbname"
 
     engine = create_async_engine(DATABASE_URL, future=True, echo=True)
-
-    async_session = sessionmaker(
-        bind=engine,
-        class_=AsyncSession,
-        expire_on_commit=False
-    )
+    async_session = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 
     async def get_db() -> AsyncSession:
         async with async_session() as session:
             yield session
     ```
 
-    Replace `"postgresql+asyncpg://user:password@localhost/dbname"` with your actual database connection string.
+2. **MongoDB**:
+    Configure your MongoDB connection:
+
+    ```python
+    from motor.motor_asyncio import AsyncIOMotorClient
+    from pymongo.errors import DuplicateKeyError
+
+    MONGO_DETAILS = "mongodb://localhost:27017"
+
+    client = AsyncIOMotorClient(MONGO_DETAILS)
+    database = client.your_database_name
+    collection_name = database.get_collection("resumes")
+
+    async def add_resume(resume: dict):
+        try:
+            result = await collection_name.insert_one(resume)
+        except DuplicateKeyError:
+            return {"error": "Resume already exists"}
+
+        inserted_resume = await collection_name.find_one({"_id": result.inserted_id})
+        return inserted_resume
+
+    async def get_resume_by_user_id(user_id: str):
+        resume = await collection_name.find_one({"user_id": user_id})
+        if not resume:
+            return {"error": "Resume not found"}
+        return resume
+    ```
 
 ### Running the Application
 
-You can start your application, for example, if you are using FastAPI:
-
-```python
-from fastapi import FastAPI, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from db import get_db
-from app.core.security import get_password_hash
-from models import User
-
-app = FastAPI()
-
-@app.post("/create-user/")
-async def create_user(username: str, email: str, password: str, db: AsyncSession = Depends(get_db)):
-    user = await create_test_user(db, username, email, password)
-    return user
-
-async def create_test_user(db: AsyncSession, username: str, email: str, password: str):
-    from app.core.security import get_password_hash
-    hashed_password = get_password_hash(password)
-    user = User(
-        username=username,
-        email=email,
-        hashed_password=hashed_password
-    )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    return user
-```
-
-Run the application:
+To run the application:
 
 ```sh
-uvicorn app.main:app --reload
+uvicorn main:app --reload
 ```
 
-### Creating and Verifying Password Hashes
+You can now access the endpoint to ingest resumes at `POST /resume_ingestor/ingest_resume` and get resumes by user ID at `GET /resume_ingestor/resume/{user_id}`.
 
-The `get_password_hash` function in `app/core/security.py` hashes passwords using `bcrypt`. Here’s the implementation:
+### Creating User and Resume
 
-```python
-import bcrypt
+Send a POST request to create a user and their resume at `POST /create-user/`:
 
-def get_password_hash(password: str) -> str:
-    if not password:
-        raise ValueError("Password must not be empty")
-    
-    salt = bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
-    return hashed_password.decode('utf-8')
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+```json
+{
+    "username": "johndoe",
+    "email": "johndoe@example.com",
+    "password": "securepassword",
+    "resume": {
+        "name": "John Doe",
+        "email": "johndoe@example.com",
+        "experience": [{"title": "Software Developer", "company": "Example Corp", "years": 2}],
+        "education": [{"degree": "BSc Computer Science", "institution": "University XYZ", "years": 4}],
+        "skills": ["Python", "FastAPI", "MongoDB"]
+    }
+}
 ```
 
-### Example Usage
+Retrieve the user's resume using:
 
-```python
-plain_password = "secure_password_here"
-hashed_password = get_password_hash(plain_password)
-
-# Store hashed_password in the database
-print(f"Hashed password: {hashed_password}")
-
-# Verify password
-check = verify_password(plain_password, hashed_password)
-print(f"Passwords match: {check}")
+```sh
+GET /resume_ingestor/resume/{user_id}
 ```
-
-## Testing
-
-Include any relevant testing instructions or commands here.
 
 ## License
 
@@ -149,4 +127,4 @@ Information about the project's license.
 
 ---
 
-Feel free to modify this template to better fit your project and organization needs. Let me know if you have any questions or need further assistance!
+Feel free to modify this template to fit your project and organization needs. Let me know if you have any questions or need further assistance!
