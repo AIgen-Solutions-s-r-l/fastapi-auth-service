@@ -10,4 +10,4 @@ async def test_root():
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         response = await ac.get("/")
         assert response.status_code == 200
-        assert response.json() == {"message": "coreService is up and running!"}
+        assert response.json() == {"message": "authService is up and running!"}

@@ -1,5 +1,6 @@
 # app/core/security.py
-from datetime import datetime, timedelta
+from datetime import datetime, UTC  # Add UTC import
+from datetime import timedelta
 
 import bcrypt
 from fastapi import HTTPException
@@ -13,6 +14,17 @@ settings = Settings()
 
 # Set up the password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def create_access_token(data: dict, expires_delta: timedelta = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(UTC) + expires_delta  # Updated to use timezone-aware datetime
+    else:
+        expire = datetime.now(UTC) + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+    return encoded_jwt
 
 
 def hash_password(password: str) -> str:
