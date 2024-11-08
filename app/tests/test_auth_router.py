@@ -1,14 +1,16 @@
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient
 from app.main import app
 from app.core.database import AsyncSessionLocal, Base, engine
 from app.models.user import User
 from sqlalchemy.ext.asyncio import AsyncSession
 
-@pytest.fixture(scope="function")
+# Configura il database di test con pytest_asyncio
+@pytest_asyncio.fixture(scope="function")
 async def test_db():
     """
-    Setup and teardown the test database.
+    Sets up and tears down the test database.
     Yields:
         AsyncSession: A new database session for each test.
     """
@@ -16,7 +18,7 @@ async def test_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # Provide a session to the test
+    # Provide a session for the test
     async with AsyncSessionLocal() as session:
         yield session
 
@@ -24,16 +26,18 @@ async def test_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
-@pytest.fixture(scope="function")
+# Configura un client HTTP asincrono per i test
+@pytest_asyncio.fixture(scope="function")
 async def client():
     """
-    Fixture to create a test client using AsyncClient from httpx.
+    Provides an HTTP client for the test.
     Yields:
         AsyncClient: The test client instance.
     """
     async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
 
+# Funzione di supporto per creare un utente di test
 async def create_test_user(db: AsyncSession, username: str, email: str, password: str):
     """
     Helper function to create a test user directly in the database.
