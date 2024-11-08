@@ -1,7 +1,7 @@
 # tests/test_register_router.py
 import logging
 import pytest
-import pytest_asyncio
+import asyncio
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.orm import sessionmaker
 from app.core.config import Settings
@@ -18,57 +18,67 @@ logger = logging.getLogger(__name__)
 
 # Configure test database
 settings = Settings()
-test_engine = create_async_engine(settings.test_database_url)
-
-# Create async session factory
-async_session_maker = async_sessionmaker(
-    test_engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autocommit=False,
-    autoflush=False
+test_engine = create_async_engine(
+    settings.test_database_url,
+    isolation_level="AUTOCOMMIT"
 )
 
 
-@pytest_asyncio.fixture(scope="session")
-async def setup_db():
-    """Create the test database tables once for all tests"""
+@pytest.fixture(scope="session")
+def event_loop():
+    """Create an instance of the default event loop for each test case."""
+    policy = asyncio.get_event_loop_policy()
+    loop = policy.new_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest.fixture(scope="session")
+async def create_tables():
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-    yield
+
+
+@pytest.fixture(autouse=True)
+async def cleanup_tables(create_tables):
     async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(text(f"TRUNCATE TABLE {table.name} CASCADE"))
 
 
-@pytest_asyncio.fixture(scope="function")
-async def db_session(setup_db):
+@pytest.fixture
+async def db_session():
     """Create a fresh database session for each test"""
-    async with async_session_maker() as session:
-        yield session
-        await session.rollback()
-        await session.close()
+    async with async_sessionmaker(test_engine, expire_on_commit=False)() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
 
 
-@pytest_asyncio.fixture(scope="function")
+@pytest.fixture
 async def client(db_session):
     """Provide a test client with DB session override"""
 
     async def override_get_db():
-        yield db_session
+        try:
+            yield db_session
+        finally:
+            await db_session.rollback()
 
     app.dependency_overrides[get_db] = override_get_db
 
     async with AsyncClient(
             transport=ASGITransport(app=app),
             base_url="http://test"
-    ) as ac:
-        yield ac
+    ) as client:
+        yield client
 
     app.dependency_overrides.clear()
 
 
-async def create_test_user(db: AsyncSession, username: str, email: str, password: str):
+async def create_test_user(session: AsyncSession, username: str, email: str, password: str):
     """Helper to create a test user"""
     try:
         hashed_password = get_password_hash(password)
@@ -77,13 +87,13 @@ async def create_test_user(db: AsyncSession, username: str, email: str, password
             email=email,
             hashed_password=hashed_password
         )
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
         return user
-    except Exception as e:
-        await db.rollback()
-        raise e
+    except Exception:
+        await session.rollback()
+        raise
 
 
 @pytest.mark.asyncio
@@ -103,7 +113,6 @@ async def test_register_user_success(client, db_session):
         "user": "testuser"
     }
 
-    # Verify in database
     result = await db_session.execute(
         select(User).where(User.username == "testuser")
     )
