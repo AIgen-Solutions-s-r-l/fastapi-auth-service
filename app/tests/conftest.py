@@ -1,12 +1,14 @@
 # tests/conftest.py
+import pytest
 import logging
-import os
 
-# Set test environment
-os.environ["PYTEST_RUNNING"] = "true"
-
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 
 pytest_plugins = ['pytest_asyncio']
 
+def pytest_configure(config):
+    """Configure pytest"""
+    config.addinivalue_line(
+        "markers",
+        "asyncio: mark test as async"
+    )
