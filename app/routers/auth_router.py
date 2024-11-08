@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import create_access_token
-from app.services.user_service import create_user, authenticate_user
+from app.services.user_service import create_user, authenticate_user, get_user_by_username
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -88,3 +88,26 @@ async def register_user(user: UserCreate, db: AsyncSession = Depends(get_db)):
     except ValueError as e:
         logger.error(f"Validation Error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/get_user_from_username", response_model=dict)
+async def get_user_from_username(username: str, db: AsyncSession = Depends(get_db)):
+    """
+    Endpoint to retrieve a user's details by username.
+
+    Args:
+        username (str): The username to look up.
+        db (AsyncSession): The database session dependency.
+
+    Returns:
+        dict: JSON representation of the user details if found.
+
+    Raises:
+        HTTPException: If the user does not exist.
+    """
+    user = await get_user_by_username(db, username)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return user
+
