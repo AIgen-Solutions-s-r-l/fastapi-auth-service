@@ -2,11 +2,24 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from app.main import app
-from app.core.database import AsyncSessionLocal, Base, engine
+from app.core.config import Settings
 from app.models.user import User
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+from app.core.database import Base
 
-# Configura il database di test con pytest_asyncio
+# Import settings to access test_database_url
+settings = Settings()
+
+# Create an async engine using the test database URL
+test_engine = create_async_engine(settings.test_database_url, echo=True)
+
+# Create a sessionmaker bound to the test engine with AsyncSession class
+AsyncSessionLocal = sessionmaker(
+    bind=test_engine, class_=AsyncSession, expire_on_commit=False
+)
+
+# Configure the test database fixture
 @pytest_asyncio.fixture(scope="function")
 async def test_db():
     """
@@ -15,7 +28,7 @@ async def test_db():
         AsyncSession: A new database session for each test.
     """
     # Create tables in the test database
-    async with engine.begin() as conn:
+    async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     # Provide a session for the test
@@ -23,10 +36,10 @@ async def test_db():
         yield session
 
     # Drop tables after the test
-    async with engine.begin() as conn:
+    async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
-# Configura un client HTTP asincrono per i test
+# Configure an asynchronous HTTP client for tests
 @pytest_asyncio.fixture(scope="function")
 async def client():
     """
@@ -37,7 +50,7 @@ async def client():
     async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
 
-# Funzione di supporto per creare un utente di test
+# Helper function to create a test user
 async def create_test_user(db: AsyncSession, username: str, email: str, password: str):
     """
     Helper function to create a test user directly in the database.
