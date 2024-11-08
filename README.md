@@ -11,7 +11,7 @@ Brief description of the project.
 Ensure you have the following installed:
 - Python 3.12.3
 - pip
-- A PostgreSQL database (or another compatible database)
+- MongoDB
 
 ### Installation
 
@@ -39,109 +39,58 @@ Ensure you have the following installed:
 
 ### Database Configuration
 
-1. Install the required dependencies for SQLAlchemy and async support:
+1. Install the required dependencies for MongoDB:
 
     ```sh
-    pip install sqlalchemy sqlalchemy[asyncio] asyncpg
+    pip install motor
     ```
 
-2. Configure your database connection by updating the `DATABASE_URL` in `db.py`:
+2. Configure your MongoDB connection in `mongodb.py`:
 
     ```python
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-    from sqlalchemy.orm import sessionmaker
+    from motor.motor_asyncio import AsyncIOMotorClient
+    from pymongo.errors import DuplicateKeyError
 
-    DATABASE_URL = "postgresql+asyncpg://user:password@localhost/dbname"
+    MONGO_DETAILS = "mongodb://localhost:27017"
 
-    engine = create_async_engine(DATABASE_URL, future=True, echo=True)
+    client = AsyncIOMotorClient(MONGO_DETAILS)
+    database = client.your_database_name
+    collection_name = database.get_collection("resumes")
 
-    async_session = sessionmaker(
-        bind=engine,
-        class_=AsyncSession,
-        expire_on_commit=False
-    )
+    async def add_resume(resume: dict):
+        try:
+            result = await collection_name.insert_one(resume)
+        except DuplicateKeyError:
+            return {"error": "Resume already exists"}
 
-    async def get_db() -> AsyncSession:
-        async with async_session() as session:
-            yield session
+        inserted_resume = await collection_name.find_one({"_id": result.inserted_id})
+        return inserted_resume
     ```
-
-    Replace `"postgresql+asyncpg://user:password@localhost/dbname"` with your actual database connection string.
 
 ### Running the Application
 
-You can start your application, for example, if you are using FastAPI:
-
-```python
-from fastapi import FastAPI, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from db import get_db
-from app.core.security import get_password_hash
-from models import User
-
-app = FastAPI()
-
-@app.post("/create-user/")
-async def create_user(username: str, email: str, password: str, db: AsyncSession = Depends(get_db)):
-    user = await create_test_user(db, username, email, password)
-    return user
-
-async def create_test_user(db: AsyncSession, username: str, email: str, password: str):
-    from app.core.security import get_password_hash
-    hashed_password = get_password_hash(password)
-    user = User(
-        username=username,
-        email=email,
-        hashed_password=hashed_password
-    )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    return user
-```
-
-Run the application:
+To run the application, simply execute:
 
 ```sh
-uvicorn app.main:app --reload
+uvicorn main:app --reload
 ```
 
-### Creating and Verifying Password Hashes
-
-The `get_password_hash` function in `app/core/security.py` hashes passwords using `bcrypt`. Here’s the implementation:
-
-```python
-import bcrypt
-
-def get_password_hash(password: str) -> str:
-    if not password:
-        raise ValueError("Password must not be empty")
-    
-    salt = bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
-    return hashed_password.decode('utf-8')
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
-```
+You can now access the endpoint to ingest resumes at `POST /resume_ingestor/ingest_resume`.
 
 ### Example Usage
 
-```python
-plain_password = "secure_password_here"
-hashed_password = get_password_hash(plain_password)
+To ingest a resume, you can send a POST request to `POST /resume_ingestor/ingest_resume` with a JSON body:
 
-# Store hashed_password in the database
-print(f"Hashed password: {hashed_password}")
-
-# Verify password
-check = verify_password(plain_password, hashed_password)
-print(f"Passwords match: {check}")
+```json
+{
+    "user_id": "12345",
+    "name": "John Doe",
+    "email": "john.doe@example.com",
+    "experience": [{"title": "Software Developer", "company": "Example Corp", "years": 2}],
+    "education": [{"degree": "BSc Computer Science", "institution": "University XYZ", "years": 4}],
+    "skills": ["Python", "FastAPI", "MongoDB"]
+}
 ```
-
-## Testing
-
-Include any relevant testing instructions or commands here.
 
 ## License
 
