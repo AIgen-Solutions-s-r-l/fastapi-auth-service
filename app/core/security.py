@@ -1,13 +1,31 @@
-from passlib.context import CryptContext
-from jose import JWTError, jwt
-from datetime import datetime, timedelta
-from app.core.config import Settings
+# app/core/security.py
+from datetime import datetime, UTC  # Add UTC import
+from datetime import timedelta
+
 import bcrypt
+from fastapi import HTTPException
+from jose import jwt, JWTError
+from passlib.context import CryptContext
+from starlette import status
+
+from app.core.config import Settings
 
 settings = Settings()
 
 # Set up the password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def create_access_token(data: dict, expires_delta: timedelta = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(UTC) + expires_delta  # Updated to use timezone-aware datetime
+    else:
+        expire = datetime.now(UTC) + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+    return encoded_jwt
+
 
 def hash_password(password: str) -> str:
     """
@@ -21,6 +39,7 @@ def hash_password(password: str) -> str:
     """
     return pwd_context.hash(password)
 
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     Verifies if the provided plain password matches the hashed password.
@@ -33,6 +52,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         bool: True if the passwords match, False otherwise.
     """
     return pwd_context.verify(plain_password, hashed_password)
+
 
 def create_access_token(data: dict, expires_delta: timedelta = timedelta(minutes=15)) -> str:
     """
@@ -74,3 +94,31 @@ def get_password_hash(password: str) -> str:
 
     # Decode the hashed password to a UTF-8 string and return
     return hashed_password.decode('utf-8')
+
+
+def verify_jwt_token(token: str) -> dict:
+    """
+    Verify a JWT token and return its payload.
+
+    Args:
+        token (str): The JWT token to verify.
+
+    Returns:
+        dict: The token payload if valid.
+
+    Raises:
+        HTTPException: If the token is invalid.
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            settings.secret_key,
+            algorithms=[settings.algorithm]
+        )
+        return payload
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )

@@ -1,7 +1,32 @@
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.user import User
+
 from app.core.security import hash_password
-from sqlalchemy.future import select
+from app.core.security import verify_password
+from app.models.user import User
+
+
+async def authenticate_user(db: AsyncSession, username: str, password: str) -> User | None:
+    """
+    Authenticate a user by verifying their username and password.
+
+    Args:
+        db (AsyncSession): The database session.
+        username (str): The username to authenticate.
+        password (str): The password to verify.
+
+    Returns:
+        User | None: The authenticated user if successful, None otherwise.
+    """
+    result = await db.execute(select(User).filter(User.username == username))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        return None
+    if not verify_password(password, user.hashed_password):
+        return None
+
+    return user
 
 
 async def create_user(db: AsyncSession, username: str, email: str, password: str) -> User:
