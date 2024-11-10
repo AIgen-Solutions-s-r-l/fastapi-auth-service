@@ -99,6 +99,7 @@ You can now access the endpoint to ingest resumes at `POST /resume_ingestor/inge
 ### Creating User and Resume
 
 Send a POST request to create a user and their resume at `POST /create-user/`:
+NOTE: the path currently is /auth/register (not /create-user?) (auth due to the import of auth_router)
 
 ```json
 {
