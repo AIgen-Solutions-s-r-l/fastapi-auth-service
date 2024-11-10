@@ -3,7 +3,8 @@ from pymongo.errors import DuplicateKeyError
 
 from app.core.config import Settings
 
-MONGO_DETAILS = Settings.mongodb
+settings = Settings()
+MONGO_DETAILS = settings.mongodb
 
 client = AsyncIOMotorClient(MONGO_DETAILS)
 database = client.your_database_name
