@@ -12,7 +12,7 @@ RUN apt-get update && \
     software-properties-common \
     postgresql postgresql-contrib \
     gnupg curl
-    
+
 # Install unsupported Python version 3.12
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt update && \
@@ -50,6 +50,15 @@ RUN python3.12 -m venv venv
 # Install Python dependencies
 COPY requirements.txt .
 RUN ./venv/bin/pip install --no-cache-dir -r requirements.txt
+
+# Create PostgreSQL user and databases
+RUN service postgresql start && \
+    sudo -u postgres psql -c "CREATE USER testuser WITH PASSWORD 'testpassword';" && \
+    sudo -u postgres psql -c "CREATE DATABASE main_db;" && \
+    sudo -u postgres psql -c "CREATE DATABASE test_db;" && \
+    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE main_db TO testuser;" && \
+    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE test_db TO testuser;" && \
+    service postgresql stop
 
 # Copy the current directory contents into the container
 COPY . .
