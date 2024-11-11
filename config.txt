@@ -1,6 +1,6 @@
 MongoDB URL: mongodb://localhost:27017
 RabbitMQ URL: amqp://guest:guest@localhost:5672/
-Database URL: postgresql+asyncpg://testuser:testpassword@172.25.225.13:5432/main_db
+Database URL: postgresql+asyncpg://testuser:testpassword@localhost:5432/main_db
 Service Name: authService
 Secret Key: your-secret-key-here
 Algorithm: HS256
