@@ -56,8 +56,8 @@ RUN service postgresql start && \
     su - postgres -c "psql -c \"CREATE USER testuser WITH PASSWORD 'testpassword';\"" && \
     su - postgres -c "psql -c \"CREATE DATABASE main_db;\"" && \
     su - postgres -c "psql -c \"CREATE DATABASE test_db;\"" && \
-    su - postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE main_db TO testuser;\"" && \
-    su - postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE test_db TO testuser;\"" && \
+    su - postgres -c "psql -c \"ALTER DATABASE test_db OWNER TO testuser;\"" && \
+    su - postgres -c "psql -c \"ALTER DATABASE main_db OWNER TO testuser;\"" && \
     service postgresql stop
 
 
