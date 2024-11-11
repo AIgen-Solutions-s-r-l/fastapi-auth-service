@@ -53,12 +53,13 @@ RUN ./venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # Create PostgreSQL user and databases
 RUN service postgresql start && \
-    sudo -u postgres psql -c "CREATE USER testuser WITH PASSWORD 'testpassword';" && \
-    sudo -u postgres psql -c "CREATE DATABASE main_db;" && \
-    sudo -u postgres psql -c "CREATE DATABASE test_db;" && \
-    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE main_db TO testuser;" && \
-    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE test_db TO testuser;" && \
+    su - postgres -c "psql -c \"CREATE USER testuser WITH PASSWORD 'testpassword';\"" && \
+    su - postgres -c "psql -c \"CREATE DATABASE main_db;\"" && \
+    su - postgres -c "psql -c \"CREATE DATABASE test_db;\"" && \
+    su - postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE main_db TO testuser;\"" && \
+    su - postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE test_db TO testuser;\"" && \
     service postgresql stop
+
 
 # Copy the current directory contents into the container
 COPY . .
