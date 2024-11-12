@@ -92,7 +92,13 @@ To run the application:
 
 ```sh
 uvicorn main:app --reload
-```
+```  
+
+(note:  
+$ sudo ./venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 80
+otherwise:  
+$ ./venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
+and as suggestion 127.0.0.1 - localhost)
 
 You can now access the endpoint to ingest resumes at `POST /resume_ingestor/ingest_resume` and get resumes by user ID at `GET /resume_ingestor/resume/{user_id}`.
 
