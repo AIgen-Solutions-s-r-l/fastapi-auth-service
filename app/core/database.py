@@ -24,8 +24,6 @@ Base = declarative_base()
 
 # Import all models here to ensure they are registered with Base
 from app.models.user import User
-# If you have other models, import them as well
-# from app.models.other_model import OtherModel
 
 # Define an asynchronous session factory bound to the engine
 AsyncSessionLocal = async_sessionmaker(
