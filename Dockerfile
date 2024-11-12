@@ -65,4 +65,4 @@ RUN service postgresql start && \
 COPY . .
 
 # Command to run the FastAPI application
-CMD ["./venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]
+CMD service postgresql start && ./venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 80
