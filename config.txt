@@ -1,0 +1,7 @@
+MongoDB URL: mongodb://localhost:27017
+RabbitMQ URL: amqp://guest:guest@localhost:5672/
+DATABASE_URL: postgresql+asyncpg://testuser:testpassword@localhost/main_db
+Service Name: authService
+Secret Key: your-secret-key-here
+Algorithm: HS256
+Access Token Expire Minutes: 30

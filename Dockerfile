@@ -1,20 +1,68 @@
-# Start from an official Python image
-FROM python:3.9
+# Start from Ubuntu 22.04 as base image
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND noninteractive
 
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy the requirements file
-COPY requirements.txt .
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y \
+    software-properties-common \
+    postgresql postgresql-contrib \
+    gnupg curl
 
-# Install any dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install unsupported Python version 3.12
+RUN add-apt-repository ppa:deadsnakes/ppa && \
+    apt update && \
+    apt install -y python3.12 python3.12-venv python3-pip && \
+    apt-get clean
+
+# Add repository for MongoDB
+RUN curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
+    gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor && \
+    echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | \
+    tee /etc/apt/sources.list.d/mongodb-org-8.0.list && \
+    apt-get update && \
+    apt-get install -y mongodb-org && \
+    apt-get clean
+
+# Add repository for RabbitMQ
+RUN curl -1sLf "https://keys.openpgp.org/vks/v1/by-fingerprint/0A9AF2115F4687BD29803A206B73A36E6026DFCA" | \
+    gpg --dearmor | tee /usr/share/keyrings/com.rabbitmq.team.gpg > /dev/null && \
+    curl -1sLf https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-erlang/gpg.E495BB49CC4BBE5B.key | \
+    gpg --dearmor | tee /usr/share/keyrings/io.cloudsmith.rabbitmq.E495BB49CC4BBE5B.gpg > /dev/null && \
+    curl -1sLf https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-server/gpg.9F4587F226208342.key | \
+    gpg --dearmor | tee /usr/share/keyrings/io.cloudsmith.rabbitmq.9F4587F226208342.gpg > /dev/null && \
+    apt-get update && \
+    apt-get install -y erlang-base erlang-asn1 erlang-crypto erlang-eldap erlang-ftp erlang-inets \
+    erlang-mnesia erlang-os-mon erlang-parsetools erlang-public-key erlang-runtime-tools erlang-snmp erlang-ssl \
+    erlang-syntax-tools erlang-tftp erlang-tools erlang-xmerl rabbitmq-server && \
+    apt-get clean
+
+# Set environment variable for FastAPI
+ENV PYTHONPATH=/app
+
+# Create and activate virtual environment
+RUN python3.12 -m venv venv
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN ./venv/bin/pip install --no-cache-dir -r requirements.txt
+
+# Create PostgreSQL user and databases
+RUN service postgresql start && \
+    su - postgres -c "psql -c \"CREATE USER testuser WITH PASSWORD 'testpassword';\"" && \
+    su - postgres -c "psql -c \"CREATE DATABASE main_db;\"" && \
+    su - postgres -c "psql -c \"CREATE DATABASE test_db;\"" && \
+    su - postgres -c "psql -c \"ALTER DATABASE test_db OWNER TO testuser;\"" && \
+    su - postgres -c "psql -c \"ALTER DATABASE main_db OWNER TO testuser;\"" && \
+    service postgresql stop
+
 
 # Copy the current directory contents into the container
 COPY . .
 
-# Set the environment variable for FastAPI
-ENV PYTHONPATH=/app
-
 # Command to run the FastAPI application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]
+CMD ["./venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]
