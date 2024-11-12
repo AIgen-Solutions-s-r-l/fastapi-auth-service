@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Body, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Any, List, Dict
-from app.core.mongodb import add_resume, get_resume_by_user_id
+from app.services.resume_service import get_resume_by_user_id, add_resume
 from app.core.database import get_db
 from app.models.user import User
 

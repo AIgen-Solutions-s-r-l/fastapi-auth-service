@@ -2,7 +2,7 @@ import logging
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.core.config import Settings
-from app.rabbitmq_client import RabbitMQClient
+from app.core.rabbitmq_client import RabbitMQClient
 from app.routers.resume_ingestor_router import router as resume_ingestor_router
 from app.routers.auth_router import router as auth_router
 from threading import Thread
