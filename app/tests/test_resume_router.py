@@ -97,7 +97,7 @@ async def client(db_session):
 @pytest_asyncio.fixture
 async def test_user(db_session):
     """Create a test user in the database"""
-    user = User(id="1", username="testuser", email="test@example.com")
+    user = User(username="testuser", email="test@example.com",hashed_password="securepassword")
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
