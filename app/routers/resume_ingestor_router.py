@@ -1,17 +1,41 @@
 # app/routers/resume_ingestor_router.py
 import logging
-
 from fastapi import APIRouter, HTTPException, Body, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.user import User
-from app.schemas.resume import Resume
-from app.schemas.resume_utils import convert_yaml_to_resume_dict
 from app.services.resume_service import get_resume_by_user_id, add_resume
+from app.schemas.resume import Resume
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def convert_yaml_to_resume_dict(yaml_data: dict, user_id: int) -> dict:
+    """Simple YAML to dict conversion with boolean processing"""
+    processed = yaml_data.copy()
+    processed['user_id'] = user_id
+
+    # Process booleans in legal_authorization
+    auth = processed.get('legal_authorization', {})
+    for key in auth:
+        if isinstance(auth[key], str):
+            auth[key] = auth[key].lower() == 'yes'
+
+    # Process booleans in work_preferences
+    prefs = processed.get('work_preferences', {})
+    for key in prefs:
+        if isinstance(prefs[key], str):
+            prefs[key] = prefs[key].lower() == 'yes'
+
+    # Process booleans in self_identification
+    ident = processed.get('self_identification', {})
+    for field in ['veteran', 'disability']:
+        if field in ident and isinstance(ident[field], str):
+            ident[field] = ident[field].lower() == 'yes'
+
+    return processed
 
 
 @router.post("/create_resume")
@@ -28,12 +52,14 @@ async def create_resume(
             raise HTTPException(status_code=404, detail="User not found")
 
         try:
-            # Process and validate data
+            # Process data
             processed_data = convert_yaml_to_resume_dict(yaml_data, user_id)
 
-            # Use parse_raw_as for validation
-            resume = Resume.parse_obj(processed_data)
-            resume_dict = resume.dict(exclude_none=True, by_alias=True)
+            # Validate using Pydantic
+            resume = Resume.model_validate(processed_data)
+
+            # Convert to dict for MongoDB
+            resume_dict = resume.model_dump(exclude_none=True)
 
         except Exception as e:
             logger.error(f"Data validation error: {str(e)}")
