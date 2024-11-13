@@ -1,5 +1,6 @@
+# app/models/user.py
 from sqlalchemy import Column, Integer, String
-from app.core.database import Base
+from app.core.base import Base  # Changed from database to base
 
 class User(Base):
     """
