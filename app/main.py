@@ -46,7 +46,8 @@ async def lifespan(app: FastAPI):
     rabbit_thread.join()
     logging.info("RabbitMQ client connection closed")
 
-app = FastAPI(lifespan=lifespan)
+# app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 # Root route for health check
 @app.get("/")
