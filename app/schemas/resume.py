@@ -1,14 +1,22 @@
 # app/schemas/resume.py
+from typing import Any
+
 from pydantic import BaseModel, EmailStr, HttpUrl, Field, conint
+
 
 class BaseModelWithUrl(BaseModel):
     """Base class for models containing HttpUrl fields"""
+
     def model_dump(self, **kwargs):
         data = super().model_dump(**kwargs)
         for field, value in data.items():
             if isinstance(value, HttpUrl):
                 data[field] = str(value)
         return data
+
+    class Config:
+        arbitrary_types_allowed = True
+
 
 class PersonalInformation(BaseModelWithUrl):
     name: str
@@ -23,22 +31,27 @@ class PersonalInformation(BaseModelWithUrl):
     github: HttpUrl
     linkedin: HttpUrl
 
+
 class Project(BaseModelWithUrl):
     name: str
     description: str
     link: HttpUrl
 
+
 class Language(BaseModel):
     language: str
     proficiency: str
+
 
 class Achievement(BaseModel):
     name: str
     description: str
 
+
 class Certification(BaseModel):
     name: str
     description: str
+
 
 class Education(BaseModel):
     education_level: str
@@ -47,7 +60,8 @@ class Education(BaseModel):
     final_evaluation_grade: str
     start_date: str
     year_of_completion: str
-    exam: dict  # Semplificato da Dict[str, str]
+    exam: Any  # Allow any dict structure
+
 
 class Experience(BaseModel):
     position: str
@@ -55,8 +69,9 @@ class Experience(BaseModel):
     employment_period: str
     location: str
     industry: str
-    key_responsibilities: list  # Semplificato da List[Dict[str, str]]
-    skills_acquired: list      # Semplificato da List[str]
+    key_responsibilities: Any  # Allow any list structure
+    skills_acquired: Any  # Allow any list structure
+
 
 class WorkAuthorization(BaseModel):
     eu_work_authorization: bool
@@ -76,6 +91,7 @@ class WorkAuthorization(BaseModel):
     legally_allowed_to_work_in_uk: bool
     requires_uk_sponsorship: bool
 
+
 class WorkPreferences(BaseModel):
     remote_work: bool
     in_person_work: bool
@@ -84,6 +100,7 @@ class WorkPreferences(BaseModel):
     willing_to_undergo_drug_tests: bool
     willing_to_undergo_background_checks: bool
 
+
 class SelfIdentification(BaseModel):
     gender: str
     pronouns: str
@@ -91,18 +108,22 @@ class SelfIdentification(BaseModel):
     disability: bool
     ethnicity: str
 
+
 class Resume(BaseModelWithUrl):
     user_id: conint(gt=0) = Field(..., description="ID of the user submitting the resume")
     personal_information: PersonalInformation
-    education_details: list   # Semplificato da List[Education]
-    experience_details: list  # Semplificato da List[Experience]
-    projects: list           # Semplificato da List[Project]
-    achievements: list       # Semplificato da List[Achievement]
-    certifications: list     # Semplificato da List[Certification]
-    languages: list          # Semplificato da List[Language]
-    interests: list          # Semplificato da List[str]
-    availability: dict       # Semplificato da Dict[str, str]
-    salary_expectations: dict  # Semplificato da Dict[str, str]
+    education_details: Any  # Allow any list structure
+    experience_details: Any  # Allow any list structure
+    projects: Any  # Allow any list structure
+    achievements: Any  # Allow any list structure
+    certifications: Any  # Allow any list structure
+    languages: Any  # Allow any list structure
+    interests: Any  # Allow any list structure
+    availability: Any  # Allow any dict structure
+    salary_expectations: Any  # Allow any dict structure
     self_identification: SelfIdentification
     legal_authorization: WorkAuthorization
     work_preferences: WorkPreferences
+
+    class Config:
+        arbitrary_types_allowed = True
