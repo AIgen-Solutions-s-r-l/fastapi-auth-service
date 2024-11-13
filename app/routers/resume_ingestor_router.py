@@ -1,4 +1,6 @@
+# app/routers/resume_ingestor_router.py
 from fastapi import APIRouter, HTTPException, Body, Depends
+from pydantic import conint
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -103,7 +105,7 @@ class SelfIdentification(BaseModel):
 
 
 class Resume(BaseModel):
-    user_id: str = Field(..., description="ID of the user submitting the resume")
+    user_id: conint(gt=0) = Field(..., description="ID of the user submitting the resume")
     personal_information: PersonalInformation
     education_details: List[Education]
     experience_details: List[Experience]
@@ -118,8 +120,7 @@ class Resume(BaseModel):
     legal_authorization: WorkAuthorization
     work_preferences: WorkPreferences
 
-
-def convert_yaml_to_resume_json(yaml_data: Dict[str, Any], user_id: str) -> Dict[str, Any]:
+def convert_yaml_to_resume_json(yaml_data: Dict[str, Any], user_id: int) -> Dict[str, Any]:
     """
     Convert YAML data to a structured JSON format using Pydantic models.
 
@@ -172,22 +173,21 @@ def convert_yaml_to_resume_json(yaml_data: Dict[str, Any], user_id: str) -> Dict
     return resume_data.model_dump()
 
 
-# Updated endpoint
 @router.post("/create_resume", response_description="Add new resume")
 async def ingest_resume(
         yaml_data: Dict[str, Any] = Body(...),
-        user_id: str = Body(...),
+        user_id: int = Body(...),  # Cambiato da str a int
         db: AsyncSession = Depends(get_db)
 ) -> Dict[str, Any]:
     """
     Endpoint to ingest a new resume into the MongoDB database.
     """
-    # Check if user exists in PostgreSQL
-    user = await db.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
     try:
+        # Check if user exists in PostgreSQL
+        user = await db.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
         # Convert YAML data to structured JSON
         resume_data = convert_yaml_to_resume_json(yaml_data, user_id)
 
@@ -201,15 +201,20 @@ async def ingest_resume(
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"An error occurred while processing the resume: {str(e)}"
+        )
 
 
 @router.get("/resume/{user_id}", response_description="Get resume by user ID")
-async def get_resume(user_id: str) -> Dict[str, Any]:
+async def get_resume(user_id: int) -> Dict[str, Any]:  # Cambiato da str a int
     """
     Endpoint to retrieve a user's resume from MongoDB by their user ID.
 
     Args:
-        user_id (str): The user ID to search for in MongoDB.
+        user_id (int): The user ID to search for in MongoDB.
 
     Returns:
         Dict[str, Any]: Resume data associated with the provided user ID.
@@ -217,11 +222,17 @@ async def get_resume(user_id: str) -> Dict[str, Any]:
     Raises:
         HTTPException: If there's an error retrieving the resume from MongoDB or if no resume is found (404).
     """
-    # Retrieve resume from MongoDB based on user ID
-    resume = await get_resume_by_user_id(user_id)
+    try:
+        # Retrieve resume from MongoDB based on user ID
+        resume = await get_resume_by_user_id(user_id)  # Convert to string for MongoDB
 
-    # Handle errors or missing data from MongoDB
-    if "error" in resume:
-        raise HTTPException(status_code=404, detail=resume["error"])
+        # Handle errors or missing data from MongoDB
+        if "error" in resume:
+            raise HTTPException(status_code=404, detail=resume["error"])
 
-    return resume
+        return resume
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"An error occurred while retrieving the resume: {str(e)}"
+        )
