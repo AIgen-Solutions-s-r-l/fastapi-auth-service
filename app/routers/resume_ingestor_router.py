@@ -26,13 +26,60 @@ async def create_resume(
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
+        # Debug: print input data
+        logger.info(f"Received YAML data: {yaml_data}")
+        logger.info(f"User ID: {user_id}")
+
         try:
-            # Convert and validate data
+            # Convert data
             processed_data = convert_yaml_to_resume_dict(yaml_data, user_id)
-            resume = Resume.model_validate(processed_data)
+            logger.info(f"Processed data: {processed_data}")
+
+            # Try constructing the resume manually first
+            logger.info("Creating Resume object...")
+
+            # Create Resume object field by field
+            personal_info = processed_data.get('personal_information', {})
+            education = processed_data.get('education_details', [])
+            experience = processed_data.get('experience_details', [])
+            projects = processed_data.get('projects', [])
+            achievements = processed_data.get('achievements', [])
+            certifications = processed_data.get('certifications', [])
+            languages = processed_data.get('languages', [])
+            interests = processed_data.get('interests', [])
+            availability = processed_data.get('availability', {})
+            salary = processed_data.get('salary_expectations', {})
+            self_id = processed_data.get('self_identification', {})
+            legal_auth = processed_data.get('legal_authorization', {})
+            work_prefs = processed_data.get('work_preferences', {})
+
+            # Debug: print each section before validation
+            logger.info("Validating Personal Information...")
+            resume = Resume(
+                user_id=user_id,
+                personal_information=personal_info,
+                education_details=education,
+                experience_details=experience,
+                projects=projects,
+                achievements=achievements,
+                certifications=certifications,
+                languages=languages,
+                interests=interests,
+                availability=availability,
+                salary_expectations=salary,
+                self_identification=self_id,
+                legal_authorization=legal_auth,
+                work_preferences=work_prefs
+            )
+
+            logger.info("Resume object created successfully")
             resume_dict = resume.model_dump(exclude_none=True)
+            logger.info("Resume converted to dict successfully")
+
         except Exception as e:
             logger.error(f"Data validation error: {str(e)}")
+            logger.error(f"Error type: {type(e)}")
+            logger.error(f"Error args: {e.args}")
             raise ValueError(f"Invalid resume data: {str(e)}")
 
         # Store in MongoDB
@@ -66,47 +113,3 @@ async def get_resume(user_id: int):
             status_code=500,
             detail=f"An error occurred while retrieving the resume: {str(e)}"
         )
-
-
-# app/services/resume_service.py
-import logging
-from app.core.mongodb import collection_name
-
-logger = logging.getLogger(__name__)
-
-
-async def add_resume(resume_data: dict) -> dict:
-    """Add a new resume to MongoDB."""
-    try:
-        existing_resume = await collection_name.find_one({"user_id": resume_data["user_id"]})
-
-        if existing_resume:
-            result = await collection_name.replace_one(
-                {"user_id": resume_data["user_id"]},
-                resume_data
-            )
-            if result.modified_count:
-                return {"message": "Resume updated successfully"}
-            return {"error": "Failed to update resume"}
-
-        result = await collection_name.insert_one(resume_data)
-        if result.inserted_id:
-            return {"message": "Resume added successfully", "id": str(result.inserted_id)}
-        return {"error": "Failed to add resume"}
-
-    except Exception as e:
-        logger.error(f"Error adding resume: {str(e)}")
-        return {"error": f"Error adding resume: {str(e)}"}
-
-
-async def get_resume_by_user_id(user_id: int) -> dict:
-    """Retrieve a resume by user ID."""
-    try:
-        resume = await collection_name.find_one({"user_id": user_id})
-        if resume:
-            resume["_id"] = str(resume["_id"])
-            return resume
-        return {"error": "Resume not found"}
-    except Exception as e:
-        logger.error(f"Error retrieving resume: {str(e)}")
-        return {"error": f"Error retrieving resume: {str(e)}"}
