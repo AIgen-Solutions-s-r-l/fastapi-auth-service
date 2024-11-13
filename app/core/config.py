@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     rabbitmq_url: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
     database_url: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://testuser:testpassword@localhost:5432/main_db")
     test_database_url: str = os.getenv("TEST_DATABASE_URL", "postgresql+asyncpg://testuser:testpassword@localhost:5432/test_db")
-    mongodb: str = os.getenv("MONGODB", "mongodb://localhost:27017")
+    mongodb: str = os.getenv("MONGODB", "mongodb://172.25.225.13:27017")
     secret_key: str = "your-secret-key-here"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30

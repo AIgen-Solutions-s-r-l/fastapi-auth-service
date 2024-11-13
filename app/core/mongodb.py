@@ -6,7 +6,7 @@ settings = Settings()
 MONGO_DETAILS = settings.mongodb
 
 client = AsyncIOMotorClient(MONGO_DETAILS)
-database = client.your_database_name
+database = client.resumes
 collection_name = database.get_collection("resumes")
 
 
