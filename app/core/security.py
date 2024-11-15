@@ -1,8 +1,6 @@
 # app/core/security.py
-from datetime import datetime, UTC  # Add UTC import
-from datetime import timedelta
+from datetime import datetime, UTC, timedelta
 
-import bcrypt
 from fastapi import HTTPException
 from jose import jwt, JWTError
 from passlib.context import CryptContext
@@ -11,103 +9,38 @@ from starlette import status
 from app.core.config import Settings
 
 settings = Settings()
-
-# Set up the password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-def create_access_token(data: dict, expires_delta: timedelta = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(UTC) + expires_delta  # Updated to use timezone-aware datetime
-    else:
-        expire = datetime.now(UTC) + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
-    return encoded_jwt
-
-
-def hash_password(password: str) -> str:
-    """
-    Hashes a password using bcrypt.
-
-    Args:
-        password (str): The plain text password.
-
-    Returns:
-        str: The hashed password.
-    """
-    return pwd_context.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     Verifies if the provided plain password matches the hashed password.
-
-    Args:
-        plain_password (str): The plain text password.
-        hashed_password (str): The hashed password.
-
-    Returns:
-        bool: True if the passwords match, False otherwise.
     """
     return pwd_context.verify(plain_password, hashed_password)
+
+
+def get_password_hash(password: str) -> str:
+    """
+    Hashes a password using bcrypt.
+    """
+    if not password:
+        raise ValueError("Password must not be empty")
+    return pwd_context.hash(password)
 
 
 def create_access_token(data: dict, expires_delta: timedelta = timedelta(minutes=15)) -> str:
     """
     Creates a JWT access token.
-
-    Args:
-        data (dict): The data to include in the token payload.
-        expires_delta (timedelta): The time until the token expires.
-
-    Returns:
-        str: The encoded JWT token.
     """
     to_encode = data.copy()
-    expire = datetime.utcnow() + expires_delta
+    expire = datetime.now(UTC) + expires_delta
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm="HS256")
-    return encoded_jwt
-
-
-def get_password_hash(password: str) -> str:
-    """
-    Hashes a plain-text password using bcrypt.
-
-    Args:
-        password (str): The plain-text password to be hashed.
-
-    Returns:
-        str: The hashed password.
-
-    Raises:
-        ValueError: If the provided password is empty.
-    """
-    if not password:
-        raise ValueError("Password must not be empty")
-
-    # Generate a salt and hash the password
-    salt = bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
-
-    # Decode the hashed password to a UTF-8 string and return
-    return hashed_password.decode('utf-8')
+    return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
 
 
 def verify_jwt_token(token: str) -> dict:
     """
     Verify a JWT token and return its payload.
-
-    Args:
-        token (str): The JWT token to verify.
-
-    Returns:
-        dict: The token payload if valid.
-
-    Raises:
-        HTTPException: If the token is invalid.
     """
     try:
         payload = jwt.decode(

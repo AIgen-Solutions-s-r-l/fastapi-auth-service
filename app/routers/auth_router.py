@@ -1,4 +1,6 @@
 # app/routers/auth_router.py
+# app/routers/auth_router.py
+
 import logging
 from datetime import timedelta
 from typing import Dict, Any

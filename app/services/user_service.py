@@ -5,16 +5,12 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import (
-    UserAlreadyExistsError,
-    InvalidCredentialsError,
-    UserNotFoundError
-)
-from app.core.security import hash_password, verify_password
+from app.core.exceptions import UserNotFoundError, UserAlreadyExistsError, DatabaseOperationError
+from app.core.security import verify_password, get_password_hash
 from app.models.user import User
 
 
-async def authenticate_user(db: AsyncSession, username: str, password: str) -> User:
+async def authenticate_user(db: AsyncSession, username: str, password: str) -> User | None:
     """
     Authenticate a user by verifying their username and password.
 
@@ -24,20 +20,15 @@ async def authenticate_user(db: AsyncSession, username: str, password: str) -> U
         password (str): The password to verify.
 
     Returns:
-        User: The authenticated user if successful.
-
-    Raises:
-        UserNotFoundError: If no user is found with the given username.
-        InvalidCredentialsError: If the password is incorrect.
+        User | None: The authenticated user if successful, None otherwise.
     """
     result = await db.execute(select(User).filter(User.username == username))
     user = result.scalar_one_or_none()
 
     if not user:
-        raise UserNotFoundError(f"username: {username}")
-
+        return None
     if not verify_password(password, user.hashed_password):
-        raise InvalidCredentialsError()
+        return None
 
     return user
 
@@ -46,47 +37,38 @@ async def create_user(db: AsyncSession, username: str, email: str, password: str
     """
     Creates a new user and saves it to the database.
 
-    This function performs the following checks before creating a user:
-    1. Verifies that the username is not already taken
-    2. Verifies that the email is not already registered
-    3. Hashes the password before storage
-
     Args:
         db (AsyncSession): The database session.
-        username (str): The username for the new user. Must be unique.
-        email (str): The email for the new user. Must be unique.
+        username (str): The username for the new user.
+        email (str): The email for the new user.
         password (str): The plain text password for the new user.
 
     Returns:
-        User: The newly created user object.
+        User: The created user.
 
     Raises:
-        UserAlreadyExistsError: If the username or email is already in use.
+        UserAlreadyExistsError: If the username or email already exists.
     """
-    # Check username uniqueness
+    # Verifica username
     result = await db.execute(select(User).filter(User.username == username))
     if result.scalar_one_or_none():
         raise UserAlreadyExistsError(f"username: {username}")
 
-    # Check email uniqueness
+    # Verifica email
     result = await db.execute(select(User).filter(User.email == email))
     if result.scalar_one_or_none():
         raise UserAlreadyExistsError(f"email: {email}")
 
     try:
-        hashed_password = hash_password(password)
-        new_user = User(
-            username=username,
-            email=email,
-            hashed_password=hashed_password
-        )
+        hashed_password = get_password_hash(password)
+        new_user = User(username=username, email=email, hashed_password=hashed_password)
         db.add(new_user)
         await db.commit()
         await db.refresh(new_user)
         return new_user
     except Exception as e:
         await db.rollback()
-        raise Exception(f"Error creating user: {str(e)}")
+        raise DatabaseOperationError(f"Error creating user: {str(e)}")
 
 
 async def get_user_by_username(db: AsyncSession, username: str) -> Dict[str, Any]:
@@ -149,7 +131,7 @@ async def update_user_password(
     user = await authenticate_user(db, username, current_password)
 
     try:
-        user.hashed_password = hash_password(new_password)
+        user.hashed_password = get_password_hash(new_password)
         await db.commit()
         await db.refresh(user)
         return user
