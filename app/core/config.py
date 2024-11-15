@@ -14,7 +14,7 @@ class Settings(BaseSettings):
                                        "postgresql+asyncpg://testuser:testpassword@localhost:5432/test_db")
 
     # MongoDB settings
-    mongodb_host: str = os.getenv("MONGODB_HOST", "172.25.225.13")
+    mongodb_host: str = os.getenv("MONGODB_HOST", "localhost")
     mongodb_port: int = int(os.getenv("MONGODB_PORT", "27017"))
     mongodb_username: str = os.getenv("MONGODB_USERNAME", "appUser")
     mongodb_password: str = os.getenv("MONGODB_PASSWORD", "password123")
