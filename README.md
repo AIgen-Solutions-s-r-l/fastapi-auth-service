@@ -41,7 +41,7 @@ Ensure you have the following installed:
 ### Database Configuration
 
 1. **PostgreSQL**:
-    Configure your database connection:
+    Configure your PostgreSQL database connection in `app/core/database.py`:
 
     ```python
     from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -57,8 +57,10 @@ Ensure you have the following installed:
             yield session
     ```
 
+    Ensure your PostgreSQL server is running, and the database credentials (`user`, `password`, `localhost`, `dbname`) are correct.
+
 2. **MongoDB**:
-    Configure your MongoDB connection:
+    Configure your MongoDB connection in `app/core/database.py`:
 
     ```python
     from motor.motor_asyncio import AsyncIOMotorClient
@@ -86,6 +88,8 @@ Ensure you have the following installed:
         return resume
     ```
 
+    Ensure your MongoDB server is running and the connection details (`mongodb://localhost:27017`) are correct.
+
 ### Running the Application
 
 To run the application:
@@ -100,12 +104,11 @@ otherwise:
 $ ./venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
 and as suggestion 127.0.0.1 - localhost)
 
-You can now access the endpoint to ingest resumes at `POST /resume_ingestor/ingest_resume` and get resumes by user ID at `GET /resume_ingestor/resume/{user_id}`.
+### API Endpoints
 
-### Creating User and Resume
+#### User Registration and Resume Creation
 
-Send a POST request to create a user and their resume at `POST /create-user/`:
-NOTE: the path currently is /auth/register (not /create-user?) (auth due to the import of auth_router)
+Create a new user and their resume at `POST /auth/register`:
 
 ```json
 {
@@ -122,11 +125,15 @@ NOTE: the path currently is /auth/register (not /create-user?) (auth due to the 
 }
 ```
 
-Retrieve the user's resume using:
+#### Get Resume by User ID
+
+Retrieve a user's resume using their user ID at `GET /resume_ingestor/resume/{user_id}`:
 
 ```sh
 GET /resume_ingestor/resume/{user_id}
 ```
+
+Replace `{user_id}` with the actual user ID.
 
 ## License
 
