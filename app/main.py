@@ -75,7 +75,7 @@ async def root():
 
 # Include the authentication router
 app.include_router(auth_router, prefix="/auth")
-app.include_router(resume_ingestor_router, prefix="/resume_ingestor")
+app.include_router(resume_ingestor_router)
 
 
 @app.exception_handler(RequestValidationError)
