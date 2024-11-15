@@ -1,15 +1,19 @@
+# app/main.py
 import logging
-from fastapi import FastAPI
 from contextlib import asynccontextmanager
+from threading import Thread
+
+from fastapi import FastAPI
+
 from app.core.config import Settings
 from app.core.rabbitmq_client import RabbitMQClient
-from app.routers.resume_ingestor_router import router as resume_ingestor_router
 from app.routers.auth_router import router as auth_router
-from threading import Thread
+from app.routers.resume_ingestor_router import router as resume_ingestor_router
 
 logging.basicConfig(level=logging.DEBUG)
 
 settings = Settings()
+
 
 def message_callback(ch, method, properties, body):
     """
@@ -23,12 +27,14 @@ def message_callback(ch, method, properties, body):
     """
     logging.info(f"Received message: {body.decode()}")
 
+
 # Global instance of RabbitMQClient
 rabbit_client = RabbitMQClient(
     rabbitmq_url=settings.rabbitmq_url,
     queue="my_queue",
     callback=message_callback
 )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,8 +52,10 @@ async def lifespan(app: FastAPI):
     rabbit_thread.join()
     logging.info("RabbitMQ client connection closed")
 
+
 # app = FastAPI(lifespan=lifespan)
 app = FastAPI()
+
 
 # Root route for health check
 @app.get("/")
@@ -56,6 +64,7 @@ async def root():
     Root endpoint to test if the service is running.
     """
     return {"message": "authService is up and running!"}
+
 
 # Include the authentication router
 app.include_router(auth_router, prefix="/auth")
