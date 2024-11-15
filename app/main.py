@@ -5,6 +5,7 @@ from threading import Thread
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import Settings
@@ -61,6 +62,17 @@ app = FastAPI(
     title="Auth Service API",
     description="Authentication service",
     version="1.0.0"
+)
+
+# noinspection PyTypeChecker
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=600
 )
 
 

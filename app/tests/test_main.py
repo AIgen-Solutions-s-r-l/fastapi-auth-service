@@ -1,18 +1,25 @@
 # tests/test_main.py
-import pytest
-from fastapi import FastAPI, HTTPException, status
-from fastapi.exceptions import RequestValidationError
-from httpx import AsyncClient
+
 from typing import Generator
 
-from app.main import app
+import pytest
+from fastapi import HTTPException, status, APIRouter
+from fastapi.routing import APIRoute
+from httpx import AsyncClient
+
 from app.core.exceptions import AuthException, UserAlreadyExistsError
+from app.main import app
 
 
 # Fixture per il client di test
 @pytest.fixture
 async def async_client() -> Generator:
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    from httpx import AsyncClient
+    async with AsyncClient(
+            app=app,
+            base_url="http://test",
+            follow_redirects=True
+    ) as client:
         yield client
 
 
@@ -34,14 +41,22 @@ class TestMainApplication:
 
     async def test_cors_middleware_headers(self, async_client: AsyncClient):
         """Test CORS middleware is properly configured."""
-        response = await async_client.options("/", headers={
-            "Origin": "http://localhost:3000",
-            "Access-Control-Request-Method": "GET"
-        })
-        assert response.status_code == status.HTTP_200_OK
+        origin = "http://localhost:3000"
+        headers = {
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "Content-Type"
+        }
+        response = await async_client.options(
+            "/",
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK, f"Response: {response.text}"
         assert "access-control-allow-origin" in response.headers
+        assert response.headers["access-control-allow-origin"] == origin
         assert "access-control-allow-methods" in response.headers
-        assert "access-control-allow-headers" in response.headers
+        assert "GET" in response.headers["access-control-allow-methods"]
 
     @pytest.mark.parametrize("endpoint", [
         "/auth/register",
@@ -68,6 +83,8 @@ class TestMainApplication:
         assert "message" in error_response
         assert "details" in error_response
 
+    test_router = None  # Variabile di classe per tenere traccia del router di test
+
     @pytest.mark.parametrize("exception_class,expected_status", [
         (UserAlreadyExistsError("test"), status.HTTP_409_CONFLICT),
         (AuthException("test", status.HTTP_401_UNAUTHORIZED), status.HTTP_401_UNAUTHORIZED),
@@ -77,20 +94,33 @@ class TestMainApplication:
             self,
             async_client: AsyncClient,
             exception_class: Exception,
-            expected_status: int,
-            monkeypatch
+            expected_status: int
     ):
         """Test custom exception handlers return correct status codes and formats."""
 
-        # Create a test endpoint that raises our test exception
-        @app.get("/test-exception")
-        async def test_exception():
+        # Rimuovi il router precedente se esiste
+        if self.test_router:
+            app.routes = [r for r in app.routes if r not in self.test_router.routes]
+
+        # Crea un nuovo router con un path unico
+        self.test_router = APIRouter()
+
+        @self.test_router.get(f"/test-{expected_status}")
+        async def test_route():
             raise exception_class
 
-        response = await async_client.get("/test-exception")
+        app.include_router(self.test_router)
+
+        response = await async_client.get(f"/test-{expected_status}")
         assert response.status_code == expected_status
-        error_response = response.json()
-        assert "message" in error_response or "detail" in error_response
+        assert "detail" in response.json()
+
+    @classmethod
+    async def cleanup(cls):
+        """Cleanup method to remove test routes"""
+        if cls.test_router:
+            app.routes = [r for r in app.routes if r not in cls.test_router.routes]
+            cls.test_router = None
 
     async def test_health_check_headers(self, async_client: AsyncClient):
         """Test health check endpoint includes necessary headers."""
