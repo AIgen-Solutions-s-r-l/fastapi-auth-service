@@ -266,5 +266,3 @@ async def get_resume(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"message": "An error occurred while retrieving the resume"}
         )
-
-# ... Altri endpoint da aggiungere ...
