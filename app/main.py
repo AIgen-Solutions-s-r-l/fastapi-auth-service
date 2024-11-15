@@ -57,7 +57,11 @@ async def lifespan(app: FastAPI):
 
 
 # app = FastAPI(lifespan=lifespan)
-app = FastAPI()
+app = FastAPI(
+    title="Auth Service API",
+    description="Authentication service",
+    version="1.0.0"
+)
 
 
 # Root route for health check

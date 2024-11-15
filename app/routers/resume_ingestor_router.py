@@ -2,17 +2,14 @@
 import logging
 from typing import Dict, Any, Optional
 
-from fastapi import APIRouter, HTTPException, Body, Depends, status, Query, Path
+from fastapi import APIRouter, HTTPException, Depends, status, Query, Path
 from pydantic import ValidationError, BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.core.exceptions import (
-    ResumeNotFoundError,
-    ResumeDuplicateError,
-    ResumeValidationError,
-    DatabaseOperationError
+    ResumeNotFoundError
 )
 from app.models.user import User
 from app.schemas.resume import Resume
@@ -35,10 +32,30 @@ router = APIRouter(
 
 
 class ResumeResponse(BaseModel):
-    """Schema for resume response data."""
+    """Schema for resume response"""
     message: str
-    resume_id: Optional[str] = None
     data: Optional[Dict[str, Any]] = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "message": "Resume retrieved successfully",
+                "data": {
+                    "personal_information": {
+                        "name": "Marco",
+                        "surname": "Rossi",
+                        "email": "marco.rossi@example.com"
+                    },
+                    "education_details": [
+                        {
+                            "education_level": "Master's Degree",
+                            "institution": "University Example",
+                            "year_of_completion": "2020"
+                        }
+                    ]
+                }
+            }
+        }
 
 
 class PersonalInfo(BaseModel):
@@ -77,118 +94,84 @@ class ResumeExample(BaseModel):
         }
 
 
+class ResumeRequest(BaseModel):
+    """Schema for resume creation request."""
+    personal_information: Dict[str, Any]
+    user_id: int
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "personal_information": {
+                    "name": "Marco",
+                    "surname": "Rossi",
+                    "email": "marco.rossi@example.com"
+                },
+                "user_id": 123
+            }
+        }
+
+
 @router.post(
-    "/create",
-    response_model=ResumeResponse,
+    "/create_resume",
+    response_model=Dict[str, Any],
     status_code=status.HTTP_201_CREATED,
     responses={
-        201: {
-            "description": "Resume successfully created",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "message": "Resume created successfully",
-                        "resume_id": "12345",
-                        "data": {"personal_information": {...}}
-                    }
-                }
-            }
-        },
+        201: {"description": "Resume successfully created"},
         400: {"description": "Invalid resume data"},
         404: {"description": "User not found"},
-        409: {"description": "Resume already exists"},
         500: {"description": "Internal server error"}
     }
 )
 async def create_resume(
-        json_data: Dict[str, Any] = Body(
-            ...,
-            example=ResumeExample.Config.json_schema_extra["example"]
-        ),
-        user_id: int = Path(..., description="The ID of the user who owns the resume"),
-        db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(get_current_user)
-) -> ResumeResponse:
+        resume_data: ResumeRequest,
+        db: AsyncSession = Depends(get_db)
+) -> Dict[str, Any]:
     """
     Create or update a resume in the MongoDB database.
-
-    This endpoint allows users to create or update their resume. The resume data
-    should follow the specified schema and will be validated before storage.
-    Only authenticated users can create resumes, and they can only create/update
-    their own resumes.
-
-    Args:
-        json_data: The resume data in JSON format
-        user_id: The ID of the user who owns the resume
-        db: Database session dependency
-        current_user: The currently authenticated user
-
-    Returns:
-        ResumeResponse: Contains confirmation message and resume data
-
-    Raises:
-        HTTPException:
-            - 401: If user is not authenticated
-            - 403: If user tries to modify another user's resume
-            - 404: If user not found
-            - 400: If resume data is invalid
-            - 409: If resume already exists
-            - 500: For internal server errors
     """
-    # Authorization check
-    if current_user.id != user_id:
-        logger.warning(f"User {current_user.id} attempted to access resume of user {user_id}")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to modify this resume"
-        )
-
     try:
         # Verify user exists
-        user = await db.get(User, user_id)
+        user = await db.get(User, resume_data.user_id)
         if not user:
-            logger.error(f"User not found: {user_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail={"message": "User not found", "user_id": user_id}
+                detail={"message": "User not found", "user_id": resume_data.user_id}
             )
 
-        # Process and validate data
         try:
-            processed_data = convert_json_to_resume_dict(json_data, user_id)
+            # Process and validate data
+            processed_data = convert_json_to_resume_dict(resume_data.personal_information, resume_data.user_id)
             resume = Resume.model_validate(processed_data)
             resume_dict = resume.model_dump(exclude_none=True)
+
         except ValidationError as e:
-            logger.error(f"Resume validation error: {str(e)}")
-            raise ResumeValidationError(str(e))
+            logger.error(f"Data validation error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": "Invalid resume data", "errors": e.errors()}
+            )
 
         # Store in MongoDB
         result = await add_resume(resume_dict)
         if "error" in result:
-            raise DatabaseOperationError(result["error"])
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": result["error"]}
+            )
 
-        logger.info(f"Resume created successfully for user {user_id}")
-        return ResumeResponse(
-            message="Resume created successfully",
-            resume_id=str(result.get("_id")),
-            data=result
-        )
+        return result
 
-    except (ResumeValidationError, ResumeDuplicateError) as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"message": str(e)}
-        )
-    except DatabaseOperationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"message": str(e)}
-        )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        logger.error(f"Error processing resume: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"message": "An unexpected error occurred"}
+            detail={
+                "message": "An error occurred while processing the resume",
+                "error": str(e)
+            }
         )
 
 
@@ -198,21 +181,27 @@ async def create_resume(
     responses={
         200: {
             "description": "Resume successfully retrieved",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "message": "Resume retrieved successfully",
-                        "data": {"personal_information": {...}}
-                    }
-                }
-            }
+            "model": ResumeResponse
         },
-        404: {"description": "Resume not found"}
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized to access this resume"},
+        404: {"description": "Resume not found"},
+        500: {"description": "Internal server error"}
     }
 )
 async def get_resume(
-        user_id: int = Path(..., description="The ID of the user whose resume to retrieve"),
-        version: Optional[str] = Query(None, description="Specific version of the resume to retrieve"),
+        user_id: int = Path(
+            ...,  # ... è ok qui perché è un parametro Path
+            title="User ID",
+            description="The ID of the user whose resume to retrieve",
+            gt=0
+        ),
+        version: Optional[str] = Query(
+            None,
+            title="Resume Version",
+            description="Specific version of the resume to retrieve",
+            example="1.0"
+        ),
         current_user: User = Depends(get_current_user)
 ) -> ResumeResponse:
     """
@@ -241,7 +230,10 @@ async def get_resume(
     if current_user.id != user_id and not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this resume"
+            detail={
+                "error": "NotAuthorized",
+                "message": "Not authorized to access this resume"
+            }
         )
 
     try:
@@ -256,13 +248,20 @@ async def get_resume(
         )
 
     except ResumeNotFoundError as e:
+        logger.warning(f"Resume not found: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"message": str(e)}
+            detail={
+                "error": "ResumeNotFound",
+                "message": str(e)
+            }
         )
     except Exception as e:
         logger.error(f"Error retrieving resume: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"message": "An error occurred while retrieving the resume"}
+            detail={
+                "error": "InternalServerError",
+                "message": "An error occurred while retrieving the resume"
+            }
         )

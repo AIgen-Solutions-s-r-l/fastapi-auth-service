@@ -132,7 +132,7 @@ class WorkPreferences(BaseModel):
 
 
 class Resume(BaseModel):
-    user_id: int = Field(..., gt=0)
+    user_id: int = Field(gt=0, description="The ID of the user who owns the resume")
     personal_information: PersonalInformation
     education_details: List[Education]
     experience_details: List[Experience]
