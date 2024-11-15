@@ -3,12 +3,9 @@ from fastapi import HTTPException, status
 
 
 class AuthException(HTTPException):
-    """Base exception for authentication errors"""
-
     def __init__(self, detail: str, status_code: int = status.HTTP_400_BAD_REQUEST):
         super().__init__(status_code=status_code, detail={
-            "error": self.__class__.__name__,
-            "message": detail
+            "detail": detail
         })
 
 
