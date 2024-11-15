@@ -1,8 +1,13 @@
-# Project Name
+# auth_service
 
 ## Overview
 
-Brief description of the project.
+**auth_service** is a FastAPI-based authentication service designed to handle user registration, login, and resume ingestion. It uses PostgreSQL for user data and MongoDB for storing resumes. The service includes the following main functionalities:
+
+- User Registration
+- User Login and JWT Authentication
+- Resume Ingestion
+- Resume Retrieval by User ID
 
 ## Setup
 
@@ -106,15 +111,93 @@ and as suggestion 127.0.0.1 - localhost)
 
 ### API Endpoints
 
-#### User Registration and Resume Creation
+#### User Registration
 
-Create a new user and their resume at `POST /auth/register`:
+Register a new user at `POST /auth/register`:
 
+```http
+POST /auth/register
+```
+
+Request Body:
 ```json
 {
     "username": "johndoe",
     "email": "johndoe@example.com",
-    "password": "securepassword",
+    "password": "securepassword"
+}
+```
+
+Response:
+```json
+{
+    "message": "User registered successfully",
+    "user": "johndoe"
+}
+```
+
+#### User Login
+
+Authenticate a user and obtain a JWT token at `POST /auth/login`:
+
+```http
+POST /auth/login
+```
+
+Request Body (as `application/x-www-form-urlencoded`):
+```plaintext
+username=johndoe
+password=securepassword
+```
+
+Response:
+```json
+{
+    "access_token": "your.jwt.token.here",
+    "token_type": "bearer"
+}
+```
+
+#### Get User by Username
+
+Retrieve a user's details by username at `POST /auth/get_user_from_username`:
+
+```http
+POST /auth/get_user_from_username
+```
+
+Request Body:
+```json
+{
+    "username": "johndoe"
+}
+```
+
+Response:
+```json
+{
+    "id": 1,
+    "username": "johndoe",
+    "email": "johndoe@example.com",
+    "hashed_password": "hashedpassword"
+    // other user details
+}
+```
+
+### Resume Ingestor Endpoints
+
+#### Ingest Resume
+
+Ingest a user's resume at `POST /resume_ingestor/ingest_resume`:
+
+```http
+POST /resume_ingestor/ingest_resume
+```
+
+Request Body:
+```json
+{
+    "user_id": "user123",
     "resume": {
         "name": "John Doe",
         "email": "johndoe@example.com",
@@ -125,20 +208,34 @@ Create a new user and their resume at `POST /auth/register`:
 }
 ```
 
+Response:
+```json
+{
+    "message": "Resume ingested successfully",
+    "resume_id": "resume789"
+}
+```
+
 #### Get Resume by User ID
 
-Retrieve a user's resume using their user ID at `GET /resume_ingestor/resume/{user_id}`:
+Retrieve a user's resume by user ID at `GET /resume_ingestor/resume/{user_id}`:
 
-```sh
+```http
 GET /resume_ingestor/resume/{user_id}
 ```
 
-Replace `{user_id}` with the actual user ID.
-
-## License
-
-Information about the project's license.
+Response:
+```json
+{
+    "user_id": "user123",
+    "name": "John Doe",
+    "email": "johndoe@example.com",
+    "experience": [{"title": "Software Developer", "company": "Example Corp", "years": 2}],
+    "education": [{"degree": "BSc Computer Science", "institution": "University XYZ", "years": 4}],
+    "skills": ["Python", "FastAPI", "MongoDB"]
+}
+```
 
 ---
 
-Feel free to modify this template to fit your project and organization needs. Let me know if you have any questions or need further assistance!
+Let me know if you have any questions or need further assistance!
