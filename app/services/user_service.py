@@ -74,33 +74,22 @@ async def create_user(db: AsyncSession, username: str, email: str, password: str
 async def get_user_by_username(db: AsyncSession, username: str) -> Dict[str, Any]:
     """
     Retrieve a user by username using a raw SQL query and return the user data as JSON.
-
-    This function uses a raw SQL query for demonstration purposes. In production,
-    consider using SQLAlchemy's ORM features for better security and maintainability.
-
-    Args:
-        db (AsyncSession): The database session.
-        username (str): The username to look up.
-
-    Returns:
-        Dict[str, Any]: The user data as a JSON-serializable dictionary.
-
-    Raises:
-        UserNotFoundError: If no user is found with the given username.
     """
     try:
         # Using parameterized query to prevent SQL injection
-        query = text("SELECT * FROM users WHERE username = :username")
+        query = text("SELECT id, username, email FROM users WHERE username = :username")
         result = await db.execute(query, {"username": username})
-        user = result.fetchone()
+        user = result.first()
 
         if not user:
             raise UserNotFoundError(f"username: {username}")
 
-        # Convert SQLAlchemy Row object to dictionary and make it JSON-serializable
-        user_dict = dict(user)
+        # Convert SQLAlchemy Row object to dictionary using ._mapping
+        user_dict = user._mapping
         return jsonable_encoder(user_dict)
 
+    except UserNotFoundError:
+        raise
     except Exception as e:
         # Log the error here if you have logging configured
         raise Exception(f"Error retrieving user: {str(e)}")
