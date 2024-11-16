@@ -1,15 +1,14 @@
 # app/tests/test_resume_ingestor_router.py
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import Mock, patch
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import text
 
-from app.main import app
 from app.core.database import get_db
-from app.core.mongodb import collection_name
+from app.main import app
 from app.models.user import User
 
 # Test data
@@ -139,16 +138,50 @@ async def setup_test_db():
     await engine.dispose()
 
 
+@pytest.fixture(scope="session")
+async def test_db_engine():
+    """Create test database engine"""
+    from app.models.user import Base
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    TEST_DATABASE_URL = "postgresql+asyncpg://testuser:testpassword@localhost:5432/main_db"
+    engine = create_async_engine(TEST_DATABASE_URL)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    yield engine
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
+
+
+@pytest.fixture(scope="function")
+async def test_db_session(test_db_engine):
+    """Create test database session"""
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    TestingSessionLocal = sessionmaker(
+        test_db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False
+    )
+
+    async with TestingSessionLocal() as session:
+        # Override the database dependency
+        app.dependency_overrides[get_db] = lambda: session
+        yield session
+        await session.rollback()
+
+    app.dependency_overrides.clear()
+
+
 @pytest.fixture
-async def test_user(setup_test_db):
+async def test_user(test_db_session):
     """Create a test user"""
     from app.core.security import get_password_hash
-
-    async def get_session():
-        for session in setup_test_db:
-            yield session
-
-    db = await anext(get_session())
 
     # Create test user
     hashed_password = get_password_hash("testpassword123")
@@ -158,15 +191,52 @@ async def test_user(setup_test_db):
         hashed_password=hashed_password
     )
 
-    db.add(test_user)
-    await db.commit()
-    await db.refresh(test_user)
+    test_db_session.add(test_user)
+    await test_db_session.commit()
+    await test_db_session.refresh(test_user)
 
     yield test_user
 
     # Cleanup
-    await db.delete(test_user)
-    await db.commit()
+    await test_db_session.delete(test_user)
+    await test_db_session.commit()
+
+
+@pytest.fixture
+async def authenticated_client(test_user):
+    """Create an authenticated client for testing protected endpoints"""
+    from app.core.security import create_access_token
+
+    access_token = create_access_token(data={"sub": test_user.username})
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    async with AsyncClient(app=app, base_url="http://test", headers=headers) as ac:
+        yield ac
+
+
+# Update the tests to use these fixtures
+@pytest.mark.asyncio
+async def test_create_resume_success(authenticated_client, mongo_mock, test_user, test_db_session):
+    """Test successful resume creation"""
+    # Mock MongoDB response
+    mongo_mock.insert_one.return_value.inserted_id = "test_id"
+    mongo_mock.find_one.return_value = {
+        "_id": "test_id",
+        **VALID_RESUME_DATA,
+        "user_id": test_user.id
+    }
+
+    response = await authenticated_client.post(
+        "/resumes/create_resume",
+        json={
+            "personal_information": VALID_RESUME_DATA,
+            "user_id": test_user.id
+        }
+    )
+
+    assert response.status_code == 201
+    assert "personal_information" in response.json()
+    assert response.json()["user_id"] == test_user.id
 
 
 @pytest.fixture
