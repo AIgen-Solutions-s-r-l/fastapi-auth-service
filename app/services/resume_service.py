@@ -1,23 +1,28 @@
 # app/services/resume_service.py
 from typing import Dict, Any, Optional
+
 from pymongo.errors import DuplicateKeyError
-from bson.objectid import ObjectId
 
 from app.core.mongodb import collection_name
 
 
-async def get_resume_by_user_id(user_id: int) -> Dict[str, Any]:
+async def get_resume_by_user_id(user_id: int, version: Optional[str] = None) -> Dict[str, Any]:
     """
     Function to retrieve a resume by user ID.
 
     Args:
-        user_id (int): The user ID.
+        user_id: The user ID
+        version: Optional version of the resume to retrieve
 
     Returns:
-        Dict[str, Any]: The resume data or error message if not found.
+        Dict containing the resume data or error message if not found
     """
     try:
-        resume = await collection_name.find_one({"user_id": user_id})
+        query = {"user_id": user_id}
+        if version:
+            query["version"] = version
+
+        resume = await collection_name.find_one(query)
         if not resume:
             return {"error": f"Resume not found for user ID: {user_id}"}
 
@@ -34,10 +39,10 @@ async def add_resume(resume: Dict[str, Any]) -> Dict[str, Any]:
     Function to add a resume to the database.
 
     Args:
-        resume (Dict[str, Any]): The resume data as dictionary.
+        resume: The resume data as dictionary
 
     Returns:
-        Dict[str, Any]: The inserted resume data or error message.
+        Dict containing the inserted resume data or error message
     """
     try:
         # Ensure user_id is an integer
@@ -74,16 +79,22 @@ async def update_resume(user_id: int, resume_data: Dict[str, Any]) -> Dict[str, 
     Function to update an existing resume.
 
     Args:
-        user_id (int): The user ID whose resume needs to be updated.
-        resume_data (Dict[str, Any]): The new resume data.
+        user_id: The user ID whose resume needs to be updated
+        resume_data: The new resume data
 
     Returns:
-        Dict[str, Any]: The updated resume data or error message.
+        Dict containing the updated resume data or error message
     """
     try:
         # Ensure we don't change the user_id
         resume_data["user_id"] = user_id
 
+        # Check if resume exists
+        existing_resume = await collection_name.find_one({"user_id": user_id})
+        if not existing_resume:
+            return {"error": f"Resume not found for user ID: {user_id}"}
+
+        # Update the resume
         result = await collection_name.find_one_and_update(
             {"user_id": user_id},
             {"$set": resume_data},
@@ -91,10 +102,105 @@ async def update_resume(user_id: int, resume_data: Dict[str, Any]) -> Dict[str, 
         )
 
         if not result:
-            return {"error": f"Resume not found for user ID: {user_id}"}
+            return {"error": f"Failed to update resume for user ID: {user_id}"}
 
         result["_id"] = str(result["_id"])
         return result
 
     except Exception as e:
         return {"error": f"Error updating resume: {str(e)}"}
+
+
+async def delete_resume(user_id: int) -> bool:
+    """
+    Function to delete a resume.
+
+    Args:
+        user_id: The user ID whose resume needs to be deleted
+
+    Returns:
+        bool: True if resume was deleted, False if not found
+    """
+    try:
+        # Check if resume exists
+        existing_resume = await collection_name.find_one({"user_id": user_id})
+        if not existing_resume:
+            return False
+
+        # Delete the resume
+        result = await collection_name.delete_one({"user_id": user_id})
+        return result.deleted_count > 0
+
+    except Exception as e:
+        raise Exception(f"Error deleting resume: {str(e)}")
+
+
+async def list_resumes(skip: int = 0, limit: int = 10) -> Dict[str, Any]:
+    """
+    Function to list all resumes with pagination.
+
+    Args:
+        skip: Number of records to skip (for pagination)
+        limit: Maximum number of records to return
+
+    Returns:
+        Dict containing list of resumes and total count
+    """
+    try:
+        # Get total count
+        total_count = await collection_name.count_documents({})
+
+        # Get paginated resumes
+        cursor = collection_name.find({}).skip(skip).limit(limit)
+        resumes = []
+        async for resume in cursor:
+            resume["_id"] = str(resume["_id"])
+            resumes.append(resume)
+
+        return {
+            "total": total_count,
+            "resumes": resumes,
+            "skip": skip,
+            "limit": limit
+        }
+
+    except Exception as e:
+        return {"error": f"Error listing resumes: {str(e)}"}
+
+
+async def search_resumes(
+        query: Dict[str, Any],
+        skip: int = 0,
+        limit: int = 10
+) -> Dict[str, Any]:
+    """
+    Function to search resumes based on criteria.
+
+    Args:
+        query: Search criteria
+        skip: Number of records to skip (for pagination)
+        limit: Maximum number of records to return
+
+    Returns:
+        Dict containing list of matching resumes and total count
+    """
+    try:
+        # Get total count of matching documents
+        total_count = await collection_name.count_documents(query)
+
+        # Get paginated matching resumes
+        cursor = collection_name.find(query).skip(skip).limit(limit)
+        resumes = []
+        async for resume in cursor:
+            resume["_id"] = str(resume["_id"])
+            resumes.append(resume)
+
+        return {
+            "total": total_count,
+            "resumes": resumes,
+            "skip": skip,
+            "limit": limit
+        }
+
+    except Exception as e:
+        return {"error": f"Error searching resumes: {str(e)}"}

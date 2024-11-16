@@ -13,7 +13,7 @@ from app.core.config import Settings
 from app.core.exceptions import AuthException
 from app.core.rabbitmq_client import RabbitMQClient
 from app.routers.auth_router import router as auth_router
-from app.routers.resume_ingestor_router import router as resume_ingestor_router
+from app.routers.resume_ingestor_router import router as resume_router
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -59,18 +59,15 @@ async def lifespan(app: FastAPI):
 
 
 # app = FastAPI(lifespan=lifespan)
-app = create_app()
+app = FastAPI(
+    title="Auth Service API",
+    description="Authentication service",
+    version="1.0.0"
+)
 
-@app.get("/")
-async def root():
-    """
-    Root endpoint to test if the service is running.
-    """
-    return {"message": "authService is up and running!"}
-
-# Include the routers
-app.include_router(auth_router.router, prefix="/auth")
-app.include_router(resume_ingestor_router.router)
+# Include routers with appropriate prefixes
+app.include_router(auth_router, prefix="/auth")
+app.include_router(resume_router)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:

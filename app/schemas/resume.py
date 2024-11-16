@@ -1,5 +1,6 @@
 # app/schemas/resume.py
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
+
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
 
@@ -148,3 +149,49 @@ class Resume(BaseModel):
     work_preferences: WorkPreferences
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class ResumeRequest(BaseModel):
+    """Schema for resume creation/update request."""
+    user_id: int = Field(gt=0, description="The ID of the user who owns the resume")
+    personal_information: Dict[str, Any] = Field(..., description="Personal and contact information")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "user_id": 123,
+                "personal_information": {
+                    "name": "John",
+                    "surname": "Doe",
+                    "email": "john.doe@example.com",
+                    "phone": "+1 555-0123"
+                }
+            }
+        }
+    )
+
+
+class ResumeResponse(BaseModel):
+    """Schema for resume response."""
+    message: str
+    data: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "message": "Resume retrieved successfully",
+                "data": {
+                    "personal_information": {
+                        "name": "John",
+                        "surname": "Doe",
+                        "email": "john.doe@example.com"
+                    },
+                    "education_details": [{
+                        "education_level": "Master's",
+                        "institution": "Example University",
+                        "year_of_completion": "2020"
+                    }]
+                }
+            }
+        }
+    )
