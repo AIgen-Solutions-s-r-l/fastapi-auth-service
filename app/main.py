@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.core.application import create_app
 from app.core.config import Settings
 from app.core.exceptions import AuthException
 from app.core.rabbitmq_client import RabbitMQClient
@@ -58,25 +59,8 @@ async def lifespan(app: FastAPI):
 
 
 # app = FastAPI(lifespan=lifespan)
-app = FastAPI(
-    title="Auth Service API",
-    description="Authentication service",
-    version="1.0.0"
-)
+app = create_app()
 
-# noinspection PyTypeChecker
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
-    max_age=600
-)
-
-
-# Root route for health check
 @app.get("/")
 async def root():
     """
@@ -84,11 +68,9 @@ async def root():
     """
     return {"message": "authService is up and running!"}
 
-
-# Include the authentication router
-app.include_router(auth_router, prefix="/auth")
-app.include_router(resume_ingestor_router)
-
+# Include the routers
+app.include_router(auth_router.router, prefix="/auth")
+app.include_router(resume_ingestor_router.router)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -100,7 +82,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "details": exc.errors()
         }
     )
-
 
 @app.exception_handler(AuthException)
 async def auth_exception_handler(request: Request, exc: AuthException) -> JSONResponse:
