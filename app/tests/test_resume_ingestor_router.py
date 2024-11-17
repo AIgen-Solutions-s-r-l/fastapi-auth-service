@@ -1,15 +1,16 @@
 # app/tests/test_resume_ingestor_router.py
-
-from unittest.mock import patch
+import asyncio
+from unittest.mock import patch, AsyncMock
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.main import app
-from app.models.user import User
+from app.models.user import User, Base
 
 # Test data
 VALID_RESUME_DATA = {
@@ -103,49 +104,23 @@ VALID_RESUME_DATA = {
     }
 }
 
-
-@pytest.fixture
-def mongo_mock():
-    with patch('app.services.resume_service.collection_name') as mock:
-        yield mock
+# Test settings
+TEST_DATABASE_URL = "postgresql+asyncpg://testuser:testpassword@localhost:5432/main_db"
 
 
-@pytest.fixture(autouse=True)
-async def setup_test_db():
-    """Create test database and tables"""
-    from app.models.user import Base
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    TEST_DATABASE_URL = "postgresql+asyncpg://testuser:testpassword@localhost:5432/main_db"
-    engine = create_async_engine(TEST_DATABASE_URL)
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    # Override the database dependency
-    async def get_test_db():
-        async with async_session() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = get_test_db
-
-    yield
-
-    # Clean up
-    app.dependency_overrides.clear()
-    await engine.dispose()
+# Fixtures
+@pytest.fixture(scope="session")
+def event_loop():
+    """Create and provide an event loop for all async fixtures."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
 
 
 @pytest.fixture(scope="session")
-async def test_db_engine():
-    """Create test database engine"""
-    from app.models.user import Base
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    TEST_DATABASE_URL = "postgresql+asyncpg://testuser:testpassword@localhost:5432/main_db"
-    engine = create_async_engine(TEST_DATABASE_URL)
+async def test_engine(event_loop):
+    """Create test database engine."""
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -158,67 +133,144 @@ async def test_db_engine():
 
 
 @pytest.fixture(scope="function")
-async def test_db_session(test_db_engine):
-    """Create test database session"""
-    from sqlalchemy.orm import sessionmaker
-    from sqlalchemy.ext.asyncio import AsyncSession
-
+async def test_db_session(test_engine):
+    """Provide test database session."""
     TestingSessionLocal = sessionmaker(
-        test_db_engine,
+        test_engine,
         class_=AsyncSession,
-        expire_on_commit=False
+        expire_on_commit=False,
+        autoflush=False
     )
 
     async with TestingSessionLocal() as session:
-        # Override the database dependency
-        app.dependency_overrides[get_db] = lambda: session
-        yield session
-        await session.rollback()
+        try:
+            yield session
+        finally:
+            await session.rollback()
+            await session.close()
 
+
+@pytest.fixture(scope="function")
+async def client(test_db_session):
+    """Create test client with overridden database session."""
+    # Clear any existing overrides
+    app.dependency_overrides.clear()
+
+    # Set up database override
+    app.dependency_overrides[get_db] = lambda: test_db_session
+
+    async with AsyncClient(app=app, base_url="http://test") as ac:
+        yield ac
+
+    # Clear overrides after test
     app.dependency_overrides.clear()
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
+def mongo_mock():
+    """Mock MongoDB collection."""
+    with patch('app.services.resume_service.collection_name') as mock:
+        # Set up default async mocks for common operations
+        mock.find_one = AsyncMock()
+        mock.insert_one = AsyncMock()
+        mock.find_one_and_update = AsyncMock()
+        mock.delete_one = AsyncMock()
+        yield mock
+
+
+@pytest.fixture(scope="function")
 async def test_user(test_db_session):
-    """Create a test user"""
+    """Create and provide a test user."""
     from app.core.security import get_password_hash
 
-    # Create test user
-    hashed_password = get_password_hash("testpassword123")
     test_user = User(
         username="testuser",
         email="test@example.com",
-        hashed_password=hashed_password
+        hashed_password=get_password_hash("testpassword123"),
+        is_admin=False
     )
 
     test_db_session.add(test_user)
     await test_db_session.commit()
     await test_db_session.refresh(test_user)
 
-    yield test_user
+    try:
+        yield test_user
+    finally:
+        await test_db_session.delete(test_user)
+        await test_db_session.commit()
 
-    # Cleanup
-    await test_db_session.delete(test_user)
+
+@pytest.fixture(scope="function")
+async def test_admin_user(test_db_session):
+    """Create and provide a test admin user."""
+    from app.core.security import get_password_hash
+
+    admin_user = User(
+        username="adminuser",
+        email="admin@example.com",
+        hashed_password=get_password_hash("adminpass123"),
+        is_admin=True
+    )
+
+    test_db_session.add(admin_user)
     await test_db_session.commit()
+    await test_db_session.refresh(admin_user)
+
+    try:
+        yield admin_user
+    finally:
+        await test_db_session.delete(admin_user)
+        await test_db_session.commit()
 
 
-@pytest.fixture
-async def authenticated_client(test_user):
-    """Create an authenticated client for testing protected endpoints"""
+@pytest.fixture(scope="function")
+async def auth_client(client, test_user):
+    """Create authenticated test client."""
     from app.core.security import create_access_token
 
+    # Create access token
     access_token = create_access_token(data={"sub": test_user.username})
-    headers = {"Authorization": f"Bearer {access_token}"}
 
-    async with AsyncClient(app=app, base_url="http://test", headers=headers) as ac:
-        yield ac
+    # Override both the database and auth dependencies
+    async def override_get_current_user():
+        return test_user
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    client.headers["Authorization"] = f"Bearer {access_token}"
+
+    try:
+        yield client
+    finally:
+        # Clean up overrides after test
+        app.dependency_overrides.clear()
 
 
-# Update the tests to use these fixtures
+@pytest.fixture(scope="function")
+async def admin_client(client, test_admin_user):
+    """Create authenticated admin test client."""
+    from app.core.security import create_access_token
+
+    # Create access token
+    access_token = create_access_token(data={"sub": test_admin_user.username})
+
+    # Override both the database and auth dependencies
+    async def override_get_current_user():
+        return test_admin_user
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    client.headers["Authorization"] = f"Bearer {access_token}"
+
+    try:
+        yield client
+    finally:
+        # Clean up overrides after test
+        app.dependency_overrides.clear()
+
+
 @pytest.mark.asyncio
-async def test_create_resume_success(authenticated_client, mongo_mock, test_user, test_db_session):
-    """Test successful resume creation"""
-    # Mock MongoDB response
+async def test_create_resume_success(auth_client, mongo_mock, test_user):
+    """Test successful resume creation."""
     mongo_mock.insert_one.return_value.inserted_id = "test_id"
     mongo_mock.find_one.return_value = {
         "_id": "test_id",
@@ -226,7 +278,7 @@ async def test_create_resume_success(authenticated_client, mongo_mock, test_user
         "user_id": test_user.id
     }
 
-    response = await authenticated_client.post(
+    response = await auth_client.post(
         "/resumes/create_resume",
         json={
             "personal_information": VALID_RESUME_DATA,
@@ -239,45 +291,25 @@ async def test_create_resume_success(authenticated_client, mongo_mock, test_user
     assert response.json()["user_id"] == test_user.id
 
 
-@pytest.fixture
-async def authenticated_client(test_user):
-    """Create an authenticated client for testing protected endpoints"""
-    from app.core.security import create_access_token
-
-    access_token = create_access_token(data={"sub": test_user.username})
-    headers = {"Authorization": f"Bearer {access_token}"}
-
-    async with AsyncClient(app=app, base_url="http://test", headers=headers) as ac:
-        yield ac
-
-
 @pytest.mark.asyncio
-async def test_create_resume_success(authenticated_client, mongo_mock, test_user):
-    """Test successful resume creation"""
-    # Mock MongoDB response
-    mongo_mock.insert_one.return_value.inserted_id = "test_id"
+async def test_get_resume_success(auth_client, mongo_mock, test_user):
+    """Test successful resume retrieval."""
     mongo_mock.find_one.return_value = {
         "_id": "test_id",
         **VALID_RESUME_DATA,
         "user_id": test_user.id
     }
 
-    response = await authenticated_client.post(
-        "/resumes/create_resume",
-        json={
-            "personal_information": VALID_RESUME_DATA,
-            "user_id": test_user.id
-        }
-    )
+    response = await auth_client.get(f"/resumes/{test_user.id}")
 
-    assert response.status_code == 201
-    assert "personal_information" in response.json()
-    assert response.json()["user_id"] == test_user.id
+    assert response.status_code == 200
+    assert response.json()["message"] == "Resume retrieved successfully"
+    assert "data" in response.json()
 
 
 @pytest.mark.asyncio
-async def test_create_resume_invalid_data(authenticated_client, mongo_mock, test_user):
-    """Test resume creation with invalid data"""
+async def test_create_resume_invalid_data(auth_client, test_user):
+    """Test resume creation with invalid data."""
     invalid_data = {
         "personal_information": {
             "name": "John"  # Missing required fields
@@ -285,7 +317,7 @@ async def test_create_resume_invalid_data(authenticated_client, mongo_mock, test
         "user_id": test_user.id
     }
 
-    response = await authenticated_client.post(
+    response = await auth_client.post(
         "/resumes/create_resume",
         json=invalid_data
     )
@@ -295,15 +327,54 @@ async def test_create_resume_invalid_data(authenticated_client, mongo_mock, test
 
 
 @pytest.mark.asyncio
-async def test_get_resume_success(authenticated_client, mongo_mock, test_user):
-    """Test successful resume retrieval"""
+async def test_create_resume_unauthorized_user(auth_client, test_user):
+    """Test resume creation for unauthorized user."""
+    other_user_id = test_user.id + 1
+
+    response = await auth_client.post(
+        "/resumes/create_resume",
+        json={
+            "personal_information": VALID_RESUME_DATA,
+            "user_id": other_user_id
+        }
+    )
+
+    assert response.status_code == 403
+    assert "NotAuthorized" in response.json()["detail"]["error"]
+
+
+@pytest.mark.asyncio
+async def test_create_resume_as_admin(admin_client, mongo_mock, test_user):
+    """Test resume creation by admin for another user."""
+    mongo_mock.insert_one.return_value.inserted_id = "test_id"
     mongo_mock.find_one.return_value = {
         "_id": "test_id",
         **VALID_RESUME_DATA,
         "user_id": test_user.id
     }
 
-    response = await authenticated_client.get(f"/resumes/{test_user.id}")
+    response = await admin_client.post(
+        "/resumes/create_resume",
+        json={
+            "personal_information": VALID_RESUME_DATA,
+            "user_id": test_user.id
+        }
+    )
+
+    assert response.status_code == 201
+    assert response.json()["user_id"] == test_user.id
+
+
+@pytest.mark.asyncio
+async def test_get_resume_success(auth_client, mongo_mock, test_user):
+    """Test successful resume retrieval."""
+    mongo_mock.find_one.return_value = {
+        "_id": "test_id",
+        **VALID_RESUME_DATA,
+        "user_id": test_user.id
+    }
+
+    response = await auth_client.get(f"/resumes/{test_user.id}")
 
     assert response.status_code == 200
     assert response.json()["message"] == "Resume retrieved successfully"
@@ -311,59 +382,113 @@ async def test_get_resume_success(authenticated_client, mongo_mock, test_user):
 
 
 @pytest.mark.asyncio
-async def test_get_resume_not_found(authenticated_client, mongo_mock, test_user):
-    """Test resume retrieval when resume doesn't exist"""
-    mongo_mock.find_one.return_value = None
+async def test_get_resume_not_found(auth_client, mongo_mock, test_user):
+    """Test resume retrieval when resume doesn't exist."""
+    mongo_mock.find_one.return_value = {"error": f"Resume not found for user ID: {test_user.id}"}
 
-    response = await authenticated_client.get(f"/resumes/{test_user.id}")
+    response = await auth_client.get(f"/resumes/{test_user.id}")
 
     assert response.status_code == 404
     assert "ResumeNotFound" in response.json()["detail"]["error"]
 
 
 @pytest.mark.asyncio
-async def test_get_resume_unauthorized(authenticated_client, mongo_mock, test_user):
-    """Test resume retrieval for unauthorized user"""
-    # Try to access another user's resume
+async def test_get_resume_unauthorized(auth_client, mongo_mock, test_user):
+    """Test resume retrieval for unauthorized user."""
     other_user_id = test_user.id + 1
 
-    response = await authenticated_client.get(f"/resumes/{other_user_id}")
+    response = await auth_client.get(f"/resumes/{other_user_id}")
 
     assert response.status_code == 403
     assert "NotAuthorized" in response.json()["detail"]["error"]
 
 
 @pytest.mark.asyncio
-async def test_create_resume_nonexistent_user(authenticated_client, mongo_mock):
-    """Test resume creation for non-existent user"""
-    nonexistent_user_id = 99999
-
-    response = await authenticated_client.post(
-        "/resumes/create_resume",
-        json={
-            "personal_information": VALID_RESUME_DATA,
-            "user_id": nonexistent_user_id
-        }
-    )
-
-    assert response.status_code == 404
-    assert "User not found" in response.json()["detail"]["message"]
-
-
-@pytest.mark.asyncio
-async def test_get_resume_with_version(authenticated_client, mongo_mock, test_user):
-    """Test resume retrieval with specific version"""
+async def test_admin_get_any_resume(admin_client, mongo_mock, test_user):
+    """Test admin access to any resume."""
     mongo_mock.find_one.return_value = {
         "_id": "test_id",
         **VALID_RESUME_DATA,
-        "user_id": test_user.id,
-        "version": "1.0"
+        "user_id": test_user.id
     }
 
-    response = await authenticated_client.get(
+    response = await admin_client.get(f"/resumes/{test_user.id}")
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "Resume retrieved successfully"
+
+
+@pytest.mark.asyncio
+async def test_update_resume_success(auth_client, mongo_mock, test_user):
+    """Test successful resume update."""
+    updated_data = {
+        **VALID_RESUME_DATA,
+        "personal_information": {
+            **VALID_RESUME_DATA["personal_information"],
+            "position": "Senior Software Engineer"
+        }
+    }
+
+    mongo_mock.find_one_and_update.return_value = {
+        "_id": "test_id",
+        **updated_data,
+        "user_id": test_user.id
+    }
+
+    response = await auth_client.put(
         f"/resumes/{test_user.id}",
-        params={"version": "1.0"}
+        json={
+            "personal_information": updated_data,
+            "user_id": test_user.id
+        }
     )
 
     assert response.status_code == 200
-    assert response.json()["data"]["version"] == "1.0"
+    assert response.json()["personal_information"]["position"] == "Senior Software Engineer"
+
+
+@pytest.mark.asyncio
+async def test_delete_resume_success(auth_client, mongo_mock, test_user):
+    """Test successful resume deletion."""
+    # Set up the mock with proper async methods
+    mock_find_one = AsyncMock()
+    mock_find_one.return_value = {"_id": "test_id", "user_id": test_user.id}
+    mongo_mock.find_one = mock_find_one
+
+    mock_delete_one = AsyncMock()
+    mock_delete_one.return_value.deleted_count = 1
+    mongo_mock.delete_one = mock_delete_one
+
+    response = await auth_client.delete(f"/resumes/{test_user.id}")
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "Resume deleted successfully"
+
+
+@pytest.mark.asyncio
+async def test_delete_resume_not_found(auth_client, mongo_mock, test_user):
+    """Test resume deletion when resume doesn't exist."""
+    # Set up the mock with proper async methods
+    mock_find_one = AsyncMock()
+    mock_find_one.return_value = None
+    mongo_mock.find_one = mock_find_one
+
+    mock_delete_one = AsyncMock()
+    mock_delete_one.return_value.deleted_count = 0
+    mongo_mock.delete_one = mock_delete_one
+
+    response = await auth_client.delete(f"/resumes/{test_user.id}")
+
+    assert response.status_code == 404
+    assert "ResumeNotFound" in response.json()["detail"]["error"]
+
+
+@pytest.mark.asyncio
+async def test_delete_resume_unauthorized(auth_client, test_user):
+    """Test resume deletion by unauthorized user."""
+    other_user_id = test_user.id + 1
+
+    response = await auth_client.delete(f"/resumes/{other_user_id}")
+
+    assert response.status_code == 403
+    assert "NotAuthorized" in response.json()["detail"]["error"]

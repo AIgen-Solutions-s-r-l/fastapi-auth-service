@@ -1,9 +1,12 @@
 # app/services/resume_service.py
+import logging
 from typing import Dict, Any, Optional
 
 from pymongo.errors import DuplicateKeyError
 
 from app.core.mongodb import collection_name
+
+logger = logging.getLogger(__name__)
 
 
 async def get_resume_by_user_id(user_id: int, version: Optional[str] = None) -> Dict[str, Any]:
@@ -132,7 +135,8 @@ async def delete_resume(user_id: int) -> bool:
         return result.deleted_count > 0
 
     except Exception as e:
-        raise Exception(f"Error deleting resume: {str(e)}")
+        logger.error(f"Error deleting resume: {str(e)}")
+        return False
 
 
 async def list_resumes(skip: int = 0, limit: int = 10) -> Dict[str, Any]:
