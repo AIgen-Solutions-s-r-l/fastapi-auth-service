@@ -73,7 +73,8 @@ async def create_resume(
 
         try:
             # Process and validate data
-            processed_data = convert_json_to_resume_dict(resume_data.dict(), resume_data.user_id)
+            # processed_data = convert_json_to_resume_dict(resume_data.dict(), resume_data.user_id)
+            processed_data = convert_json_to_resume_dict(resume_data.model_dump(), resume_data.user_id)
             resume = Resume.model_validate(processed_data)
             resume_dict = resume.model_dump(exclude_none=True)
 
@@ -224,7 +225,8 @@ async def update_user_resume(
 
     try:
         # Process and validate data
-        processed_data = convert_json_to_resume_dict(resume_data.dict(), user_id)
+        # processed_data = convert_json_to_resume_dict(resume_data.dict(), user_id)
+        processed_data = convert_json_to_resume_dict(resume_data.model_dump(), resume_data.user_id)
         resume = Resume.model_validate(processed_data)
         resume_dict = resume.model_dump(exclude_none=True)
 

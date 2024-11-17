@@ -1,9 +1,10 @@
 # app/tests/test_resume_ingestor_router.py
 import asyncio
+from asyncio import get_event_loop_policy, new_event_loop
 from unittest.mock import patch, AsyncMock
 
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -112,13 +113,14 @@ TEST_DATABASE_URL = "postgresql+asyncpg://testuser:testpassword@localhost:5432/m
 @pytest.fixture(scope="session")
 def event_loop():
     """Create and provide an event loop for all async fixtures."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     yield loop
     loop.close()
 
 
 @pytest.fixture(scope="session")
-async def test_engine(event_loop):
+async def test_engine():
     """Create test database engine."""
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 
@@ -153,16 +155,16 @@ async def test_db_session(test_engine):
 @pytest.fixture(scope="function")
 async def client(test_db_session):
     """Create test client with overridden database session."""
-    # Clear any existing overrides
     app.dependency_overrides.clear()
-
-    # Set up database override
     app.dependency_overrides[get_db] = lambda: test_db_session
 
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    # Use explicit ASGITransport
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test"
+    ) as ac:
         yield ac
 
-    # Clear overrides after test
     app.dependency_overrides.clear()
 
 
