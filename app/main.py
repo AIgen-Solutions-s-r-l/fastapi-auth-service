@@ -74,15 +74,18 @@ app.add_middleware(
     max_age=600,  # Maximum time to cache pre-flight requests (in seconds)
 )
 
+
 # Add root endpoint
 @app.get("/")
 async def root():
     """Root endpoint that returns service status"""
     return {"message": "authService is up and running!"}
 
+
 # Include routers with appropriate prefixes
 app.include_router(auth_router, prefix="/auth")
 app.include_router(resume_router)
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -94,6 +97,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "details": exc.errors()
         }
     )
+
 
 @app.exception_handler(AuthException)
 async def auth_exception_handler(request: Request, exc: AuthException) -> JSONResponse:
