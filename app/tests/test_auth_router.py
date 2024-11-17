@@ -1,7 +1,6 @@
 # app/tests/test_auth_router.py
 
 import asyncio
-
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
@@ -91,21 +90,20 @@ async def test_login_user(async_client, db_session):
     async with db_session.begin():
         hashed_password = get_password_hash(user_data["password"])
         await db_session.execute(
-            text("""
-                DELETE FROM users WHERE username = :username
-            """),
+            text("DELETE FROM users WHERE username = :username"),
             {"username": user_data["username"]}
         )
         await db_session.execute(
             text("""
-                INSERT INTO users (username, email, hashed_password)
-                VALUES (:username, :email, :hashed_password)
+                INSERT INTO users (username, email, hashed_password, is_admin)
+                VALUES (:username, :email, :hashed_password, :is_admin)
                 ON CONFLICT (username) DO NOTHING
             """),
             {
                 "username": user_data["username"],
                 "email": user_data["email"],
-                "hashed_password": hashed_password
+                "hashed_password": hashed_password,
+                "is_admin": False
             }
         )
         await db_session.commit()
@@ -150,14 +148,15 @@ async def test_get_user_details(async_client, db_session):
         )
         await db_session.execute(
             text("""
-                INSERT INTO users (username, email, hashed_password)
-                VALUES (:username, :email, :hashed_password)
+                INSERT INTO users (username, email, hashed_password, is_admin)
+                VALUES (:username, :email, :hashed_password, :is_admin)
                 ON CONFLICT (username) DO NOTHING
             """),
             {
                 "username": user_data["username"],
                 "email": user_data["email"],
-                "hashed_password": hashed_password
+                "hashed_password": hashed_password,
+                "is_admin": False
             }
         )
         await db_session.commit()
@@ -168,4 +167,4 @@ async def test_get_user_details(async_client, db_session):
     assert user_details["username"] == user_data["username"]
     assert user_details["email"] == user_data["email"]
     assert "id" in user_details
-    assert "hashed_password" not in user_details  # Make sure we're not exposing the password
+    assert "hashed_password" not in user_details
