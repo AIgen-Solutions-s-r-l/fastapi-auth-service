@@ -8,7 +8,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.core.application import create_app
 from app.core.config import Settings
 from app.core.exceptions import AuthException
 from app.core.rabbitmq_client import RabbitMQClient
@@ -58,12 +57,28 @@ async def lifespan(app: FastAPI):
     logging.info("RabbitMQ client connection closed")
 
 
-# app = FastAPI(lifespan=lifespan)
 app = FastAPI(
     title="Auth Service API",
     description="Authentication service",
     version="1.0.0"
 )
+
+# Configure CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # List of allowed origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+    expose_headers=["*"],
+    max_age=600,  # Maximum time to cache pre-flight requests (in seconds)
+)
+
+# Add root endpoint
+@app.get("/")
+async def root():
+    """Root endpoint that returns service status"""
+    return {"message": "authService is up and running!"}
 
 # Include routers with appropriate prefixes
 app.include_router(auth_router, prefix="/auth")
