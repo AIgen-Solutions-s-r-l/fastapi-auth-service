@@ -135,18 +135,19 @@ class WorkPreferences(BaseModel):
 class Resume(BaseModel):
     user_id: int = Field(gt=0, description="The ID of the user who owns the resume")
     personal_information: PersonalInformation
-    education_details: List[Education]
-    experience_details: List[Experience]
-    projects: List[Project]
-    achievements: List[Achievement]
-    certifications: List[Certification]
-    languages: List[Language]
-    interests: List[str]
-    availability: Availability
-    salary_expectations: SalaryExpectations
-    self_identification: SelfIdentification
-    legal_authorization: WorkAuthorization
-    work_preferences: WorkPreferences
+    # Make all other fields optional with default empty lists/values
+    education_details: Optional[List[Education]] = Field(default_factory=list)
+    experience_details: Optional[List[Experience]] = Field(default_factory=list)
+    projects: Optional[List[Project]] = Field(default_factory=list)
+    achievements: Optional[List[Achievement]] = Field(default_factory=list)
+    certifications: Optional[List[Certification]] = Field(default_factory=list)
+    languages: Optional[List[Language]] = Field(default_factory=list)
+    interests: Optional[List[str]] = Field(default_factory=list)
+    availability: Optional[Availability] = None
+    salary_expectations: Optional[SalaryExpectations] = None
+    self_identification: Optional[SelfIdentification] = None
+    legal_authorization: Optional[WorkAuthorization] = None
+    work_preferences: Optional[WorkPreferences] = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -154,7 +155,7 @@ class Resume(BaseModel):
 class ResumeRequest(BaseModel):
     """Schema for resume creation/update request."""
     user_id: int = Field(gt=0, description="The ID of the user who owns the resume")
-    personal_information: Dict[str, Any] = Field(..., description="Personal and contact information")
+    personal_information: PersonalInformation = Field(..., description="Personal and contact information")
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -163,8 +164,15 @@ class ResumeRequest(BaseModel):
                 "personal_information": {
                     "name": "John",
                     "surname": "Doe",
+                    "date_of_birth": "1990-01-01",
+                    "country": "USA",
+                    "city": "New York",
+                    "address": "123 Main St",
+                    "phone_prefix": "+1",
+                    "phone": "555-0123",
                     "email": "john.doe@example.com",
-                    "phone": "+1 555-0123"
+                    "github": "github.com/johndoe",
+                    "linkedin": "linkedin.com/in/johndoe"
                 }
             }
         }
@@ -184,13 +192,16 @@ class ResumeResponse(BaseModel):
                     "personal_information": {
                         "name": "John",
                         "surname": "Doe",
-                        "email": "john.doe@example.com"
-                    },
-                    "education_details": [{
-                        "education_level": "Master's",
-                        "institution": "Example University",
-                        "year_of_completion": "2020"
-                    }]
+                        "email": "john.doe@example.com",
+                        "date_of_birth": "1990-01-01",
+                        "country": "USA",
+                        "city": "New York",
+                        "address": "123 Main St",
+                        "phone_prefix": "+1",
+                        "phone": "555-0123",
+                        "github": "github.com/johndoe",
+                        "linkedin": "linkedin.com/in/johndoe"
+                    }
                 }
             }
         }

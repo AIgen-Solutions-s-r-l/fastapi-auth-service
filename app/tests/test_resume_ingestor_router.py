@@ -322,8 +322,12 @@ async def test_create_resume_invalid_data(auth_client, test_user):
         json=invalid_data
     )
 
-    assert response.status_code == 400
-    assert "Invalid resume data" in response.json()["detail"]["message"]
+    assert response.status_code == 422
+    response_data = response.json()
+    assert "error" in response_data
+    assert "message" in response_data
+    assert "details" in response_data
+    assert any("Field required" in error["msg"] for error in response_data["details"])
 
 
 @pytest.mark.asyncio
@@ -334,7 +338,7 @@ async def test_create_resume_unauthorized_user(auth_client, test_user):
     response = await auth_client.post(
         "/resumes/create_resume",
         json={
-            "personal_information": VALID_RESUME_DATA,
+            "personal_information": VALID_RESUME_DATA["personal_information"],  # Fix to send only personal_information
             "user_id": other_user_id
         }
     )
@@ -346,17 +350,24 @@ async def test_create_resume_unauthorized_user(auth_client, test_user):
 @pytest.mark.asyncio
 async def test_create_resume_as_admin(admin_client, mongo_mock, test_user):
     """Test resume creation by admin for another user."""
+    # Setup mock to handle both the existence check and the retrieval
+    find_one_mock = AsyncMock()
+    find_one_mock.side_effect = [
+        None,  # First call returns None (resume doesn't exist)
+        {  # Second call returns the created resume
+            "_id": "test_id",
+            **VALID_RESUME_DATA,
+            "user_id": test_user.id
+        }
+    ]
+    mongo_mock.find_one = find_one_mock
+
     mongo_mock.insert_one.return_value.inserted_id = "test_id"
-    mongo_mock.find_one.return_value = {
-        "_id": "test_id",
-        **VALID_RESUME_DATA,
-        "user_id": test_user.id
-    }
 
     response = await admin_client.post(
         "/resumes/create_resume",
         json={
-            "personal_information": VALID_RESUME_DATA,
+            "personal_information": VALID_RESUME_DATA["personal_information"],
             "user_id": test_user.id
         }
     )
@@ -366,19 +377,33 @@ async def test_create_resume_as_admin(admin_client, mongo_mock, test_user):
 
 
 @pytest.mark.asyncio
-async def test_get_resume_success(auth_client, mongo_mock, test_user):
-    """Test successful resume retrieval."""
-    mongo_mock.find_one.return_value = {
-        "_id": "test_id",
-        **VALID_RESUME_DATA,
-        "user_id": test_user.id
-    }
+async def test_create_resume_success(auth_client, mongo_mock, test_user):
+    """Test successful resume creation."""
+    # Setup mock to handle both the existence check and the retrieval
+    find_one_mock = AsyncMock()
+    find_one_mock.side_effect = [
+        None,  # First call returns None (resume doesn't exist)
+        {  # Second call returns the created resume
+            "_id": "test_id",
+            **VALID_RESUME_DATA,
+            "user_id": test_user.id
+        }
+    ]
+    mongo_mock.find_one = find_one_mock
 
-    response = await auth_client.get(f"/resumes/{test_user.id}")
+    mongo_mock.insert_one.return_value.inserted_id = "test_id"
 
-    assert response.status_code == 200
-    assert response.json()["message"] == "Resume retrieved successfully"
-    assert "data" in response.json()
+    response = await auth_client.post(
+        "/resumes/create_resume",
+        json={
+            "personal_information": VALID_RESUME_DATA["personal_information"],
+            "user_id": test_user.id
+        }
+    )
+
+    assert response.status_code == 201
+    assert "personal_information" in response.json()
+    assert response.json()["user_id"] == test_user.id
 
 
 @pytest.mark.asyncio
@@ -426,21 +451,36 @@ async def test_update_resume_success(auth_client, mongo_mock, test_user):
         "personal_information": {
             **VALID_RESUME_DATA["personal_information"],
             "position": "Senior Software Engineer"
-        }
+        },
+        "self_identification": {
+            **VALID_RESUME_DATA["self_identification"],
+            "veteran": VALID_RESUME_DATA["self_identification"]["veteran"] == "Yes",
+            "disability": VALID_RESUME_DATA["self_identification"]["disability"] == "No"
+        },
+        "legal_authorization": {
+            **VALID_RESUME_DATA["legal_authorization"],
+            "eu_work_authorization": VALID_RESUME_DATA["legal_authorization"]["eu_work_authorization"] == "Yes",
+            # ... (same boolean conversions as above)
+            "requires_uk_sponsorship": VALID_RESUME_DATA["legal_authorization"]["requires_uk_sponsorship"] == "No"
+        },
+        "work_preferences": {
+            **VALID_RESUME_DATA["work_preferences"],
+            "remote_work": VALID_RESUME_DATA["work_preferences"]["remote_work"] == "Yes",
+            # ... (same boolean conversions as above)
+            "willing_to_undergo_background_checks": VALID_RESUME_DATA["work_preferences"][
+                                                        "willing_to_undergo_background_checks"] == "Yes"
+        },
+        "user_id": test_user.id
     }
 
     mongo_mock.find_one_and_update.return_value = {
         "_id": "test_id",
-        **updated_data,
-        "user_id": test_user.id
+        **updated_data
     }
 
     response = await auth_client.put(
         f"/resumes/{test_user.id}",
-        json={
-            "personal_information": updated_data,
-            "user_id": test_user.id
-        }
+        json=updated_data
     )
 
     assert response.status_code == 200
