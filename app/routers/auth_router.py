@@ -6,7 +6,7 @@ from datetime import timedelta
 from typing import Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +17,7 @@ from app.core.exceptions import (
     InvalidCredentialsError
 )
 from app.core.security import create_access_token
+from app.schemas.auth_schemas import LoginRequest
 from app.services.user_service import (
     create_user,
     authenticate_user,
@@ -77,25 +78,24 @@ class PasswordChange(BaseModel):
     }
 )
 async def login(
-        form_data: OAuth2PasswordRequestForm = Depends(),
+        credentials: LoginRequest,
         db: AsyncSession = Depends(get_db)
 ) -> Token:
     """Authenticate a user and return a JWT token."""
     try:
-        user = await authenticate_user(db, form_data.username, form_data.password)
+        user = await authenticate_user(db, credentials.username, credentials.password)
+        if not user:
+            raise InvalidCredentialsError()
+
         access_token = create_access_token(
             data={"sub": user.username},
             expires_delta=timedelta(minutes=30)
         )
         logger.info(f"User {user.username} successfully logged in")
         return Token(access_token=access_token, token_type="bearer")
-    except (UserNotFoundError, InvalidCredentialsError) as e:
-        logger.warning(f"Failed login attempt for username: {form_data.username}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    except Exception as e:
+        logger.warning(f"Failed login attempt for username: {credentials.username}")
+        raise InvalidCredentialsError()
 
 
 @router.post(
