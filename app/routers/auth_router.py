@@ -1,5 +1,4 @@
 # app/routers/auth_router.py
-# app/routers/auth_router.py
 
 import logging
 from datetime import timedelta
@@ -7,7 +6,6 @@ from typing import Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -17,7 +15,7 @@ from app.core.exceptions import (
     InvalidCredentialsError
 )
 from app.core.security import create_access_token
-from app.schemas.auth_schemas import LoginRequest
+from app.schemas.auth_schemas import LoginRequest, Token, UserCreate, PasswordChange
 from app.services.user_service import (
     create_user,
     authenticate_user,
@@ -30,42 +28,6 @@ router = APIRouter(tags=["authentication"])
 logger = logging.getLogger(__name__)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-
-
-class UserCreate(BaseModel):
-    """Pydantic model for creating a new user."""
-    username: str
-    email: EmailStr
-    password: str
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "username": "john_doe",
-                "email": "john@example.com",
-                "password": "strongpassword123"
-            }
-        }
-
-
-class Token(BaseModel):
-    """Pydantic model for token response."""
-    access_token: str
-    token_type: str
-
-
-class PasswordChange(BaseModel):
-    """Pydantic model for password change request."""
-    current_password: str
-    new_password: str
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "current_password": "oldpassword123",
-                "new_password": "newpassword123"
-            }
-        }
 
 
 @router.post(
@@ -95,6 +57,7 @@ async def login(
         return Token(access_token=access_token, token_type="bearer")
     except Exception as e:
         logger.warning(f"Failed login attempt for username: {credentials.username}")
+        logger.error(e)
         raise InvalidCredentialsError()
 
 
@@ -113,7 +76,7 @@ async def register_user(
 ) -> Dict[str, str]:
     """Register a new user."""
     try:
-        new_user = await create_user(db, user.username, user.email, user.password)
+        new_user = await create_user(db, user.username, str(user.email), user.password)
         logger.info(f"New user registered: {new_user.username}")
         return {"message": "User registered successfully", "username": new_user.username}
     except UserAlreadyExistsError as e:
@@ -206,7 +169,6 @@ async def remove_user(
         )
 
 
-# Opzionale: endpoint per logout (invalidare il token)
 @router.post("/logout")
 async def logout(token: str = Depends(oauth2_scheme)) -> Dict[str, str]:
     """
