@@ -27,7 +27,8 @@ from app.services.user_service import (
 router = APIRouter(tags=["authentication"])
 logger = logging.getLogger(__name__)
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+# The tokenUrl should match your login endpoint
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 @router.post(
@@ -64,21 +65,55 @@ async def login(
 @router.post(
     "/register",
     status_code=status.HTTP_201_CREATED,
-    response_model=Dict[str, str],
+    response_model=Dict[str, Any],
     responses={
-        201: {"description": "User successfully registered"},
+        201: {
+            "description": "User successfully registered",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "User registered successfully",
+                        "username": "john_doe",
+                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "token_type": "bearer"
+                    }
+                }
+            }
+        },
         409: {"description": "Username or email already exists"}
     }
 )
 async def register_user(
         user: UserCreate,
         db: AsyncSession = Depends(get_db)
-) -> Dict[str, str]:
-    """Register a new user."""
+) -> Dict[str, Any]:
+    """
+    Register a new user and return access token for immediate authentication.
+
+    Returns:
+        Dict containing:
+        - success message
+        - username
+        - JWT access token
+        - token type (always "bearer")
+    """
     try:
         new_user = await create_user(db, user.username, str(user.email), user.password)
+
+        # Generate access token for immediate authentication
+        access_token = create_access_token(
+            data={"sub": new_user.username},
+            expires_delta=timedelta(minutes=30)
+        )
+
         logger.info(f"New user registered: {new_user.username}")
-        return {"message": "User registered successfully", "username": new_user.username}
+
+        return {
+            "message": "User registered successfully",
+            "username": new_user.username,
+            "access_token": access_token,
+            "token_type": "bearer"  # This is fixed as we use OAuth2 Bearer token authentication
+        }
     except UserAlreadyExistsError as e:
         logger.error(f"Registration failed: {str(e)}")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
@@ -116,7 +151,7 @@ async def change_password(
         username: str,
         passwords: PasswordChange,
         db: AsyncSession = Depends(get_db),
-        token: str = Depends(oauth2_scheme)
+        _: str = Depends(oauth2_scheme)  # Token dependency for authentication only
 ) -> Dict[str, str]:
     """
     Change user password.
@@ -151,7 +186,7 @@ async def remove_user(
         username: str,
         password: str,
         db: AsyncSession = Depends(get_db),
-        token: str = Depends(oauth2_scheme)
+        _: str = Depends(oauth2_scheme)  # Token dependency for authentication only
 ) -> Dict[str, str]:
     """
     Delete user account.
@@ -170,11 +205,11 @@ async def remove_user(
 
 
 @router.post("/logout")
-async def logout(token: str = Depends(oauth2_scheme)) -> Dict[str, str]:
+async def logout() -> Dict[str, str]:
     """
-    Logout user.
+    Logout endpoint for client-side cleanup.
 
     Note: In a JWT-based system, the token remains valid until expiration.
-    This endpoint is more for client-side cleanup.
+    The client should handle token removal from their storage.
     """
     return {"message": "Successfully logged out"}
