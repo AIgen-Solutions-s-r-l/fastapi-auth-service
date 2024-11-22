@@ -52,7 +52,7 @@ async def login(
 
         access_token = create_access_token(
             data={"sub": user.username},
-            expires_delta=timedelta(minutes=30)
+            expires_delta=timedelta(minutes=60)
         )
         logger.info(f"User {user.username} successfully logged in")
         return Token(access_token=access_token, token_type="bearer")
@@ -103,7 +103,7 @@ async def register_user(
         # Generate access token for immediate authentication
         access_token = create_access_token(
             data={"sub": new_user.username},
-            expires_delta=timedelta(minutes=30)
+            expires_delta=timedelta(minutes=60)
         )
 
         logger.info(f"New user registered: {new_user.username}")
