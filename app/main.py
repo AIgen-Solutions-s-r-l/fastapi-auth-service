@@ -8,16 +8,19 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import Settings
 from app.core.exceptions import AuthException
+from app.core.logging_config import init_logging, test_connection
 from app.core.rabbitmq_client import RabbitMQClient
-from app.core.logging_config import LogConfig
 from app.routers.auth_router import router as auth_router
 from app.routers.resume_ingestor_router import router as resume_router
 
 settings = Settings()
 
-# Initialize logging
-LogConfig.setup_logging(**settings.logging_config)
-logger = LogConfig.get_logger()
+# Test connection first
+test_connection(settings.syslog_host, settings.syslog_port)
+
+# Initialize logger
+logger = init_logging(settings)
+
 
 def message_callback(ch, method, properties, body):
     """
@@ -75,12 +78,25 @@ app.add_middleware(
     max_age=600,
 )
 
+logger.info("Initializing app")
+
 
 @app.get("/")
 async def root():
     """Root endpoint that returns service status"""
     logger.debug("Root endpoint accessed")
     return {"message": "authService is up and running!"}
+
+
+@app.get("/test-log")
+async def test_log():
+    """Test endpoint for logging"""
+    logger.info("User authentication attempt", extra={
+        "user_id": "123",
+        "ip_address": "192.168.1.1",
+        "auth_method": "password"
+    })
+    return {"status": "Log sent"}
 
 
 # Include routers with appropriate prefixes

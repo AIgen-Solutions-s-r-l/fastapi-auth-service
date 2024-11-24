@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # Logging settings
     log_level: str = "DEBUG"
     syslog_host: str = "localhost"
-    syslog_port: int = 514
+    syslog_port: int = 5141
     json_logs: bool = True
     log_retention: str = "7 days"
 
