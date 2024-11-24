@@ -1,5 +1,3 @@
-# app/main.py
-import logging
 from contextlib import asynccontextmanager
 from threading import Thread
 
@@ -11,13 +9,15 @@ from fastapi.responses import JSONResponse
 from app.core.config import Settings
 from app.core.exceptions import AuthException
 from app.core.rabbitmq_client import RabbitMQClient
+from app.core.logging_config import LogConfig
 from app.routers.auth_router import router as auth_router
 from app.routers.resume_ingestor_router import router as resume_router
 
-logging.basicConfig(level=logging.DEBUG)
-
 settings = Settings()
 
+# Initialize logging
+LogConfig.setup_logging(**settings.logging_config)
+logger = LogConfig.get_logger()
 
 def message_callback(ch, method, properties, body):
     """
@@ -29,7 +29,7 @@ def message_callback(ch, method, properties, body):
         properties: The RabbitMQ properties.
         body (bytes): The message content.
     """
-    logging.info(f"Received message: {body.decode()}")
+    logger.info(f"Received message: {body.decode()}")
 
 
 # Global instance of RabbitMQClient
@@ -48,37 +48,38 @@ async def lifespan(app: FastAPI):
     """
     rabbit_thread = Thread(target=rabbit_client.start)
     rabbit_thread.start()
-    logging.info("RabbitMQ client started in background thread")
+    logger.info("RabbitMQ client started in background thread")
 
     yield
 
     rabbit_client.stop()
     rabbit_thread.join()
-    logging.info("RabbitMQ client connection closed")
+    logger.info("RabbitMQ client connection closed")
 
 
 app = FastAPI(
     title="Auth Service API",
     description="Authentication service",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Configure CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # List of allowed origins
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
     expose_headers=["*"],
-    max_age=600,  # Maximum time to cache pre-flight requests (in seconds)
+    max_age=600,
 )
 
 
-# Add root endpoint
 @app.get("/")
 async def root():
     """Root endpoint that returns service status"""
+    logger.debug("Root endpoint accessed")
     return {"message": "authService is up and running!"}
 
 
@@ -89,6 +90,7 @@ app.include_router(resume_router)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    logger.error(f"Validation error: {exc.errors()}")
     return JSONResponse(
         status_code=422,
         content={
@@ -101,6 +103,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(AuthException)
 async def auth_exception_handler(request: Request, exc: AuthException) -> JSONResponse:
+    logger.error(f"Auth exception: {exc.detail}")
     return JSONResponse(
         status_code=exc.status_code,
         content=exc.detail
