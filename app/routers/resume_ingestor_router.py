@@ -1,15 +1,12 @@
-# app/routers/resume_ingestor_router.py
-
-import logging
+import os
 from typing import Dict, Any, Optional
-
 from fastapi import APIRouter, HTTPException, Depends, status, Query, Path
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.core.exceptions import ResumeNotFoundError
+from app.core.logging_config import LogConfig
 from app.models.user import User
 from app.schemas.resume import Resume, ResumeResponse, ResumeRequest
 from app.schemas.resume_utils import convert_json_to_resume_dict
@@ -20,7 +17,7 @@ from app.services.resume_service import (
     delete_resume
 )
 
-logger = logging.getLogger(__name__)
+logger = LogConfig.get_logger()
 
 router = APIRouter(
     prefix="/resumes",
@@ -31,7 +28,6 @@ router = APIRouter(
         500: {"description": "Internal server error"}
     }
 )
-
 
 @router.post(
     "/create_resume",
@@ -49,22 +45,8 @@ async def create_resume(
         db: AsyncSession = Depends(get_db),
         current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    Create a new resume in the MongoDB database.
-
-    Args:
-        resume_data: Resume data to be stored
-        db: Database session
-        current_user: Currently authenticated user
-
-    Returns:
-        Dict containing the created resume data
-
-    Raises:
-        HTTPException: If validation fails or user not found
-    """
+    """Create a new resume in the MongoDB database."""
     try:
-        # Verify user exists and has permission
         if current_user.id != resume_data.user_id and not current_user.is_admin:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -72,20 +54,22 @@ async def create_resume(
             )
 
         try:
-            # Process and validate data
-            # processed_data = convert_json_to_resume_dict(resume_data.dict(), resume_data.user_id)
             processed_data = convert_json_to_resume_dict(resume_data.model_dump(), resume_data.user_id)
             resume = Resume.model_validate(processed_data)
             resume_dict = resume.model_dump(exclude_none=True)
 
         except ValidationError as e:
-            logger.error(f"Data validation error: {str(e)}")
+            logger.error("Resume data validation error", extra={
+                "event_type": "resume_validation_error",
+                "user_id": current_user.id,
+                "error_details": str(e),
+                "errors": e.errors()
+            })
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"message": "Invalid resume data", "errors": e.errors()}
             )
 
-        # Store in MongoDB
         result = await add_resume(resume_dict)
         if "error" in result:
             raise HTTPException(
@@ -98,7 +82,11 @@ async def create_resume(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error processing resume: {str(e)}", exc_info=True)
+        logger.error("Resume processing error", extra={
+            "event_type": "resume_creation_error",
+            "user_id": current_user.id,
+            "error_details": str(e)
+        })
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
@@ -106,7 +94,6 @@ async def create_resume(
                 "error": str(e)
             }
         )
-
 
 @router.get(
     "/{user_id}",
@@ -127,21 +114,7 @@ async def get_resume(
         version: Optional[str] = Query(None, description="Specific version of the resume to retrieve"),
         current_user: User = Depends(get_current_user)
 ) -> ResumeResponse:
-    """
-    Retrieve a user's resume from MongoDB.
-
-    Args:
-        user_id: ID of the user whose resume to retrieve
-        version: Optional version of the resume to retrieve
-        current_user: Currently authenticated user
-
-    Returns:
-        ResumeResponse containing the resume data
-
-    Raises:
-        HTTPException: If resume not found or user not authorized
-    """
-    # Authorization check
+    """Retrieve a user's resume from MongoDB."""
     if current_user.id != user_id and not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -156,14 +129,22 @@ async def get_resume(
         if "error" in resume:
             raise ResumeNotFoundError(f"user_id: {user_id}")
 
-        logger.info(f"Resume retrieved successfully for user {user_id}")
+        logger.info("Resume retrieved", extra={
+            "event_type": "resume_retrieved",
+            "user_id": user_id,
+            "version": version
+        })
         return ResumeResponse(
             message="Resume retrieved successfully",
             data=resume
         )
 
     except ResumeNotFoundError as e:
-        logger.warning(f"Resume not found: {str(e)}")
+        logger.warning("Resume not found", extra={
+            "event_type": "resume_not_found",
+            "user_id": user_id,
+            "error_details": str(e)
+        })
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={
@@ -172,7 +153,11 @@ async def get_resume(
             }
         )
     except Exception as e:
-        logger.error(f"Error retrieving resume: {str(e)}", exc_info=True)
+        logger.error("Resume retrieval error", extra={
+            "event_type": "resume_retrieval_error",
+            "user_id": user_id,
+            "error_details": str(e)
+        })
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
@@ -180,7 +165,6 @@ async def get_resume(
                 "message": "An error occurred while retrieving the resume"
             }
         )
-
 
 @router.put(
     "/{user_id}",
@@ -199,21 +183,7 @@ async def update_user_resume(
         resume_data: ResumeRequest,
         current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    Update an existing resume.
-
-    Args:
-        user_id: ID of the user whose resume to update
-        resume_data: New resume data
-        current_user: Currently authenticated user
-
-    Returns:
-        Dict containing the updated resume data
-
-    Raises:
-        HTTPException: If validation fails or user not authorized
-    """
-    # Authorization check
+    """Update an existing resume."""
     if current_user.id != user_id and not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -224,13 +194,10 @@ async def update_user_resume(
         )
 
     try:
-        # Process and validate data
-        # processed_data = convert_json_to_resume_dict(resume_data.dict(), user_id)
         processed_data = convert_json_to_resume_dict(resume_data.model_dump(), resume_data.user_id)
         resume = Resume.model_validate(processed_data)
         resume_dict = resume.model_dump(exclude_none=True)
 
-        # Update in MongoDB
         result = await update_resume(user_id, resume_dict)
         if "error" in result:
             if "not found" in result["error"].lower():
@@ -246,7 +213,11 @@ async def update_user_resume(
         return result
 
     except ValidationError as e:
-        logger.error(f"Data validation error: {str(e)}")
+        logger.error("Resume validation error", extra={
+            "event_type": "resume_update_validation_error",
+            "user_id": user_id,
+            "error_details": str(e)
+        })
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"message": "Invalid resume data", "errors": e.errors()}
@@ -254,7 +225,11 @@ async def update_user_resume(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating resume: {str(e)}", exc_info=True)
+        logger.error("Resume update error", extra={
+            "event_type": "resume_update_error",
+            "user_id": user_id,
+            "error_details": str(e)
+        })
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
@@ -262,7 +237,6 @@ async def update_user_resume(
                 "message": "An error occurred while updating the resume"
             }
         )
-
 
 @router.delete(
     "/{user_id}",
@@ -279,20 +253,7 @@ async def delete_user_resume(
         user_id: int,
         current_user: User = Depends(get_current_user)
 ) -> Dict[str, str]:
-    """
-    Delete a user's resume.
-
-    Args:
-        user_id: ID of the user whose resume to delete
-        current_user: Currently authenticated user
-
-    Returns:
-        Dict containing success message
-
-    Raises:
-        HTTPException: If resume not found or user not authorized
-    """
-    # Authorization check
+    """Delete a user's resume."""
     if current_user.id != user_id and not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -317,7 +278,11 @@ async def delete_user_resume(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting resume: {str(e)}", exc_info=True)
+        logger.error("Resume deletion error", extra={
+            "event_type": "resume_deletion_error",
+            "user_id": user_id,
+            "error_details": str(e)
+        })
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
