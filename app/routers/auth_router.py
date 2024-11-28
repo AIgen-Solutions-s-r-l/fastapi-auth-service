@@ -42,7 +42,7 @@ async def login(
             raise InvalidCredentialsError()
 
         access_token = create_access_token(
-            data={"sub": user.username},
+            data={"sub": user.username, "id": user.id, "is_admin": user.is_admin},
             expires_delta=timedelta(minutes=60)
         )
         logger.info("User login successful", extra={
@@ -97,7 +97,7 @@ async def register_user(
     try:
         new_user = await create_user(db, user.username, str(user.email), user.password)
         access_token = create_access_token(
-            data={"sub": new_user.username},
+            data={"sub": user.username, "id": user.id, "is_admin": user.is_admin},
             expires_delta=timedelta(minutes=60)
         )
 
