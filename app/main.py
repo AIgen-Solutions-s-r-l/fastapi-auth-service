@@ -11,7 +11,6 @@ from app.core.exceptions import AuthException
 from app.core.rabbitmq_client import RabbitMQClient
 from app.core.logging_config import init_logging, test_connection
 from app.routers.auth_router import router as auth_router
-from app.routers.resume_ingestor_router import router as resume_router
 
 # Initialize settings
 settings = Settings()
@@ -114,7 +113,6 @@ async def root():
 
 # Include routers
 app.include_router(auth_router, prefix="/auth")
-app.include_router(resume_router)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
