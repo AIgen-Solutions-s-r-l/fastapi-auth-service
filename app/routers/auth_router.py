@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -41,9 +41,18 @@ async def login(
             })
             raise InvalidCredentialsError()
 
+        # Calculate expiration time
+        expires_delta = timedelta(minutes=60)
+        expire_time = datetime.utcnow() + expires_delta
+        
         access_token = create_access_token(
-            data={"sub": user.username, "id": user.id, "is_admin": user.is_admin},
-            expires_delta=timedelta(minutes=60)
+            data={
+                "sub": user.username,
+                "id": user.id,
+                "is_admin": user.is_admin,
+                "exp": expire_time.timestamp()
+            },
+            expires_delta=expires_delta
         )
         logger.info("User login successful", extra={
             "event_type": "login_success",
@@ -96,9 +105,19 @@ async def register_user(
     """
     try:
         new_user = await create_user(db, user.username, str(user.email), user.password)
+        
+        # Calculate expiration time
+        expires_delta = timedelta(minutes=60)
+        expire_time = datetime.utcnow() + expires_delta
+        
         access_token = create_access_token(
-            data={"sub": user.username, "id": user.id, "is_admin": user.is_admin},
-            expires_delta=timedelta(minutes=60)
+            data={
+                "sub": user.username,
+                "id": new_user.id,
+                "is_admin": new_user.is_admin,
+                "exp": expire_time.timestamp()
+            },
+            expires_delta=expires_delta
         )
 
         logger.info("User registered", extra={

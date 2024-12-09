@@ -1,3 +1,5 @@
+"""FastAPI application entry point for the Authentication Service."""
+
 from contextlib import asynccontextmanager
 from threading import Thread
 
