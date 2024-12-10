@@ -66,7 +66,7 @@ async def login(
             "error_type": type(e).__name__,
             "error_details": str(e)
         })
-        raise InvalidCredentialsError()
+        raise InvalidCredentialsError() from e
 
 @router.post(
     "/register",
@@ -139,7 +139,7 @@ async def register_user(
             "email": str(user.email),
             "error_type": "user_exists"
         })
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
 
 @router.get(
     "/users/{username}",
@@ -167,7 +167,7 @@ async def get_user_details(
             "username": username,
             "error_type": "user_not_found"
         })
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
 
 @router.put(
     "/users/{username}/password",
@@ -209,7 +209,7 @@ async def change_password(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
-        )
+        ) from e
 
 @router.delete(
     "/users/{username}",
@@ -246,7 +246,7 @@ async def remove_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
-        )
+        ) from e
 
 @router.post("/logout")
 async def logout() -> Dict[str, str]:
