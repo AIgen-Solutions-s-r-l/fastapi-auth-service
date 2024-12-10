@@ -1,0 +1,45 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Step 1: Checkout the code
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Step 2: Set up Docker
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v2
+
+    # Step 3: Copy files to the server
+    - name: Copy project to server
+      uses: appleboy/scp-action@v0.1.8
+      with:
+        host: ${{ secrets.SERVER_IP }}
+        username: ${{ secrets.SERVER_USERNAME }}
+        key: ${{ secrets.SERVER_PRIVATE_KEY }}
+        port: 22
+        source: .
+        target: ~/services/auth/app
+
+    # Step 4: Build and run the Docker container on the server
+    - name: Build and deploy on the server
+      uses: appleboy/ssh-action@v0.1.8
+      with:
+        host: ${{ secrets.SERVER_IP }}
+        username: ${{ secrets.SERVER_USERNAME }}
+        key: ${{ secrets.SERVER_PRIVATE_KEY }}
+        port: 22
+        script: |
+          cd ~/app
+          docker build -t auth_service .
+          docker stop auth_service || true
+          docker rm auth_service || true
+          docker run -d --name auth_service -p 8001:8001 auth_service
