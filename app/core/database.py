@@ -7,7 +7,8 @@ from app.core.logging_config import LogConfig
 logger = LogConfig.get_logger()
 settings = Settings()
 
-database_url = settings.test_database_url if os.getenv("PYTEST_RUNNING") == "true" else settings.database_url
+database_url = settings.test_database_url if os.getenv(
+    "PYTEST_RUNNING") == "true" else settings.database_url
 logger.info("Database initialization", extra={
     "event_type": "database_init",
     "database_url": database_url,
@@ -19,6 +20,7 @@ AsyncSessionLocal = async_sessionmaker(
     bind=engine,
     expire_on_commit=False
 )
+
 
 async def get_db():
     """Dependency to obtain a new database session for each request."""

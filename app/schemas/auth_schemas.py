@@ -1,5 +1,6 @@
 # app/core/auth_schemas.py
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
+from datetime import datetime, timezone, timedelta
 
 
 class LoginRequest(BaseModel):
@@ -7,13 +8,7 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "username": "john_doe",
-                "password": "strongpassword123"
-            }
-        }
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserCreate(BaseModel):
@@ -22,14 +17,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "username": "john_doe",
-                "email": "john@example.com",
-                "password": "strongpassword123"
-            }
-        }
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Token(BaseModel):
@@ -37,16 +25,12 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class PasswordChange(BaseModel):
     """Pydantic model for password change request."""
     current_password: str
     new_password: str
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "current_password": "oldpassword123",
-                "new_password": "newpassword123"
-            }
-        }
+    model_config = ConfigDict(from_attributes=True)

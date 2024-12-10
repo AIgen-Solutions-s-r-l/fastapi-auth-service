@@ -1,4 +1,4 @@
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -41,9 +41,9 @@ async def login(
             })
             raise InvalidCredentialsError()
 
-        # Calculate expiration time
+        # Calculate expiration time using timezone-aware datetime
         expires_delta = timedelta(minutes=60)
-        expire_time = datetime.utcnow() + expires_delta
+        expire_time = datetime.now(timezone.utc) + expires_delta
         
         access_token = create_access_token(
             data={
@@ -106,9 +106,9 @@ async def register_user(
     try:
         new_user = await create_user(db, user.username, str(user.email), user.password)
         
-        # Calculate expiration time
+        # Calculate expiration time using timezone-aware datetime
         expires_delta = timedelta(minutes=60)
-        expire_time = datetime.utcnow() + expires_delta
+        expire_time = datetime.now(timezone.utc) + expires_delta
         
         access_token = create_access_token(
             data={
