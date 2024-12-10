@@ -1,68 +1,58 @@
-# Start from Ubuntu 22.04 as base image
-FROM ubuntu:22.04
+# Build stage
+FROM python:3.11-slim as builder
 
-ENV DEBIAN_FRONTEND noninteractive
-
-# Set the working directory in the container
+# Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && \
-    apt-get install -y \
-    software-properties-common \
-    postgresql postgresql-contrib \
-    gnupg curl
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install unsupported Python version 3.12
-RUN add-apt-repository ppa:deadsnakes/ppa && \
-    apt update && \
-    apt install -y python3.12 python3.12-venv python3-pip && \
-    apt-get clean
+# Install poetry
+RUN pip install poetry
 
-# Add repository for MongoDB
-RUN curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
-    gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor && \
-    echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" | \
-    tee /etc/apt/sources.list.d/mongodb-org-8.0.list && \
-    apt-get update && \
-    apt-get install -y mongodb-org && \
-    apt-get clean
+# Copy poetry files
+COPY pyproject.toml poetry.lock ./
 
-# Add repository for RabbitMQ
-RUN curl -1sLf "https://keys.openpgp.org/vks/v1/by-fingerprint/0A9AF2115F4687BD29803A206B73A36E6026DFCA" | \
-    gpg --dearmor | tee /usr/share/keyrings/com.rabbitmq.team.gpg > /dev/null && \
-    curl -1sLf https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-erlang/gpg.E495BB49CC4BBE5B.key | \
-    gpg --dearmor | tee /usr/share/keyrings/io.cloudsmith.rabbitmq.E495BB49CC4BBE5B.gpg > /dev/null && \
-    curl -1sLf https://dl.cloudsmith.io/public/rabbitmq/rabbitmq-server/gpg.9F4587F226208342.key | \
-    gpg --dearmor | tee /usr/share/keyrings/io.cloudsmith.rabbitmq.9F4587F226208342.gpg > /dev/null && \
-    apt-get update && \
-    apt-get install -y erlang-base erlang-asn1 erlang-crypto erlang-eldap erlang-ftp erlang-inets \
-    erlang-mnesia erlang-os-mon erlang-parsetools erlang-public-key erlang-runtime-tools erlang-snmp erlang-ssl \
-    erlang-syntax-tools erlang-tftp erlang-tools erlang-xmerl rabbitmq-server && \
-    apt-get clean
+# Configure poetry to not create virtual environment (we're in a container)
+RUN poetry config virtualenvs.create false
 
-# Set environment variable for FastAPI
-ENV PYTHONPATH=/app
+# Install dependencies
+RUN poetry install --no-dev --no-interaction --no-ansi
 
-# Create and activate virtual environment
-RUN python3.12 -m venv venv
+# Production stage
+FROM python:3.11-slim
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN ./venv/bin/pip install --no-cache-dir -r requirements.txt
+# Set working directory
+WORKDIR /app
 
-# Create PostgreSQL user and databases
-RUN service postgresql start && \
-    su - postgres -c "psql -c \"CREATE USER testuser WITH PASSWORD 'testpassword';\"" && \
-    su - postgres -c "psql -c \"CREATE DATABASE main_db;\"" && \
-    su - postgres -c "psql -c \"CREATE DATABASE test_db;\"" && \
-    su - postgres -c "psql -c \"ALTER DATABASE test_db OWNER TO testuser;\"" && \
-    su - postgres -c "psql -c \"ALTER DATABASE main_db OWNER TO testuser;\"" && \
-    service postgresql stop
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8000
 
+# Create non-root user for security
+RUN adduser --system --group app
 
-# Copy the current directory contents into the container
-COPY . .
+# Copy only necessary files from builder
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 
-# Command to run the FastAPI application
-CMD service postgresql start && ./venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 80
+# Copy application code
+COPY ./app ./app
+
+# Change ownership of the application files
+RUN chown -R app:app /app
+
+# Switch to non-root user
+USER app
+
+# Expose port
+EXPOSE $PORT
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl --fail http://localhost:$PORT/ || exit 1
+
+# Command to run the application
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
