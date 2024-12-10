@@ -59,7 +59,7 @@ EXPOSE $PORT
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl --fail http://127.0.0.1:8001/ || exit 1
+    CMD curl --fail http://0.0.0.0:8001/ || exit 1
 
 # Command to run the application
-CMD ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
