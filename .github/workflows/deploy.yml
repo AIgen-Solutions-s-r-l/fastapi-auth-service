@@ -38,7 +38,7 @@ jobs:
         key: ${{ secrets.SERVER_PRIVATE_KEY }}
         port: 22
         script: |
-          cd ~/app
+          cd ~/services/auth/app
           docker build -t auth_service .
           docker stop auth_service || true
           docker rm auth_service || true
