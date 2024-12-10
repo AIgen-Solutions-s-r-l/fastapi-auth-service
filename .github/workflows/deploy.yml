@@ -20,7 +20,7 @@ jobs:
 
     # Step 3: Copy files to the server
     - name: Copy project to server
-      uses: appleboy/scp-action@v0.1.8
+      uses: appleboy/scp-action@master
       with:
         host: ${{ secrets.SERVER_IP }}
         username: ${{ secrets.SERVER_USERNAME }}
