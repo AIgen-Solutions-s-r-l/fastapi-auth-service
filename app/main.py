@@ -117,7 +117,19 @@ async def root():
 app.include_router(auth_router, prefix="/auth")
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError
+) -> JSONResponse:
+    """Handle validation exceptions and return formatted error response.
+    
+    Args:
+        request: The incoming request
+        exc: The validation exception
+        
+    Returns:
+        JSONResponse with validation error details
+    """
     logger.error(
         "Request validation error",
         extra={
