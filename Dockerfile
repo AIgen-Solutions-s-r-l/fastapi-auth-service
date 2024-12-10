@@ -30,7 +30,7 @@ WORKDIR /app
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8000 \
+    PORT=8001 \
     PATH="/app/.local/bin:$PATH"
 
 # Install curl for healthcheck
@@ -59,7 +59,7 @@ EXPOSE $PORT
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl --fail http://localhost:$PORT/ || exit 1
+    CMD curl --fail http://127.0.0.1:8001/ || exit 1
 
 # Command to run the application
 CMD ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001"]
