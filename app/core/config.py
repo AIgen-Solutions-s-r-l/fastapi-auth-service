@@ -14,20 +14,20 @@ class Settings(BaseSettings):
 
     # Logging settings
     log_level: str = "DEBUG"
-    syslog_host: str = "localhost"
+    syslog_host: str = "host.docker.internal"
     syslog_port: int = 5141
     json_logs: bool = True
     log_retention: str = "7 days"
 
     # RabbitMQ settings
-    rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
+    rabbitmq_url: str = "amqp://guest:guest@host.docker.internal:5672/"
 
     # Database settings
-    database_url: str = "postgresql+asyncpg://testuser:testpassword@localhost:5432/main_db"
-    test_database_url: str = "postgresql+asyncpg://testuser:testpassword@localhost:5432/test_db"
+    database_url: str = "postgresql+asyncpg://testuser:testpassword@host.docker.internal:5432/main_db"
+    test_database_url: str = "postgresql+asyncpg://testuser:testpassword@host.docker.internal:5432/test_db"
 
     # MongoDB settings
-    mongodb_host: str = "localhost"
+    mongodb_host: str = "host.docker.internal"
     mongodb_port: int = 27017
     mongodb_username: str = "appUser"
     mongodb_password: str = "password123"
