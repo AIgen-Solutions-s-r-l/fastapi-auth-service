@@ -23,6 +23,7 @@ test_connection(settings.syslog_host, settings.syslog_port)
 # Initialize logger
 logger = init_logging(settings)
 
+
 def message_callback(ch, method, properties, body):
     """Callback function to process each message from RabbitMQ."""
     logger.info(
@@ -35,12 +36,14 @@ def message_callback(ch, method, properties, body):
         }
     )
 
+
 # Global instance of RabbitMQClient
 rabbit_client = RabbitMQClient(
     rabbitmq_url=settings.rabbitmq_url,
     queue="my_queue",
     callback=message_callback
 )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -100,6 +103,7 @@ app.add_middleware(
     max_age=600,
 )
 
+
 @app.get("/")
 async def root():
     """Root endpoint that returns service status"""
@@ -116,17 +120,18 @@ async def root():
 # Include routers
 app.include_router(auth_router, prefix="/auth")
 
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(
     request: Request,
     exc: RequestValidationError
 ) -> JSONResponse:
     """Handle validation exceptions and return formatted error response.
-    
+
     Args:
         request: The incoming request
         exc: The validation exception
-        
+
     Returns:
         JSONResponse with validation error details
     """
@@ -148,6 +153,7 @@ async def validation_exception_handler(
         }
     )
 
+
 @app.exception_handler(AuthException)
 async def auth_exception_handler(request: Request, exc: AuthException) -> JSONResponse:
     logger.error(
@@ -164,6 +170,7 @@ async def auth_exception_handler(request: Request, exc: AuthException) -> JSONRe
         status_code=exc.status_code,
         content=exc.detail
     )
+
 
 @app.get("/test-log")
 async def test_log():

@@ -9,7 +9,8 @@ class Settings(BaseSettings):
     """
     # Service settings
     service_name: str = "authService"
-    environment: Literal["development", "staging", "production"] = "development"
+    environment: Literal["development",
+                         "staging", "production"] = "development"
     debug: bool = True
 
     # Logging settings
@@ -32,12 +33,25 @@ class Settings(BaseSettings):
     mongodb_username: str = "appUser"
     mongodb_password: str = "password123"
     mongodb_database: str = "main_db"
+    
     mongodb_auth_source: str = "main_db"
 
     # Authentication settings
     secret_key: str = "your-secret-key-here"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+
+    # Email settings
+    MAIL_USERNAME: str = os.getenv("MAIL_USERNAME")
+    MAIL_PASSWORD: str = os.getenv("MAIL_PASSWORD")
+    MAIL_FROM: str = os.getenv("MAIL_FROM")
+    MAIL_PORT: int = int(os.getenv("MAIL_PORT", 587))
+    MAIL_SERVER: str = os.getenv("MAIL_SERVER")
+    MAIL_SSL_TLS: bool = os.getenv("MAIL_SSL_TLS", True)
+    MAIL_STARTTLS: bool = os.getenv("MAIL_STARTTLS", True)
+
+    # Frontend URL for reset link
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
     # Construct MongoDB URI with auth source
     @property

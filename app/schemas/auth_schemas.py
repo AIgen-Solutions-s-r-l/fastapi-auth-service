@@ -1,6 +1,6 @@
-# app/core/auth_schemas.py
+"""Pydantic models for authentication-related request and response schemas."""
+
 from pydantic import BaseModel, EmailStr, ConfigDict
-from datetime import datetime, timezone, timedelta
 
 
 class LoginRequest(BaseModel):
@@ -34,3 +34,14 @@ class PasswordChange(BaseModel):
     new_password: str
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PasswordResetRequest(BaseModel):
+    """Schema for password reset request."""
+    email: EmailStr
+
+
+class PasswordReset(BaseModel):
+    """Schema for password reset with token."""
+    token: str
+    new_password: str

@@ -1,21 +1,29 @@
+"""Router module for authentication-related endpoints including login, registration, and password management."""
+
 from datetime import timedelta, datetime, timezone
 from typing import Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from jose import jwt
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.exceptions import UserAlreadyExistsError, UserNotFoundError, InvalidCredentialsError
 from app.core.security import create_access_token
-from app.schemas.auth_schemas import LoginRequest, Token, UserCreate, PasswordChange
+from app.schemas.auth_schemas import LoginRequest, Token, UserCreate, PasswordChange, PasswordResetRequest, PasswordReset
 from app.services.user_service import (
     create_user, authenticate_user, get_user_by_username,
-    update_user_password, delete_user
+    update_user_password, delete_user, create_password_reset_token, verify_reset_token, reset_password, get_user_by_email
 )
 from app.core.logging_config import LogConfig
+from app.core.email import send_email
+from app.core.config import Settings
+
 
 router = APIRouter(tags=["authentication"])
 logger = LogConfig.get_logger()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+settings = Settings()
+
 
 @router.post(
     "/login",
@@ -44,7 +52,7 @@ async def login(
         # Calculate expiration time using timezone-aware datetime
         expires_delta = timedelta(minutes=60)
         expire_time = datetime.now(timezone.utc) + expires_delta
-        
+
         access_token = create_access_token(
             data={
                 "sub": user.username,
@@ -67,6 +75,7 @@ async def login(
             "error_details": str(e)
         })
         raise InvalidCredentialsError() from e
+
 
 @router.post(
     "/register",
@@ -105,11 +114,11 @@ async def register_user(
     """
     try:
         new_user = await create_user(db, user.username, str(user.email), user.password)
-        
+
         # Calculate expiration time using timezone-aware datetime
         expires_delta = timedelta(minutes=60)
         expire_time = datetime.now(timezone.utc) + expires_delta
-        
+
         access_token = create_access_token(
             data={
                 "sub": user.username,
@@ -139,7 +148,9 @@ async def register_user(
             "email": str(user.email),
             "error_type": "user_exists"
         })
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+
 
 @router.get(
     "/users/{username}",
@@ -167,7 +178,9 @@ async def get_user_details(
             "username": username,
             "error_type": "user_not_found"
         })
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+
 
 @router.put(
     "/users/{username}/password",
@@ -211,6 +224,7 @@ async def change_password(
             detail=str(e)
         ) from e
 
+
 @router.delete(
     "/users/{username}",
     responses={
@@ -248,6 +262,7 @@ async def remove_user(
             detail=str(e)
         ) from e
 
+
 @router.post("/logout")
 async def logout() -> Dict[str, str]:
     """
@@ -257,3 +272,62 @@ async def logout() -> Dict[str, str]:
     The client should handle token removal from their storage.
     """
     return {"message": "Successfully logged out"}
+
+
+@router.post("/password-reset-request")
+async def request_password_reset(
+    request: PasswordResetRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Request a password reset link to be sent via email."""
+    try:
+        token = await create_password_reset_token(db, request.email)
+        reset_link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+
+        background_tasks.add_task(
+            send_email,
+            to_email=request.email,
+            subject="Password Reset Request",
+            template="password_reset.html",
+            context={
+                "reset_link": reset_link,
+                "username": request.email
+            }
+        )
+
+        return {"message": "Password reset link sent to email if account exists"}
+    except (UserNotFoundError, ValueError, jwt.JWTError) as e:
+        logger.error("Password reset request failed", extra={
+            "event_type": "password_reset_request_error",
+            "email": request.email,
+            "error": str(e)
+        })
+        # Return same message to prevent email enumeration
+        return {"message": "Password reset link sent to email if account exists"}
+
+
+@router.post("/reset-password")
+async def reset_password_with_token(
+    reset_data: PasswordReset,
+    db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Reset password using the token received via email."""
+    try:
+        user_id = await verify_reset_token(reset_data.token)
+        await reset_password(db, user_id, reset_data.new_password)
+
+        logger.info("Password reset successful", extra={
+            "event_type": "password_reset_success",
+            "user_id": user_id
+        })
+        return {"message": "Password has been reset successfully"}
+    except (UserNotFoundError, jwt.JWTError, ValueError) as e:
+        logger.error("Password reset failed", extra={
+            "event_type": "password_reset_error",
+            "error": str(e)
+        })
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        ) from e
