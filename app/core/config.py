@@ -1,5 +1,5 @@
 import os
-from typing import Literal
+from typing import Literal, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,13 +42,13 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
 
     # Email settings
-    MAIL_USERNAME: str = os.getenv("MAIL_USERNAME")
-    MAIL_PASSWORD: str = os.getenv("MAIL_PASSWORD")
-    MAIL_FROM: str = os.getenv("MAIL_FROM")
-    MAIL_PORT: int = int(os.getenv("MAIL_PORT", 587))
-    MAIL_SERVER: str = os.getenv("MAIL_SERVER")
-    MAIL_SSL_TLS: bool = os.getenv("MAIL_SSL_TLS", True)
-    MAIL_STARTTLS: bool = os.getenv("MAIL_STARTTLS", True)
+    MAIL_USERNAME: Optional[str] = None
+    MAIL_PASSWORD: Optional[str] = None
+    MAIL_FROM: Optional[str] = None
+    MAIL_PORT: int = 587
+    MAIL_SERVER: Optional[str] = None
+    MAIL_SSL_TLS: bool = True
+    MAIL_STARTTLS: bool = True
 
     # Frontend URL for reset link
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
