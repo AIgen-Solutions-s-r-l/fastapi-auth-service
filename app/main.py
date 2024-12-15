@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 from threading import Thread
+from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
