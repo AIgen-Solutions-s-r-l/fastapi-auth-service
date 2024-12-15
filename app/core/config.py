@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     log_retention: str = "7 days"
 
     # RabbitMQ settings
+    rabbitmq_enabled: bool = False  # Set to False by default
     rabbitmq_url: str = "amqp://guest:guest@172.17.0.1:5672/"
 
     # Database settings
