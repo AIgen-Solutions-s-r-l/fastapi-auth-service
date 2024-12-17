@@ -216,7 +216,10 @@ Response:
 }
 ```
 
-#### Get Resume by User ID
+![Auth Prereq](https://github.com/user-attachments/assets/48f5e68c-001a-4c02-bfcd-95ef4a681f9e)
+
+
+#### Get Resume by User ID (NOW SHIFTED in RESUME, but here are useful details)
 
 Retrieve a user's resume by user ID at `GET /resume_ingestor/resume/{user_id}`:
 
