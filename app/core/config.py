@@ -20,22 +20,9 @@ class Settings(BaseSettings):
     json_logs: bool = True
     log_retention: str = "7 days"
 
-    # RabbitMQ settings
-    rabbitmq_enabled: bool = False  # Set to False by default
-    rabbitmq_url: str = "amqp://guest:guest@172.17.0.1:5672/"
-
     # Database settings
     database_url: str = "postgresql+asyncpg://testuser:testpassword@172.17.0.1:5432/main_db"
     test_database_url: str = "postgresql+asyncpg://testuser:testpassword@172.17.0.1:5432/test_db"
-
-    # MongoDB settings
-    mongodb_host: str = "172.17.0.1"
-    mongodb_port: int = 27017
-    mongodb_username: str = "appUser"
-    mongodb_password: str = "password123"
-    mongodb_database: str = "main_db"
-    
-    mongodb_auth_source: str = "main_db"
 
     # Authentication settings
     secret_key: str = "your-secret-key-here"
@@ -53,11 +40,6 @@ class Settings(BaseSettings):
 
     # Frontend URL for reset link
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
-
-    # Construct MongoDB URI with auth source
-    @property
-    def mongodb_uri(self) -> str:
-        return f"mongodb://{self.mongodb_username}:{self.mongodb_password}@{self.mongodb_host}:{self.mongodb_port}/{self.mongodb_database}?authSource={self.mongodb_auth_source}"
 
     # Environment-specific logging configuration
     @property
