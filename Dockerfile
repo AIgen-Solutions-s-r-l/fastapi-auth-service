@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+LABEL org.opencontainers.image.source=https://github.com/AIHawk-Startup/auth_service
+LABEL org.opencontainers.image.licenses=MIT
+
 # Install poetry
 RUN pip install poetry
 
