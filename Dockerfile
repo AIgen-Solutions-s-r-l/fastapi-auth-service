@@ -21,8 +21,7 @@ COPY ./app /app/app
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8001 \
-    PATH="/app/.local/bin:$PATH"
+    PORT=8001 
 
 # Command to run the application
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
