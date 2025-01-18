@@ -14,8 +14,9 @@ from app.routers.auth_router import router as auth_router
 # Initialize settings
 settings = Settings()
 
-# Test connection first
-test_connection(settings.syslog_host, settings.syslog_port)
+# Test logstash connection if enabled
+if settings.enable_logstash:
+    test_connection(settings.syslog_host, settings.syslog_port)
 
 # Initialize logger
 logger = init_logging(settings)

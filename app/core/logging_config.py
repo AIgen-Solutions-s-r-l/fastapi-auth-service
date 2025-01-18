@@ -92,7 +92,8 @@ def init_logging(settings) -> logger:
             log_level=settings.log_level,
             syslog_host=settings.syslog_host,
             syslog_port=settings.syslog_port,
-            json_logs=settings.json_logs
+            json_logs=settings.json_logs,
+            enable_logstash=settings.enable_logstash
         )
         return logger
     except Exception as e:
@@ -139,7 +140,8 @@ class LogConfig:
             log_level: str = "DEBUG",
             syslog_host: str = "localhost",
             syslog_port: int = 5141,
-            json_logs: bool = True
+            json_logs: bool = True,
+            enable_logstash: bool = True
     ) -> None:
         """Configure loguru logger"""
         # Remove default handler
@@ -153,22 +155,23 @@ class LogConfig:
             colorize=True
         )
 
-        # TCP handler for Logstash
-        tcp_sink = TcpSink(
-            host=syslog_host,
-            port=syslog_port,
-            app_name=app_name
-        )
+        # TCP handler for Logstash if enabled
+        if enable_logstash and syslog_host and syslog_port:
+            tcp_sink = TcpSink(
+                host=syslog_host,
+                port=syslog_port,
+                app_name=app_name
+            )
 
-        logger.add(
-            tcp_sink,
-            level=log_level,
-            serialize=True,
-            enqueue=True,
-            backtrace=True,
-            diagnose=True,
-            catch=True
-        )
+            logger.add(
+                tcp_sink,
+                level=log_level,
+                serialize=True,
+                enqueue=True,
+                backtrace=True,
+                diagnose=True,
+                catch=True
+            )
 
     @staticmethod
     def get_logger():
