@@ -8,8 +8,11 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.exceptions import UserAlreadyExistsError, UserNotFoundError, InvalidCredentialsError
-from app.core.security import create_access_token
-from app.schemas.auth_schemas import LoginRequest, Token, UserCreate, PasswordChange, PasswordResetRequest, PasswordReset
+from app.core.security import create_access_token, verify_jwt_token
+from app.schemas.auth_schemas import (
+    LoginRequest, Token, UserCreate, PasswordChange,
+    PasswordResetRequest, PasswordReset, RefreshToken
+)
 from app.services.user_service import (
     create_user, authenticate_user, get_user_by_username,
     update_user_password, delete_user, create_password_reset_token, verify_reset_token, reset_password, get_user_by_email
@@ -305,6 +308,70 @@ async def request_password_reset(
         })
         # Return same message to prevent email enumeration
         return {"message": "Password reset link sent to email if account exists"}
+
+
+@router.post(
+    "/refresh",
+    response_model=Token,
+    responses={
+        200: {"description": "Token refreshed successfully"},
+        401: {"description": "Invalid or expired token"}
+    }
+)
+async def refresh_token(
+    refresh_request: RefreshToken,
+    db: AsyncSession = Depends(get_db)
+) -> Token:
+    """Refresh an existing JWT token."""
+    try:
+        # Verify the existing token
+        payload = verify_jwt_token(refresh_request.token)
+        
+        # Get user from database to ensure they still exist
+        user = await get_user_by_username(db, payload.get("sub"))
+        if not user:
+            logger.error("Token refresh failed - user not found", extra={
+                "event_type": "token_refresh_error",
+                "username": payload.get("sub"),
+                "error_type": "user_not_found"
+            })
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token"
+            )
+
+        # Calculate new expiration time
+        expires_delta = timedelta(minutes=60)
+        expire_time = datetime.now(timezone.utc) + expires_delta
+
+        # Create new access token
+        access_token = create_access_token(
+            data={
+                "sub": user.username,
+                "id": user.id,
+                "is_admin": user.is_admin,
+                "exp": expire_time.timestamp()
+            },
+            expires_delta=expires_delta
+        )
+
+        logger.info("Token refreshed successfully", extra={
+            "event_type": "token_refresh_success",
+            "username": user.username
+        })
+
+        return Token(access_token=access_token, token_type="bearer")
+
+    except jwt.JWTError as e:
+        logger.error("Token refresh failed - invalid token", extra={
+            "event_type": "token_refresh_error",
+            "error_type": "jwt_error",
+            "error_details": str(e)
+        })
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        ) from e
 
 
 @router.post("/reset-password")

@@ -26,7 +26,15 @@
      - Expiration time (60 minutes)
    - Returns token for subsequent authenticated requests
 
-3. **Password Reset Flow**
+3. **Token Refresh Flow**
+   - Client submits existing JWT token
+   - System verifies token validity and user existence
+   - On success, generates new JWT token with:
+     - Same user claims (ID, username, admin status)
+     - New expiration time (60 minutes)
+   - Returns new token for continued authentication
+
+4. **Password Reset Flow**
    - User requests password reset with email
    - System generates secure reset token (JWT)
    - Reset link is sent to user's email
@@ -235,6 +243,22 @@ Content-Type: application/json
 
 {
     "new_password": "newSecurePassword"
+}
+```
+
+#### Refresh Token
+```http
+POST /auth/refresh
+Content-Type: application/json
+
+{
+    "token": "existing-jwt-token"
+}
+
+Response:
+{
+    "access_token": "new-jwt-token",
+    "token_type": "bearer"
 }
 ```
 

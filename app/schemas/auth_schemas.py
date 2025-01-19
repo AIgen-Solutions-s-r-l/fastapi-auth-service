@@ -28,6 +28,13 @@ class Token(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RefreshToken(BaseModel):
+    """Pydantic model for token refresh request."""
+    token: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class PasswordChange(BaseModel):
     """Pydantic model for password change request."""
     current_password: str
