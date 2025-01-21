@@ -246,6 +246,24 @@ Content-Type: application/json
 }
 ```
 
+#### Get User Profile
+```http
+GET /auth/me
+Authorization: Bearer <jwt-token>
+
+Response:
+{
+    "username": "johndoe",
+    "email": "johndoe@example.com"
+}
+```
+
+Optional query parameter for admin users:
+```http
+GET /auth/me?user_id=123
+Authorization: Bearer <admin-jwt-token>
+```
+
 #### Refresh Token
 ```http
 POST /auth/refresh

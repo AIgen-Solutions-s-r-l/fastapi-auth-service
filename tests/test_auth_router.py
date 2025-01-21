@@ -95,6 +95,52 @@ async def test_change_password(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_get_current_user_profile(async_client: AsyncClient):
+    """Test getting current user profile."""
+    # First register a user
+    register_response = await async_client.post(
+        "/auth/register",
+        json=test_user
+    )
+    token = register_response.json()["access_token"]
+
+    # Get own profile
+    headers = {"Authorization": f"Bearer {token}"}
+    response = await async_client.get("/auth/me", headers=headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["username"] == test_user["username"]
+    assert data["email"] == test_user["email"]
+
+
+@pytest.mark.asyncio
+async def test_get_other_user_profile_as_non_admin(async_client: AsyncClient):
+    """Test that non-admin users cannot get other users' profiles."""
+    # First register a user
+    register_response = await async_client.post(
+        "/auth/register",
+        json=test_user
+    )
+    token = register_response.json()["access_token"]
+
+    # Try to get another user's profile
+    headers = {"Authorization": f"Bearer {token}"}
+    response = await async_client.get("/auth/me?user_id=999", headers=headers)
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.asyncio
+async def test_invalid_token_profile_access(async_client: AsyncClient):
+    """Test that invalid tokens cannot access profiles."""
+    headers = {"Authorization": "Bearer invalid_token"}
+    response = await async_client.get("/auth/me", headers=headers)
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.asyncio
 async def test_logout(async_client: AsyncClient):
     """Test logout endpoint."""
     response = await async_client.post("/auth/logout")

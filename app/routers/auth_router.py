@@ -374,6 +374,78 @@ async def refresh_token(
         ) from e
 
 
+@router.get(
+    "/me",
+    response_model=Dict[str, Any],
+    responses={
+        200: {
+            "description": "User profile retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "username": "john_doe",
+                        "email": "john@example.com"
+                    }
+                }
+            }
+        },
+        401: {"description": "Not authenticated"},
+        404: {"description": "User not found"}
+    }
+)
+async def get_current_user_profile(
+    user_id: int | None = None,
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Retrieve username and email of the authenticated user.
+    If user_id is provided, it will return that user's profile instead of the authenticated user's profile.
+    """
+    try:
+        # Verify token and get payload
+        payload = verify_jwt_token(token)
+        
+        # Use provided user_id or get from token
+        target_user_id = user_id if user_id is not None else payload.get("id")
+        
+        # Get user from database
+        user = await get_user_by_username(db, payload.get("sub"))
+        if not user:
+            raise UserNotFoundError("User not found")
+            
+        # If requesting another user's profile, verify admin status
+        if user_id is not None and user_id != user.id:
+            if not payload.get("is_admin", False):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to view other users' profiles"
+                )
+            user = await get_user_by_username(db, str(user_id))
+            if not user:
+                raise UserNotFoundError("Requested user not found")
+        
+        logger.info("User profile retrieved", extra={
+            "event_type": "profile_retrieved",
+            "username": user.username
+        })
+        
+        return {
+            "username": user.username,
+            "email": str(user.email)
+        }
+        
+    except (jwt.JWTError, UserNotFoundError) as e:
+        logger.error("Profile retrieval failed", extra={
+            "event_type": "profile_retrieval_error",
+            "error_type": type(e).__name__,
+            "error_details": str(e)
+        })
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials"
+        ) from e
+
 @router.post("/reset-password")
 async def reset_password_with_token(
     reset_data: PasswordReset,
