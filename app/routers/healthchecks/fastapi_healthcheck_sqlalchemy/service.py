@@ -1,26 +1,34 @@
-from fastapi_healthcheck.service import HealthCheckBase
-from fastapi_healthcheck.enum import HealthCheckStatusEnum
-from fastapi_healthcheck.domain import HealthCheckInterface
+from app.routers.healthchecks.fastapi_healthcheck.service import HealthCheckBase
+from app.routers.healthchecks.fastapi_healthcheck.enum import HealthCheckStatusEnum
+from app.routers.healthchecks.fastapi_healthcheck.domain import HealthCheckInterface
 from typing import List
-from fastapi_sqlalchemy import db
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy import text
+from app.core.logging_config import init_logging
+from app.core.config import Settings
+
+settings = Settings()
+logger = init_logging(settings)
 
 class HealthCheckSQLAlchemy(HealthCheckBase, HealthCheckInterface):
-    _connectionUri: str
+    _connection_uri: str
     _tags: List[str]
-    _message: str
 
-    def __init__(self, alias: str, tags: List[str]) -> None:
+    def __init__(self, connection_uri: str, alias: str, tags: List[str]) -> None:
+        self._connection_uri = connection_uri
         self._alias = alias
         self._tags = tags
+        self._engine = create_async_engine(self._connection_uri, future=True)
 
-    def __checkHealth__(self) -> HealthCheckStatusEnum:
-        res: HealthCheckStatusEnum = HealthCheckStatusEnum.UNHEALTHY
-        with db():
+    async def __checkHealth__(self) -> HealthCheckStatusEnum:
+        res = HealthCheckStatusEnum.UNHEALTHY
+        async with AsyncSession(self._engine) as session:
             try:
-                r = -1
-                r = db.session.execute('SELECT 1').scalar()
-                if r != -1:
+                sql = text("SELECT 1")
+                result = await session.execute(sql)
+                if result.scalar() == 1:
                     res = HealthCheckStatusEnum.HEALTHY
             except Exception as e:
-                pass
-        return res  
+                logger.error(f"Database health check failed: {e}")
+                res = HealthCheckStatusEnum.UNHEALTHY
+        return res

@@ -32,7 +32,7 @@ class HealthCheckFactory:
             return self._entityStopTime - self._entityStartTime
         return self._totalStopTime - self._totalStartTime
 
-    def __dumpModel__(self, model: HealthCheckModel) -> str:
+    async def __dumpModel__(self, model: HealthCheckModel) -> str:
         """This goes and convert python objects to something a json object."""
         l = list()
         for i in model.entities:
@@ -46,7 +46,7 @@ class HealthCheckFactory:
 
         return dict(model)
 
-    def check(self) -> HealthCheckModel:
+    async def check(self) -> HealthCheckModel:
         self._health = HealthCheckModel()
         self.__startTimer__(False)
         for i in self._healthItems:
@@ -59,7 +59,7 @@ class HealthCheckFactory:
 
             # Track how long the entity took to respond
             self.__startTimer__(True)
-            item.status = i.__checkHealth__()
+            item.status = await i.__checkHealth__()
             self.__stopTimer__(True)
             item.timeTaken = self.__getTimeTaken__(True)
 
@@ -71,7 +71,7 @@ class HealthCheckFactory:
         self.__stopTimer__(False)
         self._health.totalTimeTaken = self.__getTimeTaken__(False)
 
-        self._health = self.__dumpModel__(self._health)
+        self._health = await self.__dumpModel__(self._health)
 
         return self._health
 
