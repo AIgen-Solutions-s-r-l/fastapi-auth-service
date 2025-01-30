@@ -6,13 +6,11 @@ from fastapi_sqlalchemy import db
 
 class HealthCheckSQLAlchemy(HealthCheckBase, HealthCheckInterface):
     _connectionUri: str
-    _table: object | None
     _tags: List[str]
     _message: str
 
-    def __init__(self, table: object, alias: str, tags: List[str]) -> None:
+    def __init__(self, alias: str, tags: List[str]) -> None:
         self._alias = alias
-        self._table = table
         self._tags = tags
 
     def __checkHealth__(self) -> HealthCheckStatusEnum:
