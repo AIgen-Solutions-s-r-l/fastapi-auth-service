@@ -20,7 +20,7 @@ async def health_check():
     _healthChecks = HealthCheckFactory()
     _healthChecks.add(
         HealthCheckSQLAlchemy(
-            connection_uri="postgresql+asyncpg://testuser:testpassword@172.17.0.1:5432/main",
+            connection_uri="postgresql+asyncpg://testuser:testpassword@172.17.0.1:5432/main_db",
             alias='postgres db',
             tags=('postgres', 'db', 'sql01')
         )
