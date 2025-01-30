@@ -5,11 +5,13 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi_sqlalchemy import DBSessionMiddleware
 
 from app.core.config import Settings
 from app.core.exceptions import AuthException
 from app.core.logging_config import init_logging, test_connection
 from app.routers.auth_router import router as auth_router
+from app.routers.healthcheck_router import router as healthcheck_router
 
 # Initialize settings
 settings = Settings()
@@ -76,6 +78,9 @@ app.add_middleware(
     max_age=600,
 )
 
+app.add_middleware(DBSessionMiddleware, db_url=settings.database_url)
+
+
 
 @app.get("/")
 async def root():
@@ -92,6 +97,7 @@ async def root():
 
 # Include routers
 app.include_router(auth_router, prefix="/auth")
+app.include_router(healthcheck_router)
 
 
 @app.exception_handler(RequestValidationError)
