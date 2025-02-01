@@ -415,7 +415,7 @@ async def get_current_user_profile(
             raise UserNotFoundError("User not found")
             
         # If requesting another user's profile, verify admin status
-        if user_id is not None and user_id != user.id:
+        if user_id is not None and user_id != user["id"]:
             if not payload.get("is_admin", False):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
