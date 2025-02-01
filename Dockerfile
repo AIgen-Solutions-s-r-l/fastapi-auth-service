@@ -15,7 +15,7 @@ WORKDIR /app
 # Configures Poetry to not create a virtual environment for the project,
 # ensuring that dependencies are installed directly in the system environment.
 RUN poetry config virtualenvs.create false
-RUN poetry install --no-root --only main
+RUN poetry install --no-root
 
 # Copy the application code
 COPY ./app /app/app
