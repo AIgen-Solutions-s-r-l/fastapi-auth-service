@@ -80,6 +80,228 @@ The service implements comprehensive error handling with custom exceptions:
 
 All errors are logged with context for debugging and monitoring.
 
+## API Endpoints
+
+### Authentication Headers
+
+For protected endpoints, include the JWT token in the Authorization header:
+```http
+Authorization: Bearer <your-jwt-token>
+```
+
+### Rate Limiting
+
+All endpoints are rate-limited to prevent abuse:
+- 100 requests per minute for authentication endpoints
+- 1000 requests per minute for other endpoints
+- Rate limits are per IP address
+
+### 1. User Registration
+
+```http
+POST /auth/register
+Content-Type: application/json
+
+{
+    "username": "johndoe",
+    "email": "johndoe@example.com",
+    "password": "securepassword"
+}
+
+Response (201 Created):
+{
+    "message": "User registered successfully",
+    "username": "johndoe",
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "token_type": "bearer"
+}
+
+Possible Status Codes:
+- 201: Successfully registered
+- 409: Username or email already exists
+- 422: Validation error (invalid email format, password too short)
+```
+
+### 2. User Login
+
+```http
+POST /auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username=johndoe&password=securepassword
+
+Response (200 OK):
+{
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "token_type": "bearer"
+}
+
+Possible Status Codes:
+- 200: Successfully authenticated
+- 401: Invalid credentials
+- 422: Validation error
+```
+
+### 3. Get User Profile
+
+```http
+GET /auth/me
+Authorization: Bearer <jwt-token>
+
+Response (200 OK):
+{
+    "username": "johndoe",
+    "email": "johndoe@example.com"
+}
+
+Optional Query Parameters:
+- user_id: (Admin only) Get another user's profile
+
+Possible Status Codes:
+- 200: Profile retrieved successfully
+- 401: Not authenticated
+- 403: Not authorized (when non-admin tries to access other profiles)
+- 404: User not found
+```
+
+### 4. Password Reset Request
+
+```http
+POST /auth/password-reset-request
+Content-Type: application/json
+
+{
+    "email": "johndoe@example.com"
+}
+
+Response (200 OK):
+{
+    "message": "Password reset link sent to email if account exists"
+}
+
+Note: Always returns 200 OK to prevent email enumeration
+```
+
+### 5. Reset Password
+
+```http
+POST /auth/reset-password
+Content-Type: application/json
+
+{
+    "token": "reset-token-from-email",
+    "new_password": "newSecurePassword"
+}
+
+Response (200 OK):
+{
+    "message": "Password has been reset successfully"
+}
+
+Possible Status Codes:
+- 200: Password reset successful
+- 400: Invalid or expired reset token
+- 422: Validation error (password requirements not met)
+```
+
+### 6. Change Password
+
+```http
+PUT /auth/users/{username}/password
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+    "current_password": "currentPassword",
+    "new_password": "newSecurePassword"
+}
+
+Response (200 OK):
+{
+    "message": "Password updated successfully"
+}
+
+Possible Status Codes:
+- 200: Password changed successfully
+- 401: Invalid current password
+- 404: User not found
+- 422: Validation error
+```
+
+### 7. Delete Account
+
+```http
+DELETE /auth/users/{username}
+Authorization: Bearer <jwt-token>
+
+Query Parameters:
+password: Current password for verification
+
+Response (200 OK):
+{
+    "message": "User deleted successfully"
+}
+
+Possible Status Codes:
+- 200: Account deleted successfully
+- 401: Invalid password
+- 404: User not found
+```
+
+### 8. Refresh Token
+
+```http
+POST /auth/refresh
+Content-Type: application/json
+
+{
+    "token": "existing-jwt-token"
+}
+
+Response (200 OK):
+{
+    "access_token": "new-jwt-token",
+    "token_type": "bearer"
+}
+
+Possible Status Codes:
+- 200: Token refreshed successfully
+- 401: Invalid or expired token
+```
+
+### 9. Logout
+
+```http
+POST /auth/logout
+Authorization: Bearer <jwt-token>
+
+Response (200 OK):
+{
+    "message": "Successfully logged out"
+}
+
+Note: Client should handle token removal from storage
+```
+
+### 10. Get User Details
+
+```http
+GET /auth/users/{username}
+Authorization: Bearer <jwt-token>
+
+Response (200 OK):
+{
+    "username": "johndoe",
+    "email": "johndoe@example.com",
+    "id": 1,
+    "is_admin": false
+}
+
+Possible Status Codes:
+- 200: User details retrieved successfully
+- 404: User not found
+```
+
 ## Key Features
 
 - **User Authentication**
@@ -193,91 +415,6 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 ### Production Mode
 ```sh
 uvicorn app.main:app --host 0.0.0.0 --port 80
-```
-
-## API Endpoints
-
-### Health Check
-```http
-GET /
-Response: {"message": "authService is up and running!"}
-```
-
-### Authentication
-
-#### Register User
-```http
-POST /auth/register
-Content-Type: application/json
-
-{
-    "username": "johndoe",
-    "email": "johndoe@example.com",
-    "password": "securepassword"
-}
-```
-
-#### User Login
-```http
-POST /auth/login
-Content-Type: application/x-www-form-urlencoded
-
-username=johndoe
-password=securepassword
-```
-
-#### Password Reset Request
-```http
-POST /auth/forgot-password
-Content-Type: application/json
-
-{
-    "email": "johndoe@example.com"
-}
-```
-
-#### Reset Password
-```http
-POST /auth/reset-password/{token}
-Content-Type: application/json
-
-{
-    "new_password": "newSecurePassword"
-}
-```
-
-#### Get User Profile
-```http
-GET /auth/me
-Authorization: Bearer <jwt-token>
-
-Response:
-{
-    "username": "johndoe",
-    "email": "johndoe@example.com"
-}
-```
-
-Optional query parameter for admin users:
-```http
-GET /auth/me?user_id=123
-Authorization: Bearer <admin-jwt-token>
-```
-
-#### Refresh Token
-```http
-POST /auth/refresh
-Content-Type: application/json
-
-{
-    "token": "existing-jwt-token"
-}
-
-Response:
-{
-    "access_token": "new-jwt-token",
-    "token_type": "bearer"
-}
 ```
 
 ## Development Tools
