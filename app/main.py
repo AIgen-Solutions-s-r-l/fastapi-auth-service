@@ -1,7 +1,7 @@
 """FastAPI application entry point for the Authentication Service."""
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -9,6 +9,7 @@ from fastapi_sqlalchemy import DBSessionMiddleware
 
 from app.core.config import Settings
 from app.core.exceptions import AuthException
+from app.core.error_handlers import validation_exception_handler, auth_exception_handler, http_exception_handler, generic_exception_handler
 from app.core.logging_config import init_logging, test_connection
 from app.routers.auth_router import router as auth_router
 from app.routers.healthcheck_router import router as healthcheck_router
@@ -23,7 +24,6 @@ if settings.enable_logstash:
 # Initialize logger
 logger = init_logging(settings)
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for FastAPI application."""
@@ -36,9 +36,7 @@ async def lifespan(app: FastAPI):
             "status": "starting"
         }
     )
-
     yield
-
     # Shutdown
     logger.info(
         "Shutting down application",
@@ -78,9 +76,14 @@ app.add_middleware(
     max_age=600,
 )
 
+# Add DB session middleware
 app.add_middleware(DBSessionMiddleware, db_url=settings.database_url)
 
-
+# Register exception handlers
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(AuthException, auth_exception_handler)
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(Exception, generic_exception_handler)
 
 @app.get("/")
 async def root():
@@ -98,58 +101,6 @@ async def root():
 # Include routers
 app.include_router(auth_router, prefix="/auth")
 app.include_router(healthcheck_router)
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(
-    request: Request,
-    exc: RequestValidationError
-) -> JSONResponse:
-    """Handle validation exceptions and return formatted error response.
-
-    Args:
-        request: The incoming request
-        exc: The validation exception
-
-    Returns:
-        JSONResponse with validation error details
-    """
-    logger.error(
-        "Request validation error",
-        extra={
-            "event_type": "validation_error",
-            "error_details": exc.errors(),
-            "endpoint": request.url.path,
-            "method": request.method
-        }
-    )
-    return JSONResponse(
-        status_code=422,
-        content={
-            "error": "ValidationError",
-            "message": "Invalid request data",
-            "details": exc.errors()
-        }
-    )
-
-
-@app.exception_handler(AuthException)
-async def auth_exception_handler(request: Request, exc: AuthException) -> JSONResponse:
-    logger.error(
-        "Authentication error",
-        extra={
-            "event_type": "auth_error",
-            "error_details": exc.detail,
-            "status_code": exc.status_code,
-            "endpoint": request.url.path,
-            "method": request.method
-        }
-    )
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=exc.detail
-    )
-
 
 @app.get("/test-log")
 async def test_log():
