@@ -19,8 +19,9 @@ RUN poetry install --no-root
 
 # Copy the application code
 COPY ./app /app/app
-COPY alembic.ini /
-COPY ./alembic /alembic
+
+COPY ./alembic.ini /app/
+COPY ./alembic /app/alembic/
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
