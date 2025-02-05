@@ -19,7 +19,6 @@ RUN poetry install --no-root
 
 # Copy the application code
 COPY ./app /app/app
-
 COPY ./alembic.ini /app/
 COPY ./alembic /app/alembic/
 
@@ -27,5 +26,22 @@ COPY ./alembic /app/alembic/
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 
 
-# Command to run the application
-CMD ["uvicorn", "app.main:app"]
+# Make the migration script executable
+RUN chmod +x /app/app/scripts/run_migrations.py
+
+# Create an entrypoint script
+COPY <<EOF /app/entrypoint.sh
+#!/bin/bash
+set -e
+
+# Run migrations
+python /app/app/scripts/run_migrations.py
+
+# Start the application
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+EOF
+
+RUN chmod +x /app/entrypoint.sh
+
+# Use the entrypoint script
+ENTRYPOINT ["/app/entrypoint.sh"]
