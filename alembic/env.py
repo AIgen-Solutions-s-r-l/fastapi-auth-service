@@ -8,6 +8,9 @@ from alembic import context
 from app.core.base import Base
 from app.core.config import Settings
 
+# Import all models so they are registered with Base.metadata
+from app.models.user import User, PasswordResetToken
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

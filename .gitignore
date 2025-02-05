@@ -138,4 +138,3 @@ venv
 venv/*
 
 .idea
-/alembic/versions/*
