@@ -266,15 +266,41 @@ async def remove_user(
         ) from e
 
 
-@router.post("/logout")
-async def logout() -> Dict[str, str]:
+@router.post(
+    "/logout",
+    responses={
+        200: {"description": "Successfully logged out"},
+        401: {"description": "Invalid or expired token"}
+    }
+)
+async def logout(token: str = Depends(oauth2_scheme)) -> Dict[str, str]:
     """
-    Logout endpoint for client-side cleanup.
-
+    Logout endpoint that validates the JWT token.
+    
     Note: In a JWT-based system, the token remains valid until expiration.
     The client should handle token removal from their storage.
     """
-    return {"message": "Successfully logged out"}
+    try:
+        # Verify token and get payload
+        payload = verify_jwt_token(token)
+        username = payload.get("sub")
+        
+        logger.info("User logged out", extra={
+            "event_type": "user_logout",
+            "username": username
+        })
+        
+        return {"message": "Successfully logged out"}
+    except jwt.JWTError as e:
+        logger.error("Logout failed - invalid token", extra={
+            "event_type": "logout_error",
+            "error_type": "jwt_error",
+            "error_details": str(e)
+        })
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        ) from e
 
 
 @router.post("/password-reset-request")
