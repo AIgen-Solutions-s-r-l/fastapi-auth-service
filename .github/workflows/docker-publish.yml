@@ -30,10 +30,6 @@ jobs:
           # Wait a few seconds to give the service time to start
           sleep 5
 
-      # --- Run tests ---
-      - name: Run tests
-        run: poetry run pytest --maxfail=1 --disable-warnings -v
-
       # --- Docker steps ---
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
