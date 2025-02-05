@@ -1,0 +1,91 @@
+graph TD
+    %% Styling
+    classDef database fill:#f9f,stroke:#333,stroke-width:2px
+    classDef core fill:#lightblue,stroke:#333
+    classDef router fill:#lightgreen,stroke:#333
+    classDef model fill:#lightyellow,stroke:#333
+    classDef service fill:#lightgray,stroke:#333
+
+    %% Main Application Entry
+    main[app/main.py]
+    
+    %% Core Components Subgraph
+    subgraph Core
+        config[core/config.py]
+        database[core/database.py]:::database
+        security[core/security.py]
+        auth[core/auth.py]
+        email[core/email.py]
+        error[core/error_handlers.py]
+        exceptions[core/exceptions.py]
+        logging[core/logging_config.py]
+    end
+
+    %% Models Subgraph
+    subgraph Models
+        user_model[models/user.py]:::model
+    end
+
+    %% Routers Subgraph
+    subgraph Routers
+        auth_router[routers/auth_router.py]:::router
+        health_router[routers/healthcheck_router.py]:::router
+        health_domain[routers/healthchecks/fastapi_healthcheck/domain.py]
+        health_model[routers/healthchecks/fastapi_healthcheck/model.py]
+        health_service[routers/healthchecks/fastapi_healthcheck/service.py]
+        health_sqlalchemy[routers/healthchecks/fastapi_healthcheck_sqlalchemy/service.py]:::database
+    end
+
+    %% Services Subgraph
+    subgraph Services
+        user_service[services/user_service.py]:::service
+    end
+
+    %% Database Migration Components
+    subgraph Database_Migrations
+        alembic_env[alembic/env.py]:::database
+        run_migrations[scripts/run_migrations.py]
+        init_db[scripts/init_db.py]:::database
+    end
+
+    %% Dependencies and Relationships
+    main --> auth_router
+    main --> health_router
+    main --> database
+    main --> config
+
+    auth_router --> user_service
+    auth_router --> auth
+    auth_router --> security
+
+    user_service --> user_model
+    user_service --> database
+    user_service --> security
+    user_service --> email
+
+    health_router --> health_service
+    health_router --> health_sqlalchemy
+    health_service --> health_model
+    health_service --> health_domain
+    health_sqlalchemy --> database
+
+    alembic_env --> database
+    run_migrations --> alembic_env
+    init_db --> database
+
+    user_model --> database
+
+    %% Database Connections
+    database --> DB[(Database)]
+    health_sqlalchemy --> DB
+    user_model --> DB
+    init_db --> DB
+
+    %% Legend
+    subgraph Legend
+        db_component[Database Component]:::database
+        core_component[Core Component]:::core
+        router_component[Router Component]:::router
+        model_component[Model Component]:::model
+        service_component[Service Component]:::service
+    end
