@@ -27,21 +27,4 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 
 
 # Make the migration script executable
-RUN chmod +x /app/app/scripts/run_migrations.py
-
-# Create an entrypoint script
-COPY <<EOF /app/entrypoint.sh
-#!/bin/bash
-set -e
-
-# Run migrations
-python /app/app/scripts/run_migrations.py
-
-# Start the application
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000
-EOF
-
-RUN chmod +x /app/entrypoint.sh
-
-# Use the entrypoint script
-ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["uvicorn", "app.main:app"]
