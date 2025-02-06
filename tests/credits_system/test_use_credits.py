@@ -46,11 +46,12 @@ async def test_use_credits_insufficient_balance(async_client: AsyncClient, test_
         "/credits/use",
         headers=headers,
         json={
-            "amount": Decimal("1000.00"),
+            "amount": str(Decimal("1000.00")),
             "reference_id": "test_insufficient_001",
             "description": "Attempt to use more than available"
         }
     )
     
     assert response.status_code == 400, "Should reject insufficient balance"
-    assert "insufficient" in response.json()["detail"].lower(), "Wrong error message"
+    error_message = response.json()
+    assert "insufficient" in str(error_message).lower(), "Wrong error message"

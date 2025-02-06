@@ -76,6 +76,7 @@ class CreditService:
 
             transaction = CreditTransaction(
                 user_id=user_id,
+                user_credit_id=credit.id,
                 amount=amount,
                 transaction_type=TransactionType.CREDIT_ADDED,
                 reference_id=reference_id,
@@ -143,9 +144,9 @@ class CreditService:
 
             credit.balance -= amount
             credit.updated_at = datetime.now(UTC)
-
             transaction = CreditTransaction(
                 user_id=user_id,
+                user_credit_id=credit.id,
                 amount=amount,
                 transaction_type=TransactionType.CREDIT_USED,
                 reference_id=reference_id,
