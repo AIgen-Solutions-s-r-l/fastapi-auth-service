@@ -384,7 +384,7 @@ async def refresh_token(
 
         logger.info("Token refreshed successfully", extra={
             "event_type": "token_refresh_success",
-            "username": user["username"]
+            "username": user.username
         })
 
         return Token(access_token=access_token, token_type="bearer")
