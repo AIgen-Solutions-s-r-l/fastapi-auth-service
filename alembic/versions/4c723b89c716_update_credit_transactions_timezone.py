@@ -19,8 +19,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    pass
+    # Alter created_at column to use timezone
+    op.alter_column('credit_transactions', 'created_at',
+                   type_=sa.DateTime(timezone=True),
+                   existing_type=sa.DateTime(),
+                   existing_nullable=False)
 
 
 def downgrade() -> None:
-    pass
+    # Revert created_at column to not use timezone
+    op.alter_column('credit_transactions', 'created_at',
+                   type_=sa.DateTime(),
+                   existing_type=sa.DateTime(timezone=True),
+                   existing_nullable=False)
