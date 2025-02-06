@@ -19,14 +19,12 @@ from app.services.user_service import (
 )
 from app.core.logging_config import LogConfig
 from app.core.email import send_email
-from app.core.config import Settings
+from app.core.config import settings
 
 
 router = APIRouter(tags=["authentication"])
 logger = LogConfig.get_logger()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-settings = Settings()
-
 
 @router.post(
     "/login",

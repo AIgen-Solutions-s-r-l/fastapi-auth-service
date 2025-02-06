@@ -7,15 +7,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi_sqlalchemy import DBSessionMiddleware
 
-from app.core.config import Settings
+from app.core.config import settings
 from app.core.exceptions import AuthException
 from app.core.error_handlers import validation_exception_handler, auth_exception_handler, http_exception_handler, generic_exception_handler
 from app.core.logging_config import init_logging, test_connection
 from app.routers.auth_router import router as auth_router
 from app.routers.healthcheck_router import router as healthcheck_router
-
-# Initialize settings
-settings = Settings()
 
 # Test logstash connection if enabled
 if settings.enable_logstash:

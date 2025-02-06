@@ -6,7 +6,7 @@ from sqlalchemy import pool
 
 from alembic import context
 from app.core.base import Base
-from app.core.config import Settings
+from app.core.config import settings
 
 # Import all models so they are registered with Base.metadata
 from app.models.user import User, PasswordResetToken
@@ -25,7 +25,6 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 def get_url():
-    settings = Settings()
     url = settings.database_url
     if url.startswith("postgresql+asyncpg://"):
         return url.replace("postgresql+asyncpg://", "postgresql://")

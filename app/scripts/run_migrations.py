@@ -4,10 +4,9 @@ import sys
 import time
 from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
-from app.core.config import Settings
+from app.core.config import settings
 
 def wait_for_db():
-    settings = Settings()
     url = settings.database_url
     if url.startswith("postgresql+asyncpg://"):
         url = url.replace("postgresql+asyncpg://", "postgresql://")

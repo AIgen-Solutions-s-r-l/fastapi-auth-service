@@ -15,9 +15,7 @@ from app.core.exceptions import UserNotFoundError, UserAlreadyExistsError, Datab
 from app.core.security import verify_password, get_password_hash
 from app.models.user import User, PasswordResetToken
 from app.core.email import send_email
-from app.core.config import Settings
-
-settings = Settings()
+from app.core.config import settings
 
 
 async def authenticate_user(db: AsyncSession, username: str, password: str) -> User | None:

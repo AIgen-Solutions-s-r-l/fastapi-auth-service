@@ -5,9 +5,8 @@ from typing import List
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy import text
 from app.core.logging_config import init_logging
-from app.core.config import Settings
+from app.core.config import settings
 
-settings = Settings()
 logger = init_logging(settings)
 
 class HealthCheckSQLAlchemy(HealthCheckBase, HealthCheckInterface):

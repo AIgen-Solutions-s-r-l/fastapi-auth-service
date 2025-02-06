@@ -1,5 +1,5 @@
 import os
-from typing import Literal, Optional
+from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -65,3 +65,5 @@ class Settings(BaseSettings):
         return base_config
 
     model_config = SettingsConfigDict(env_file=".env")
+    
+settings = Settings()

@@ -1,11 +1,9 @@
 import os
-from app.core.config import Settings
-from app.core.base import Base
+from app.core.config import settings
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from app.core.logging_config import LogConfig
 
 logger = LogConfig.get_logger()
-settings = Settings()
 
 database_url = settings.test_database_url if os.getenv(
     "PYTEST_RUNNING") == "true" else settings.database_url

@@ -1,9 +1,6 @@
 from typing import Optional
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
-from app.core.config import Settings
-
-# Create a Settings instance
-settings = Settings()
+from app.core.config import settings
 
 # Initialize FastMail as None by default
 fastmail: Optional[FastMail] = None
