@@ -41,7 +41,7 @@ class CreditTransaction(Base):
     transaction_type = Column(String(20), nullable=False)
     reference_id = Column(String(100))
     description = Column(Text)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
 
     # Relationships
     user = relationship("User", back_populates="credit_transactions")
