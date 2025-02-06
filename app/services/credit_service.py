@@ -1,6 +1,6 @@
 """Service layer for managing user credits."""
 
-from datetime import datetime
+from datetime import datetime, UTC
 from decimal import Decimal
 from typing import Optional, List
 
@@ -72,7 +72,7 @@ class CreditService:
         try:
             credit = await self.get_user_credit(user_id)
             credit.balance += amount
-            credit.updated_at = datetime.utcnow()
+            credit.updated_at = datetime.now(UTC)
 
             transaction = CreditTransaction(
                 user_id=user_id,
@@ -142,7 +142,7 @@ class CreditService:
                 )
 
             credit.balance -= amount
-            credit.updated_at = datetime.utcnow()
+            credit.updated_at = datetime.now(UTC)
 
             transaction = CreditTransaction(
                 user_id=user_id,

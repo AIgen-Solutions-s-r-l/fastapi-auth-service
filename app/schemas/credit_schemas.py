@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class CreditBalanceResponse(BaseModel):
@@ -13,8 +13,7 @@ class CreditBalanceResponse(BaseModel):
     balance: Decimal
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CreditTransactionBase(BaseModel):
@@ -31,8 +30,9 @@ class AddCreditRequest(CreditTransactionBase):
 
 class UseCreditRequest(CreditTransactionBase):
     """Schema for using credits."""
-    @validator('amount')
-    def validate_amount(cls, v):
+    @field_validator('amount')
+    @classmethod
+    def validate_amount(cls, v: Decimal) -> Decimal:
         """Ensure amount is positive."""
         if v <= 0:
             raise ValueError("Amount must be greater than 0")
@@ -47,8 +47,7 @@ class TransactionResponse(CreditTransactionBase):
     created_at: datetime
     new_balance: Decimal
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TransactionHistoryResponse(BaseModel):

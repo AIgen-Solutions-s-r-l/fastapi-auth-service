@@ -1,11 +1,11 @@
 """SQLAlchemy models for user-related database tables including User and PasswordResetToken."""
 
-# app/models/user.py
 from datetime import datetime
-
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
+from sqlalchemy.orm import relationship
 
 from app.core.base import Base
+
 
 class User(Base):
     """
@@ -25,6 +25,10 @@ class User(Base):
     email = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
+
+    # Relationships
+    credits = relationship("UserCredit", back_populates="user", uselist=False)
+    credit_transactions = relationship("CreditTransaction", back_populates="user")
 
 
 class PasswordResetToken(Base):

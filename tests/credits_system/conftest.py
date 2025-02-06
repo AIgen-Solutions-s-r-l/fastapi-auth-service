@@ -1,12 +1,11 @@
-"""Shared fixtures for credit system tests."""
+"""Test fixtures for credit system tests."""
 
 import uuid
 import pytest
 from httpx import AsyncClient
 
-pytestmark = pytest.mark.asyncio
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 async def test_user(async_client: AsyncClient):
     """Create a test user for credit operations."""
     # Generate a unique username and email
@@ -20,8 +19,7 @@ async def test_user(async_client: AsyncClient):
         "email": email,
         "password": password
     })
-    if response.status_code != 201:
-        pytest.skip("Registration failed, skipping credit router tests")
+    assert response.status_code == 201, "User registration failed"
     data = response.json()
     token = data.get("access_token")
     user_data = {"username": username, "email": email, "password": password, "token": token}

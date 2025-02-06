@@ -1,76 +1,72 @@
+"""Test configuration and fixtures."""
+
 import asyncio
 import pytest
+from typing import AsyncGenerator, Generator
+from fastapi import FastAPI
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from typing import AsyncGenerator
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    create_async_engine,
+    async_sessionmaker
+)
+from sqlalchemy.orm import declarative_base
 
-from app.main import app
-from app.core.base import Base
 from app.core.database import get_db
+from app.main import app
+from app.models.user import Base
 
-# Test database URL
-TEST_DATABASE_URL = "postgresql+asyncpg://testuser:testpassword@172.17.0.1:5432/test_db"
+# Use SQLite for testing
+TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
 
-# Create test engine
+# Create async engine for tests
 engine = create_async_engine(
     TEST_DATABASE_URL,
-    echo=True,
-    pool_pre_ping=True,
+    echo=False,  # Disable SQL echo for cleaner test output
+    connect_args={"check_same_thread": False}
 )
-
-# Test session
-TestingSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autocommit=False,
-    autoflush=False,
-)
+async_session = async_sessionmaker(engine, expire_on_commit=False)
 
 
 @pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for each test case."""
+@pytest.mark.asyncio(scope="session")
+def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
+    """Create an instance of the default event loop for the test session."""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    # Create all tables
+    """Create a fresh database session for a test."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
-    # Create session
-    async with TestingSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+    async with async_session() as session:
+        yield session
 
-    # Clean up
+    # Clean up after test
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
 
-@pytest.fixture(scope="function")
-def override_get_db(db_session: AsyncSession):
-    async def _override_get_db():
-        try:
-            yield db_session
-        finally:
-            await db_session.close()
+@pytest.fixture
+async def test_app(db_session: AsyncSession) -> FastAPI:
+    """Create a test instance of the FastAPI application."""
+    async def override_get_db():
+        yield db_session
 
-    app.dependency_overrides[get_db] = _override_get_db
-    return db_session
+    app.dependency_overrides[get_db] = override_get_db
+    return app
 
 
-@pytest.fixture(scope="function")
-async def async_client(override_get_db) -> AsyncGenerator[AsyncClient, None]:
+@pytest.fixture
+async def async_client(test_app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
+    """Create an async HTTP client for testing."""
     async with AsyncClient(
-        transport=ASGITransport(app=app),
+        transport=ASGITransport(app=test_app),
         base_url="http://test"
     ) as client:
         yield client
