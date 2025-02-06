@@ -302,6 +302,129 @@ Possible Status Codes:
 - 404: User not found
 ```
 
+### 11. Get Credit Balance
+
+```http
+GET /credits/balance
+Authorization: Bearer <jwt-token>
+
+Response (200 OK):
+{
+    "user_id": 1,
+    "balance": 100.50,
+    "updated_at": "2025-02-06T17:00:00Z"
+}
+
+Possible Status Codes:
+- 200: Balance retrieved successfully
+- 401: Not authenticated
+```
+
+### 12. Add Credits
+
+```http
+POST /credits/add
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+    "amount": 50.00,
+    "reference_id": "order_123",  // Optional
+    "description": "Credit purchase"  // Optional
+}
+
+Response (200 OK):
+{
+    "id": 1,
+    "user_id": 1,
+    "amount": 50.00,
+    "transaction_type": "credit_added",
+    "reference_id": "order_123",
+    "description": "Credit purchase",
+    "created_at": "2025-02-06T17:00:00Z",
+    "new_balance": 150.50
+}
+
+Possible Status Codes:
+- 200: Credits added successfully
+- 401: Not authenticated
+- 422: Validation error (invalid amount)
+```
+
+### 13. Use Credits
+
+```http
+POST /credits/use
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+    "amount": 25.00,
+    "reference_id": "purchase_456",  // Optional
+    "description": "Service purchase"  // Optional
+}
+
+Response (200 OK):
+{
+    "id": 2,
+    "user_id": 1,
+    "amount": 25.00,
+    "transaction_type": "credit_used",
+    "reference_id": "purchase_456",
+    "description": "Service purchase",
+    "created_at": "2025-02-06T17:05:00Z",
+    "new_balance": 125.50
+}
+
+Possible Status Codes:
+- 200: Credits used successfully
+- 400: Insufficient credits
+- 401: Not authenticated
+- 422: Validation error (invalid amount)
+```
+
+### 14. Get Transaction History
+
+```http
+GET /credits/transactions
+Authorization: Bearer <jwt-token>
+
+Query Parameters:
+- skip: Number of records to skip (default: 0)
+- limit: Maximum number of records to return (default: 50)
+
+Response (200 OK):
+{
+    "transactions": [
+        {
+            "id": 2,
+            "user_id": 1,
+            "amount": 25.00,
+            "transaction_type": "credit_used",
+            "reference_id": "purchase_456",
+            "description": "Service purchase",
+            "created_at": "2025-02-06T17:05:00Z",
+            "new_balance": 125.50
+        },
+        {
+            "id": 1,
+            "user_id": 1,
+            "amount": 50.00,
+            "transaction_type": "credit_added",
+            "reference_id": "order_123",
+            "description": "Credit purchase",
+            "created_at": "2025-02-06T17:00:00Z",
+            "new_balance": 150.50
+        }
+    ],
+    "total_count": 2
+}
+
+Possible Status Codes:
+- 200: Transaction history retrieved successfully
+- 401: Not authenticated
+```
+
 ## Key Features
 
 - **User Authentication**
@@ -309,6 +432,15 @@ Possible Status Codes:
   - JWT-based authentication with configurable expiration
   - Password reset functionality with email integration
   - bcrypt password hashing
+
+- **Credit System**
+  - Secure credit balance management
+  - Transaction history tracking
+  - Credit addition and usage operations
+  - Atomic transactions for data consistency
+  - Detailed audit logging
+  - Protection against negative balances
+  - Transaction reference tracking
 
 - **Advanced Logging**
   - Structured JSON logging
@@ -523,7 +655,8 @@ auth_service/
 │       └── password_reset.html # Password reset email template
 └── tests/                 # Test suite
     ├── conftest.py        # Test fixtures and configuration
-    └── test_auth_router.py # Authentication endpoint tests
+    ├── test_auth_router.py # Authentication endpoint tests
+    └── test_credit_router.py # Credit system endpoint tests
 ```
 
 ### Component Details
@@ -540,6 +673,10 @@ auth_service/
    - `user.py`: Defines SQLAlchemy models for:
      - User: Stores user credentials and profile
      - PasswordResetToken: Manages password reset functionality
+   - `credit.py`: Defines credit-related models:
+     - UserCredit: Stores user credit balances
+     - CreditTransaction: Tracks all credit operations with detailed history
+     - TransactionType: Enumerates transaction types (purchase, credit_added, credit_used, etc.)
 
 3. **Routers** (`app/routers/`)
    - `auth_router.py`: Implements endpoints for:
@@ -547,6 +684,11 @@ auth_service/
      - Password management
      - Token refresh
      - Account deletion
+   - `credit_router.py`: Implements endpoints for:
+     - Credit balance management
+     - Adding and using credits
+     - Transaction history
+     - Balance queries
 
 4. **Services** (`app/services/`)
    - `user_service.py`: Implements business logic for:
@@ -554,12 +696,22 @@ auth_service/
      - Password hashing and verification
      - Email notifications
      - Database operations
+   - `credit_service.py`: Implements business logic for:
+     - Credit balance management
+     - Transaction processing
+     - Balance validation
+     - Transaction history tracking
 
 5. **Schemas** (`app/schemas/`)
    - `auth_schemas.py`: Defines Pydantic models for:
      - Request validation
      - Response serialization
      - Data transformation
+   - `credit_schemas.py`: Defines Pydantic models for:
+     - Credit operation requests
+     - Transaction responses
+     - Balance queries
+     - Transaction history
 
 6. **Templates** (`app/templates/`)
    - HTML email templates with support for:

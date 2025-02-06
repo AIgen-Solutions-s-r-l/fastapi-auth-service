@@ -172,7 +172,10 @@ async def get_user_details(
             "event_type": "user_details_retrieved",
             "username": username
         })
-        return user
+        return {
+            "username": user.username,
+            "email": str(user.email)
+        }
     except UserNotFoundError as e:
         logger.error("User lookup failed", extra={
             "event_type": "user_lookup_error",
@@ -371,9 +374,9 @@ async def refresh_token(
         # Create new access token
         access_token = create_access_token(
             data={
-                "sub": user["username"],
-                "id": user["id"],
-                # "is_admin": user["is_admin"],
+                "sub": user.username,
+                "id": user.id,
+                "is_admin": user.is_admin,
                 "exp": expire_time.timestamp()
             },
             expires_delta=expires_delta
@@ -381,7 +384,7 @@ async def refresh_token(
 
         logger.info("Token refreshed successfully", extra={
             "event_type": "token_refresh_success",
-            "username": user["username"]
+            "username": user.username
         })
 
         return Token(access_token=access_token, token_type="bearer")
@@ -439,7 +442,7 @@ async def get_current_user_profile(
             raise UserNotFoundError("User not found")
             
         # If requesting another user's profile, verify admin status
-        if user_id is not None and user_id != user["id"]:
+        if user_id is not None and user_id != user.id:
             if not payload.get("is_admin", False):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -451,12 +454,12 @@ async def get_current_user_profile(
         
         logger.info("User profile retrieved", extra={
             "event_type": "profile_retrieved",
-            "username": user["username"]
+            "username": user.username
         })
         
         return {
-            "username": user["username"],
-            "email": str(user["email"])
+            "username": user.username,
+            "email": str(user.email)
         }
         
     except (jwt.JWTError, UserNotFoundError) as e:

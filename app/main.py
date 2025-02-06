@@ -13,6 +13,7 @@ from app.core.error_handlers import validation_exception_handler, auth_exception
 from app.core.logging_config import init_logging, test_connection
 from app.routers.auth_router import router as auth_router
 from app.routers.healthcheck_router import router as healthcheck_router
+from app.routers.credit_router import router as credit_router
 
 # Test logstash connection if enabled
 if settings.enable_logstash:
@@ -98,6 +99,7 @@ async def root():
 # Include routers
 app.include_router(auth_router, prefix="/auth")
 app.include_router(healthcheck_router)
+app.include_router(credit_router)
 
 @app.get("/test-log")
 async def test_log():
