@@ -26,8 +26,8 @@ class UserCredit(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
 
     # Relationships
-    user = relationship("User", back_populates="credits")
-    transactions = relationship("CreditTransaction", back_populates="user_credit")
+    user = relationship("User", back_populates="credits", passive_deletes=True)
+    transactions = relationship("CreditTransaction", back_populates="user_credit", cascade="all, delete-orphan")
 
 
 class CreditTransaction(Base):

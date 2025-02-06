@@ -27,8 +27,8 @@ class User(Base):
     is_admin = Column(Boolean, default=False, nullable=False)
 
     # Relationships
-    credits = relationship("UserCredit", back_populates="user", uselist=False)
-    credit_transactions = relationship("CreditTransaction", back_populates="user")
+    credits = relationship("UserCredit", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    credit_transactions = relationship("CreditTransaction", back_populates="user", cascade="all, delete-orphan")
 
 
 class PasswordResetToken(Base):
