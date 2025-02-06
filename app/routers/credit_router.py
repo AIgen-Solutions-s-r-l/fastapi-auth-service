@@ -5,10 +5,11 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.database import get_db
+from app.core.responses import DecimalJSONResponse
 from app.models.user import User
 from app.schemas import credit_schemas
 from app.services.credit_service import CreditService, InsufficientCreditsError
@@ -16,10 +17,14 @@ from app.services.credit_service import CreditService, InsufficientCreditsError
 router = APIRouter(prefix="/credits", tags=["credits"])
 
 
-@router.get("/balance", response_model=credit_schemas.CreditBalanceResponse)
+@router.get(
+    "/balance",
+    response_model=credit_schemas.CreditBalanceResponse,
+    response_class=DecimalJSONResponse
+)
 async def get_credit_balance(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Get current user's credit balance.
@@ -32,14 +37,19 @@ async def get_credit_balance(
         CreditBalanceResponse: Current credit balance
     """
     credit_service = CreditService(db)
-    return credit_service.get_balance(current_user.id)
+    user_id = current_user.id if isinstance(current_user, User) else current_user['id']
+    return await credit_service.get_balance(user_id)
 
 
-@router.post("/add", response_model=credit_schemas.TransactionResponse)
+@router.post(
+    "/add",
+    response_model=credit_schemas.TransactionResponse,
+    response_class=DecimalJSONResponse
+)
 async def add_credits(
     request: credit_schemas.AddCreditRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Add credits to user's balance.
@@ -54,11 +64,17 @@ async def add_credits(
     """
     credit_service = CreditService(db)
     try:
-        return credit_service.add_credits(
-            user_id=current_user.id,
+        user_id = current_user.id if isinstance(current_user, User) else current_user['id']
+        return await credit_service.add_credits(
+            user_id=user_id,
             amount=request.amount,
             reference_id=request.reference_id,
             description=request.description
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
         )
     except Exception as e:
         logger.error(f"Error adding credits: {str(e)}")
@@ -68,11 +84,15 @@ async def add_credits(
         )
 
 
-@router.post("/use", response_model=credit_schemas.TransactionResponse)
+@router.post(
+    "/use",
+    response_model=credit_schemas.TransactionResponse,
+    response_class=DecimalJSONResponse
+)
 async def use_credits(
     request: credit_schemas.UseCreditRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Use credits from user's balance.
@@ -87,8 +107,9 @@ async def use_credits(
     """
     credit_service = CreditService(db)
     try:
-        return credit_service.use_credits(
-            user_id=current_user.id,
+        user_id = current_user.id if isinstance(current_user, User) else current_user['id']
+        return await credit_service.use_credits(
+            user_id=user_id,
             amount=request.amount,
             reference_id=request.reference_id,
             description=request.description
@@ -106,12 +127,16 @@ async def use_credits(
         )
 
 
-@router.get("/transactions", response_model=credit_schemas.TransactionHistoryResponse)
+@router.get(
+    "/transactions",
+    response_model=credit_schemas.TransactionHistoryResponse,
+    response_class=DecimalJSONResponse
+)
 async def get_transaction_history(
     skip: int = 0,
     limit: int = 50,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Get user's credit transaction history.
@@ -126,8 +151,9 @@ async def get_transaction_history(
         TransactionHistoryResponse: List of transactions and total count
     """
     credit_service = CreditService(db)
-    return credit_service.get_transaction_history(
-        user_id=current_user.id,
+    user_id = current_user.id if isinstance(current_user, User) else current_user['id']
+    return await credit_service.get_transaction_history(
+        user_id=user_id,
         skip=skip,
         limit=limit
     )

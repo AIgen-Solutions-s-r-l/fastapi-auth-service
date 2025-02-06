@@ -6,9 +6,9 @@ from typing import Optional, List
 
 from fastapi import HTTPException, status
 from loguru import logger
-from sqlalchemy import desc
+from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.credit import UserCredit, CreditTransaction, TransactionType
 from app.schemas import credit_schemas
@@ -22,11 +22,11 @@ class InsufficientCreditsError(Exception):
 class CreditService:
     """Service class for managing user credits."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         """Initialize with database session."""
         self.db = db
 
-    def get_user_credit(self, user_id: int) -> UserCredit:
+    async def get_user_credit(self, user_id: int) -> UserCredit:
         """
         Get or create user credit record.
 
@@ -36,22 +36,21 @@ class CreditService:
         Returns:
             UserCredit: The user's credit record
         """
-        credit = (
-            self.db.query(UserCredit)
-            .filter(UserCredit.user_id == user_id)
-            .first()
+        result = await self.db.execute(
+            select(UserCredit).where(UserCredit.user_id == user_id)
         )
+        credit = result.scalar_one_or_none()
 
         if not credit:
             credit = UserCredit(user_id=user_id, balance=Decimal('0.00'))
             self.db.add(credit)
-            self.db.commit()
-            self.db.refresh(credit)
+            await self.db.commit()
+            await self.db.refresh(credit)
             logger.info(f"Created new credit record for user {user_id}")
 
         return credit
 
-    def add_credits(
+    async def add_credits(
         self, 
         user_id: int, 
         amount: Decimal,
@@ -71,7 +70,7 @@ class CreditService:
             TransactionResponse: Details of the transaction
         """
         try:
-            credit = self.get_user_credit(user_id)
+            credit = await self.get_user_credit(user_id)
             credit.balance += amount
             credit.updated_at = datetime.utcnow()
 
@@ -84,8 +83,8 @@ class CreditService:
             )
 
             self.db.add(transaction)
-            self.db.commit()
-            self.db.refresh(transaction)
+            await self.db.commit()
+            await self.db.refresh(transaction)
 
             logger.info(f"Added {amount} credits to user {user_id}. New balance: {credit.balance}")
 
@@ -101,14 +100,14 @@ class CreditService:
             )
 
         except IntegrityError as e:
-            self.db.rollback()
+            await self.db.rollback()
             logger.error(f"Database error while adding credits: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error processing credit addition"
             )
 
-    def use_credits(
+    async def use_credits(
         self,
         user_id: int,
         amount: Decimal,
@@ -131,7 +130,7 @@ class CreditService:
             InsufficientCreditsError: If user has insufficient credits
         """
         try:
-            credit = self.get_user_credit(user_id)
+            credit = await self.get_user_credit(user_id)
 
             if credit.balance < amount:
                 logger.warning(
@@ -154,8 +153,8 @@ class CreditService:
             )
 
             self.db.add(transaction)
-            self.db.commit()
-            self.db.refresh(transaction)
+            await self.db.commit()
+            await self.db.refresh(transaction)
 
             logger.info(f"Used {amount} credits from user {user_id}. New balance: {credit.balance}")
 
@@ -171,14 +170,14 @@ class CreditService:
             )
 
         except IntegrityError as e:
-            self.db.rollback()
+            await self.db.rollback()
             logger.error(f"Database error while using credits: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error processing credit usage"
             )
 
-    def get_balance(self, user_id: int) -> credit_schemas.CreditBalanceResponse:
+    async def get_balance(self, user_id: int) -> credit_schemas.CreditBalanceResponse:
         """
         Get user's current credit balance.
 
@@ -188,14 +187,14 @@ class CreditService:
         Returns:
             CreditBalanceResponse: Current balance and last update time
         """
-        credit = self.get_user_credit(user_id)
+        credit = await self.get_user_credit(user_id)
         return credit_schemas.CreditBalanceResponse(
             user_id=user_id,
             balance=credit.balance,
             updated_at=credit.updated_at
         )
 
-    def get_transaction_history(
+    async def get_transaction_history(
         self,
         user_id: int,
         skip: int = 0,
@@ -212,21 +211,21 @@ class CreditService:
         Returns:
             TransactionHistoryResponse: List of transactions and total count
         """
-        total_count = (
-            self.db.query(CreditTransaction)
-            .filter(CreditTransaction.user_id == user_id)
-            .count()
+        result = await self.db.execute(
+            select(CreditTransaction).where(CreditTransaction.user_id == user_id)
         )
+        total_count = len(result.scalars().all())
 
-        transactions = (
-            self.db.query(CreditTransaction)
-            .filter(CreditTransaction.user_id == user_id)
+        result = await self.db.execute(
+            select(CreditTransaction)
+            .where(CreditTransaction.user_id == user_id)
             .order_by(desc(CreditTransaction.created_at))
             .offset(skip)
             .limit(limit)
-            .all()
         )
+        transactions = result.scalars().all()
 
+        credit = await self.get_user_credit(user_id)
         return credit_schemas.TransactionHistoryResponse(
             transactions=[
                 credit_schemas.TransactionResponse(
@@ -237,7 +236,7 @@ class CreditService:
                     reference_id=tx.reference_id,
                     description=tx.description,
                     created_at=tx.created_at,
-                    new_balance=self.get_user_credit(user_id).balance
+                    new_balance=credit.balance
                 )
                 for tx in transactions
             ],
