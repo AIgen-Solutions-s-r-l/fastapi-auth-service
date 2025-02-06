@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from typing import AsyncGenerator
 
 from app.main import app
-from app.core.database import Base, get_db
+from app.core.base import Base
+from app.core.database import get_db
 
 # Test database URL
 TEST_DATABASE_URL = "postgresql+asyncpg://testuser:testpassword@172.17.0.1:5432/test_db"
