@@ -74,9 +74,8 @@ curl -X POST http://localhost:8000/auth/logout \
 -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 
 # Delete user account (requires valid token)
-curl -X DELETE http://localhost:8000/auth/users/testuser \
--H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
--d "password=SecurePass123!"
+curl -X DELETE http://localhost:8000/auth/users/testuser?password=SecurePass123! \
+-H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 
 # Credit System Tests
 
