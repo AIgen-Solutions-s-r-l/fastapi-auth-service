@@ -17,13 +17,12 @@ from app.services.user_service import (
     create_user, authenticate_user, get_user_by_username,
     update_user_password, delete_user, create_password_reset_token, verify_reset_token, reset_password, get_user_by_email
 )
-from app.core.logging_config import LogConfig
+from app.log.logging import logger
 from app.core.email import send_email
 from app.core.config import settings
 
 
 router = APIRouter(tags=["authentication"])
-logger = LogConfig.get_logger()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 @router.post(
@@ -43,11 +42,7 @@ async def login(
     try:
         user = await authenticate_user(db, credentials.username, credentials.password)
         if not user:
-            logger.warning("Authentication failed", extra={
-                "event_type": "login_failed",
-                "username": credentials.username,
-                "reason": "invalid_credentials"
-            })
+            logger.warning("Authentication failed", event_type="login_failed", username=credentials.username, reason="invalid_credentials")
             raise InvalidCredentialsError()
 
         # Calculate expiration time using timezone-aware datetime
@@ -63,18 +58,10 @@ async def login(
             },
             expires_delta=expires_delta
         )
-        logger.info("User login successful", extra={
-            "event_type": "login_success",
-            "username": user.username
-        })
+        logger.info("User login successful", event_type="login_success", username=user.username)
         return Token(access_token=access_token, token_type="bearer")
     except Exception as e:
-        logger.error("Login error", extra={
-            "event_type": "login_error",
-            "username": credentials.username,
-            "error_type": type(e).__name__,
-            "error_details": str(e)
-        })
+        logger.error("Login error", event_type="login_error", username=credentials.username, error_type=type(e).__name__, error_details=str(e))
         raise InvalidCredentialsError() from e
 
 
@@ -130,11 +117,7 @@ async def register_user(
             expires_delta=expires_delta
         )
 
-        logger.info("User registered", extra={
-            "event_type": "user_registered",
-            "username": new_user.username,
-            "email": str(user.email)
-        })
+        logger.info("User registered", event_type="user_registered", username=new_user.username, email=str(user.email))
 
         return {
             "message": "User registered successfully",
@@ -143,12 +126,7 @@ async def register_user(
             "token_type": "bearer"
         }
     except UserAlreadyExistsError as e:
-        logger.error("Registration failed", extra={
-            "event_type": "registration_error",
-            "username": user.username,
-            "email": str(user.email),
-            "error_type": "user_exists"
-        })
+        logger.error("Registration failed", event_type="registration_error", username=user.username, email=str(user.email), error_type="user_exists")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
 
@@ -168,20 +146,13 @@ async def get_user_details(
     """Retrieve user details by username."""
     try:
         user = await get_user_by_username(db, username)
-        logger.info("User details retrieved", extra={
-            "event_type": "user_details_retrieved",
-            "username": username
-        })
+        logger.info("User details retrieved", event_type="user_details_retrieved", username=username)
         return {
             "username": user.username,
             "email": str(user.email)
         }
     except UserNotFoundError as e:
-        logger.error("User lookup failed", extra={
-            "event_type": "user_lookup_error",
-            "username": username,
-            "error_type": "user_not_found"
-        })
+        logger.error("User lookup failed", event_type="user_lookup_error", username=username, error_type="user_not_found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
 
@@ -212,17 +183,10 @@ async def change_password(
             passwords.current_password,
             passwords.new_password
         )
-        logger.info("Password changed", extra={
-            "event_type": "password_changed",
-            "username": username
-        })
+        logger.info("Password changed", event_type="password_changed", username=username)
         return {"message": "Password updated successfully"}
     except (UserNotFoundError, InvalidCredentialsError) as e:
-        logger.error("Password change failed", extra={
-            "event_type": "password_change_error",
-            "username": username,
-            "error_type": type(e).__name__
-        })
+        logger.error("Password change failed", event_type="password_change_error", username=username, error_type=type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
@@ -250,17 +214,10 @@ async def remove_user(
     """
     try:
         await delete_user(db, username, password)
-        logger.info("User deleted", extra={
-            "event_type": "user_deleted",
-            "username": username
-        })
+        logger.info("User deleted", event_type="user_deleted", username=username)
         return {"message": "User deleted successfully"}
     except (UserNotFoundError, InvalidCredentialsError) as e:
-        logger.error("User deletion failed", extra={
-            "event_type": "user_deletion_error",
-            "username": username,
-            "error_type": type(e).__name__
-        })
+        logger.error("User deletion failed", event_type="user_deletion_error", username=username, error_type=type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
@@ -286,18 +243,11 @@ async def logout(token: str = Depends(oauth2_scheme)) -> Dict[str, str]:
         payload = verify_jwt_token(token)
         username = payload.get("sub")
         
-        logger.info("User logged out", extra={
-            "event_type": "user_logout",
-            "username": username
-        })
+        logger.info("User logged out", event_type="user_logout", username=username)
         
         return {"message": "Successfully logged out"}
     except jwt.JWTError as e:
-        logger.error("Logout failed - invalid token", extra={
-            "event_type": "logout_error",
-            "error_type": "jwt_error",
-            "error_details": str(e)
-        })
+        logger.error("Logout failed - invalid token", event_type="logout_error", error_type="jwt_error", error_details=str(e))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token"
@@ -328,11 +278,7 @@ async def request_password_reset(
 
         return {"message": "Password reset link sent to email if account exists"}
     except (UserNotFoundError, ValueError, jwt.JWTError) as e:
-        logger.error("Password reset request failed", extra={
-            "event_type": "password_reset_request_error",
-            "email": request.email,
-            "error": str(e)
-        })
+        logger.error("Password reset request failed", event_type="password_reset_request_error", email=request.email, error=str(e))
         # Return same message to prevent email enumeration
         return {"message": "Password reset link sent to email if account exists"}
 
@@ -357,11 +303,7 @@ async def refresh_token(
         # Get user from database to ensure they still exist
         user = await get_user_by_username(db, payload.get("sub"))
         if not user:
-            logger.error("Token refresh failed - user not found", extra={
-                "event_type": "token_refresh_error",
-                "username": payload.get("sub"),
-                "error_type": "user_not_found"
-            })
+            logger.error("Token refresh failed - user not found", event_type="token_refresh_error", username=payload.get("sub"), error_type="user_not_found")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token"
@@ -382,19 +324,12 @@ async def refresh_token(
             expires_delta=expires_delta
         )
 
-        logger.info("Token refreshed successfully", extra={
-            "event_type": "token_refresh_success",
-            "username": user.username
-        })
+        logger.info("Token refreshed successfully", event_type="token_refresh_success", username=user.username)
 
         return Token(access_token=access_token, token_type="bearer")
 
     except jwt.JWTError as e:
-        logger.error("Token refresh failed - invalid token", extra={
-            "event_type": "token_refresh_error",
-            "error_type": "jwt_error",
-            "error_details": str(e)
-        })
+        logger.error("Token refresh failed - invalid token", event_type="token_refresh_error", error_type="jwt_error", error_details=str(e))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token"
@@ -452,10 +387,7 @@ async def get_current_user_profile(
             if not user:
                 raise UserNotFoundError("Requested user not found")
         
-        logger.info("User profile retrieved", extra={
-            "event_type": "profile_retrieved",
-            "username": user.username
-        })
+        logger.info("User profile retrieved", event_type="profile_retrieved", username=user.username)
         
         return {
             "username": user.username,
@@ -463,11 +395,7 @@ async def get_current_user_profile(
         }
         
     except (jwt.JWTError, UserNotFoundError) as e:
-        logger.error("Profile retrieval failed", extra={
-            "event_type": "profile_retrieval_error",
-            "error_type": type(e).__name__,
-            "error_details": str(e)
-        })
+        logger.error("Profile retrieval failed", event_type="profile_retrieval_error", error_type=type(e).__name__, error_details=str(e))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials"
@@ -483,16 +411,10 @@ async def reset_password_with_token(
         user_id = await verify_reset_token(reset_data.token)
         await reset_password(db, user_id, reset_data.new_password)
 
-        logger.info("Password reset successful", extra={
-            "event_type": "password_reset_success",
-            "user_id": user_id
-        })
+        logger.info("Password reset successful", event_type="password_reset_success", user_id=user_id)
         return {"message": "Password has been reset successfully"}
     except (UserNotFoundError, jwt.JWTError, ValueError) as e:
-        logger.error("Password reset failed", extra={
-            "event_type": "password_reset_error",
-            "error": str(e)
-        })
+        logger.error("Password reset failed", event_type="password_reset_error", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token"

@@ -1,16 +1,14 @@
 """Error handlers for the application."""
 from fastapi import Request, HTTPException
 from fastapi.exceptions import RequestValidationError
-import logging
+from app.log.logging import logger
 
 from app.core.exceptions import AuthException
 from app.core.responses import DecimalJSONResponse
 
-logger = logging.getLogger('uvicorn.error')
-
 async def auth_exception_handler(request: Request, exc: AuthException) -> DecimalJSONResponse:
     """Handle authentication exceptions."""
-    logger.error(f'Auth error on {request.url}: {exc.detail}')
+    logger.exception(f'Auth error on {request.url}: {exc.detail}')
     return DecimalJSONResponse(
         status_code=exc.status_code,
         content=exc.detail

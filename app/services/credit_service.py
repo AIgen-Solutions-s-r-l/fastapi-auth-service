@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Optional, List
 
 from fastapi import HTTPException, status
-from loguru import logger
+from app.log.logging import logger
 from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,7 +46,7 @@ class CreditService:
             self.db.add(credit)
             await self.db.commit()
             await self.db.refresh(credit)
-            logger.info(f"Created new credit record for user {user_id}")
+            logger.info(f"Created new credit record for user {user_id}", event_type="credit_record_created", user_id=user_id)
 
         return credit
 
@@ -87,7 +87,7 @@ class CreditService:
             await self.db.commit()
             await self.db.refresh(transaction)
 
-            logger.info(f"Added {amount} credits to user {user_id}. New balance: {credit.balance}")
+            logger.info(f"Added {amount} credits to user {user_id}. New balance: {credit.balance}", event_type="credits_added", user_id=user_id, amount=amount, new_balance=credit.balance)
 
             return credit_schemas.TransactionResponse(
                 id=transaction.id,
@@ -102,7 +102,7 @@ class CreditService:
 
         except IntegrityError as e:
             await self.db.rollback()
-            logger.error(f"Database error while adding credits: {str(e)}")
+            logger.exception(f"Database error while adding credits: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error processing credit addition"
@@ -134,13 +134,8 @@ class CreditService:
             credit = await self.get_user_credit(user_id)
 
             if credit.balance < amount:
-                logger.warning(
-                    f"Insufficient credits for user {user_id}. "
-                    f"Required: {amount}, Available: {credit.balance}"
-                )
-                raise InsufficientCreditsError(
-                    f"Insufficient credits. Required: {amount}, Available: {credit.balance}"
-                )
+                logger.warning(f"Insufficient credits for user {user_id}. Required: {amount}, Available: {credit.balance}", event_type="insufficient_credits", user_id=user_id, required=amount, available=credit.balance)
+                raise InsufficientCreditsError(f"Insufficient credits. Required: {amount}, Available: {credit.balance}")
 
             credit.balance -= amount
             credit.updated_at = datetime.now(UTC)
@@ -157,7 +152,7 @@ class CreditService:
             await self.db.commit()
             await self.db.refresh(transaction)
 
-            logger.info(f"Used {amount} credits from user {user_id}. New balance: {credit.balance}")
+            logger.info(f"Used {amount} credits from user {user_id}. New balance: {credit.balance}", event_type="credits_used", user_id=user_id, amount=amount, new_balance=credit.balance)
 
             return credit_schemas.TransactionResponse(
                 id=transaction.id,
@@ -172,7 +167,7 @@ class CreditService:
 
         except IntegrityError as e:
             await self.db.rollback()
-            logger.error(f"Database error while using credits: {str(e)}")
+            logger.exception(f"Database error while using credits: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error processing credit usage"

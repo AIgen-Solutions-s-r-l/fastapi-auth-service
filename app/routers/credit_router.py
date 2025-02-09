@@ -4,7 +4,7 @@ from typing import Optional
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from loguru import logger
+from app.log.logging import logger 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -77,7 +77,7 @@ async def add_credits(
             detail=str(e)
         )
     except Exception as e:
-        logger.error(f"Error adding credits: {str(e)}")
+        logger.exception(f"Error adding credits: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error processing credit addition"
@@ -120,7 +120,7 @@ async def use_credits(
             detail=str(e)
         )
     except Exception as e:
-        logger.error(f"Error using credits: {str(e)}")
+        logger.exception(f"Error using credits: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error processing credit usage"

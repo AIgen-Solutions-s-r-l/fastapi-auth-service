@@ -8,17 +8,17 @@ class Settings(BaseSettings):
     Configuration class for environment variables and service settings.
     """
     # Service settings
-    service_name: str = os.getenv("SERVICE_NAME", "authService")
-    environment: str = os.getenv("ENVIRONMENT", "development")
+    #service_name: str = os.getenv("SERVICE_NAME", "authService")
+    #environment: str = os.getenv("ENVIRONMENT", "development")
     debug: bool = os.getenv("DEBUG", "True").lower() == "true"
 
     # Logging settings
-    log_level: str = os.getenv("LOG_LEVEL", "DEBUG")
-    syslog_host: str = os.getenv("SYSLOG_HOST", "172.17.0.1")
-    syslog_port: int = int(os.getenv("SYSLOG_PORT", "5141"))
-    json_logs: bool = os.getenv("JSON_LOGS", "True").lower() == "true"
-    log_retention: str = os.getenv("LOG_RETENTION", "7 days")
-    enable_logstash: bool = os.getenv("ENABLE_LOGSTASH", "True").lower() == "true"
+    # log_level: str = os.getenv("LOG_LEVEL", "DEBUG")
+    # syslog_host: str = os.getenv("SYSLOG_HOST", "172.17.0.1")
+    # syslog_port: int = int(os.getenv("SYSLOG_PORT", "5141"))
+    # json_logs: bool = os.getenv("JSON_LOGS", "True").lower() == "true"
+    # log_retention: str = os.getenv("LOG_RETENTION", "7 days")
+    # enable_logstash: bool = os.getenv("ENABLE_LOGSTASH", "True").lower() == "true"
 
     # Database settings
     database_url: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://testuser:testpassword@172.17.0.1:5432/main_db")
@@ -41,29 +41,6 @@ class Settings(BaseSettings):
     # Frontend URL for reset link
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
-    # Environment-specific logging configuration
-    @property
-    def logging_config(self) -> dict:
-        """
-        Returns logging configuration based on environment.
-        """
-        base_config = {
-            "app_name": self.service_name,
-            "log_level": self.log_level,
-            "syslog_host": self.syslog_host if self.enable_logstash else None,
-            "syslog_port": self.syslog_port if self.enable_logstash else None,
-            "json_logs": self.json_logs,
-            "enable_logstash": self.enable_logstash,
-        }
 
-        if self.environment == "development":
-            base_config.update({
-                "json_logs": False,
-                "log_level": "DEBUG" if self.debug else "INFO"
-            })
-
-        return base_config
-
-    model_config = SettingsConfigDict(env_file=".env")
     
 settings = Settings()

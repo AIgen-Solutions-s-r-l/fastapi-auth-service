@@ -4,10 +4,8 @@ from app.routers.healthchecks.fastapi_healthcheck.domain import HealthCheckInter
 from typing import List
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy import text
-from app.core.logging_config import init_logging
+from app.log.logging import logger
 from app.core.config import settings
-
-logger = init_logging(settings)
 
 class HealthCheckSQLAlchemy(HealthCheckBase, HealthCheckInterface):
     _connection_uri: str
@@ -28,5 +26,5 @@ class HealthCheckSQLAlchemy(HealthCheckBase, HealthCheckInterface):
                 if result.scalar() == 1:
                     res = HealthCheckStatusEnum.HEALTHY
             except Exception as e:
-                logger.error(f"Database health check failed: {e}")
+                logger.exception(f"Database health check failed: {e}")
         return res
