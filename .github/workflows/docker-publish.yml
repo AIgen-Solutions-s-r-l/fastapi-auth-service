@@ -23,6 +23,9 @@ jobs:
         run: pip install poetry
 
       - name: Install dependencies (including test deps)
+        run: poetry lock
+
+      - name: Install dependencies (including test deps)
         run: poetry install --no-root
 
       - name: Start service
