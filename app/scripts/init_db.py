@@ -1,7 +1,7 @@
 import asyncio
 import sys
 from pathlib import Path
-from app.core.logging_config import LogConfig
+from app.log.logging import logger
 
 # Add project root to Python path
 project_root = str(Path(__file__).parent.parent.parent)
@@ -12,8 +12,6 @@ from app.core.base import Base
 from app.core.database import engine
 from app.models.user import User
 from sqlalchemy import text
-
-logger = LogConfig.get_logger()
 
 
 async def init_test_db():
@@ -36,17 +34,10 @@ async def init_test_db():
             result = await conn.execute(query)
             tables = result.fetchall()
 
-            logger.info("Database tables created", extra={
-                "event_type": "db_tables_created",
-                "tables": [table[0] for table in tables]
-            })
+            logger.info("Database tables created", event_type="db_tables_created", tables=[table[0] for table in tables])
 
     except Exception as e:
-        logger.error("Database initialization failed", extra={
-            "event_type": "db_init_error",
-            "error_type": type(e).__name__,
-            "error_details": str(e)
-        })
+        logger.exception("Database initialization failed")
         raise
 
 
@@ -55,15 +46,9 @@ def main():
     try:
         asyncio.run(init_test_db())
     except KeyboardInterrupt:
-        logger.info("Database initialization interrupted", extra={
-            "event_type": "db_init_interrupted"
-        })
+        logger.info("Database initialization interrupted", event_type="db_init_interrupted")
     except Exception as e:
-        logger.error("Database initialization error", extra={
-            "event_type": "db_init_error",
-            "error_type": type(e).__name__,
-            "error_details": str(e)
-        })
+        logger.exception("Database initialization error")
         sys.exit(1)
 
 

@@ -1,9 +1,7 @@
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from fastapi.responses import JSONResponse
-import logging
-
-logger = logging.getLogger("exception.middleware")
+from app.log.logging import logger
 
 class ExceptionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -11,7 +9,7 @@ class ExceptionMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             return response
         except Exception as exc:
-            logger.error(f"Unhandled exception: {exc}", exc_info=True)
+            logger.exception(f"Unhandled exception: {exc}")
             return JSONResponse(
                 status_code=500,
                 content={"error": "InternalServerError", "message": "An unexpected error occurred."}
