@@ -8,6 +8,7 @@ from datadog_api_client.v2.model.http_log import HTTPLog
 from datadog_api_client.v2.model.http_log_item import HTTPLogItem
 from loguru import logger as loguru_logger
 import logging
+import inspect
 
 class LogConfig:
     def __init__(self):
