@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - log_poc
 
 jobs:
   test-build-and-push:
@@ -55,5 +56,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/aihawk-startup/auth_service:pre
             ghcr.io/aihawk-startup/auth_service:${{ env.GITHUB_SHA_SHORT }}
+            ${{ github.ref == 'refs/heads/main' && 'ghcr.io/aihawk-startup/auth_service:pre' || '' }}
