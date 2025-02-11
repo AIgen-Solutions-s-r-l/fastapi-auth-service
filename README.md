@@ -277,7 +277,7 @@ Possible Status Codes:
 - 404: User not found
 ```
 
-### 8. Refresh Token
+### 9. Refresh Token
 
 ```http
 POST /auth/refresh
@@ -349,7 +349,7 @@ Possible Status Codes:
 - 401: Not authenticated
 ```
 
-### 12. Add Credits
+### 13. Add Credits
 
 ```http
 POST /credits/add

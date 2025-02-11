@@ -256,6 +256,14 @@ async def change_email(
             detail="Error updating email"
         ) from e
 
+@router.put(
+    "/users/{username}/password",
+    responses={
+        200: {"description": "Password successfully updated"},
+        401: {"description": "Invalid current password"},
+        404: {"description": "User not found"}
+    }
+)
 async def change_password(
         username: str,
         passwords: PasswordChange,
