@@ -52,3 +52,11 @@ class PasswordReset(BaseModel):
     """Schema for password reset with token."""
     token: str
     new_password: str
+
+
+class EmailChange(BaseModel):
+    """Pydantic model for email change request."""
+    new_email: EmailStr
+    current_password: str
+
+    model_config = ConfigDict(from_attributes=True)

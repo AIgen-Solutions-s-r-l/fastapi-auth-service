@@ -11,11 +11,12 @@ from app.core.exceptions import UserAlreadyExistsError, UserNotFoundError, Inval
 from app.core.security import create_access_token, verify_jwt_token
 from app.schemas.auth_schemas import (
     LoginRequest, Token, UserCreate, PasswordChange,
-    PasswordResetRequest, PasswordReset, RefreshToken
+    PasswordResetRequest, PasswordReset, RefreshToken, EmailChange
 )
 from app.services.user_service import (
     create_user, authenticate_user, get_user_by_username,
-    update_user_password, delete_user, create_password_reset_token, verify_reset_token, reset_password, get_user_by_email
+    update_user_password, delete_user, create_password_reset_token,
+    verify_reset_token, reset_password, get_user_by_email, UserService
 )
 from app.log.logging import logger
 from app.core.email import send_email
@@ -156,6 +157,104 @@ async def get_user_details(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
 
+
+@router.put(
+    "/users/{username}/email",
+    response_model=Dict[str, Any],
+    responses={
+        200: {
+            "description": "Email successfully updated",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Email updated successfully",
+                        "username": "john_doe",
+                        "email": "new.email@example.com"
+                    }
+                }
+            }
+        },
+        400: {"description": "Email already registered"},
+        401: {"description": "Invalid password or unauthorized"},
+        404: {"description": "User not found"}
+    }
+)
+async def change_email(
+    username: str,
+    email_change: EmailChange,
+    db: AsyncSession = Depends(get_db),
+    token: str = Depends(oauth2_scheme)
+) -> Dict[str, Any]:
+    """
+    Change user's email address.
+
+    Requires authentication and current password verification.
+    The new email must not be already registered by another user.
+
+    Args:
+        username: Username of the user
+        email_change: New email and current password
+        db: Database session
+        token: JWT token for authentication
+
+    Returns:
+        Dict containing success message and updated user info
+
+    Raises:
+        HTTPException: If authentication fails, email is taken, or user not found
+    """
+    try:
+        # Verify JWT token and check if user is authorized
+        payload = verify_jwt_token(token)
+        if payload.get("sub") != username and not payload.get("is_admin", False):
+            logger.error(
+                "Unauthorized email change attempt",
+                event_type="email_change_error",
+                username=username,
+                attempted_by=payload.get("sub"),
+                error_type="unauthorized"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to change other users' email"
+            )
+
+        # Update email through service
+        service = UserService(db)
+        updated_user = await service.update_user_email(
+            username,
+            email_change.current_password,
+            str(email_change.new_email)
+        )
+
+        logger.info(
+            "Email changed successfully",
+            event_type="email_changed",
+            username=username,
+            new_email=str(email_change.new_email)
+        )
+
+        return {
+            "message": "Email updated successfully",
+            "username": updated_user.username,
+            "email": str(updated_user.email)
+        }
+
+    except HTTPException as e:
+        # Re-raise HTTP exceptions from the service layer
+        raise e
+    except Exception as e:
+        logger.error(
+            "Email change failed",
+            event_type="email_change_error",
+            username=username,
+            error_type=type(e).__name__,
+            error_details=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error updating email"
+        ) from e
 
 @router.put(
     "/users/{username}/password",

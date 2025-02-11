@@ -47,6 +47,15 @@ curl -X PUT http://localhost:8000/auth/users/testuser/password \
   "new_password": "NewSecurePass456!"
 }'
 
+# Change email (requires valid token)
+curl -X PUT http://localhost:8000/auth/users/testuser/email \
+-H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+-H "Content-Type: application/json" \
+-d '{
+  "new_email": "newemail@example.com",
+  "current_password": "SecurePass123!"
+}'
+
 # Request password reset
 curl -X POST http://localhost:8000/auth/password-reset-request \
 -H "Content-Type: application/json" \
