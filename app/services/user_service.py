@@ -107,6 +107,48 @@ class UserService:
             return None
         return user
 
+    async def update_user_email(self, username: str, current_password: str, new_email: str) -> User:
+        """
+        Update user's email address.
+
+        Args:
+            username: Username of user to update
+            current_password: Current password for verification
+            new_email: New email address
+
+        Returns:
+            User: Updated user object
+
+        Raises:
+            HTTPException: If authentication fails or email is already in use
+        """
+        user = await self.authenticate_user(username, current_password)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid username or password"
+            )
+
+        # Check if new email is already in use
+        existing_user = await self.get_user_by_email(new_email)
+        if existing_user and existing_user.id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+
+        try:
+            user.email = new_email
+            await self.db.commit()
+            await self.db.refresh(user)
+            return user
+        except IntegrityError:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+
     async def delete_user(self, username: str, password: str) -> bool:
         """
         Delete a user.

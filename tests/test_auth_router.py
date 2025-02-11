@@ -111,4 +111,113 @@ async def test_reset_password(client: AsyncClient):
         "new_password": "DoesNotMatter123!"
     })
     assert response.status_code == 400, "Reset password endpoint did not return expected error"
-    assert response.status_code == 400, "Reset password endpoint did not return expected error"
+
+
+async def test_change_email_success(client: AsyncClient, test_user):
+    """Test successful email change."""
+    headers = {"Authorization": f"Bearer {test_user['token']}"}
+    new_email = f"new_{test_user['username']}@example.com"
+    
+    response = await client.put(
+        f"/auth/users/{test_user['username']}/email",
+        json={
+            "new_email": new_email,
+            "current_password": test_user["password"]
+        },
+        headers=headers
+    )
+    
+    assert response.status_code == 200, f"Email change failed with status {response.status_code}"
+    data = response.json()
+    assert data["email"] == new_email, "Email was not updated correctly"
+    assert "message" in data and "updated" in data["message"].lower(), "Unexpected response message"
+    
+    # Verify the email was actually changed in the database
+    profile_response = await client.get("/auth/me", headers=headers)
+    assert profile_response.status_code == 200
+    assert profile_response.json()["email"] == new_email
+
+
+async def test_change_email_unauthorized(client: AsyncClient, test_user):
+    """Test unauthorized email change attempt."""
+    # Try without authentication
+    response = await client.put(
+        f"/auth/users/{test_user['username']}/email",
+        json={
+            "new_email": "new@example.com",
+            "current_password": test_user["password"]
+        }
+    )
+    assert response.status_code == 401, "Should require authentication"
+    
+    # Create another user and try to change their email
+    other_username = f"other_{uuid.uuid4().hex[:8]}"
+    other_email = f"{other_username}@example.com"
+    await client.post("/auth/register", json={
+        "username": other_username,
+        "email": other_email,
+        "password": "TestPassword123!"
+    })
+    
+    headers = {"Authorization": f"Bearer {test_user['token']}"}
+    response = await client.put(
+        f"/auth/users/{other_username}/email",
+        json={
+            "new_email": "new@example.com",
+            "current_password": test_user["password"]
+        },
+        headers=headers
+    )
+    assert response.status_code == 403, "Should not allow changing other user's email"
+
+
+async def test_change_email_invalid_password(client: AsyncClient, test_user):
+    """Test email change with invalid password."""
+    headers = {"Authorization": f"Bearer {test_user['token']}"}
+    response = await client.put(
+        f"/auth/users/{test_user['username']}/email",
+        json={
+            "new_email": "new@example.com",
+            "current_password": "WrongPassword123!"
+        },
+        headers=headers
+    )
+    assert response.status_code == 401, "Should reject invalid password"
+
+
+async def test_change_email_already_exists(client: AsyncClient, test_user):
+    """Test email change to an already registered email."""
+    # Create another user first
+    other_username = f"other_{uuid.uuid4().hex[:8]}"
+    other_email = f"{other_username}@example.com"
+    await client.post("/auth/register", json={
+        "username": other_username,
+        "email": other_email,
+        "password": "TestPassword123!"
+    })
+    
+    # Try to change email to the other user's email
+    headers = {"Authorization": f"Bearer {test_user['token']}"}
+    response = await client.put(
+        f"/auth/users/{test_user['username']}/email",
+        json={
+            "new_email": other_email,
+            "current_password": test_user["password"]
+        },
+        headers=headers
+    )
+    assert response.status_code == 400, "Should reject already registered email"
+
+
+async def test_change_email_invalid_format(client: AsyncClient, test_user):
+    """Test email change with invalid email format."""
+    headers = {"Authorization": f"Bearer {test_user['token']}"}
+    response = await client.put(
+        f"/auth/users/{test_user['username']}/email",
+        json={
+            "new_email": "invalid-email-format",
+            "current_password": test_user["password"]
+        },
+        headers=headers
+    )
+    assert response.status_code == 422, "Should reject invalid email format"

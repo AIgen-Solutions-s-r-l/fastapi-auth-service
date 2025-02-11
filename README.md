@@ -228,7 +228,36 @@ Possible Status Codes:
 - 422: Validation error
 ```
 
-### 7. Delete Account
+### 7. Change Email
+
+```http
+PUT /auth/users/{username}/email
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+    "new_email": "newemail@example.com",
+    "current_password": "currentPassword"
+}
+
+Response (200 OK):
+{
+    "message": "Email updated successfully",
+    "username": "username",
+    "email": "newemail@example.com"
+}
+
+Possible Status Codes:
+- 200: Email changed successfully
+- 400: Email already registered
+- 401: Invalid password or unauthorized
+- 403: Not authorized to change other users' email
+- 404: User not found
+- 422: Invalid email format
+```
+
+
+### 8. Delete Account
 
 ```http
 DELETE /auth/users/{username}
