@@ -6,6 +6,7 @@ from jose import jwt
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.core.database import get_db
 from app.core.exceptions import UserAlreadyExistsError, UserNotFoundError, InvalidCredentialsError
 from app.core.security import create_access_token, verify_jwt_token
@@ -18,6 +19,7 @@ from app.services.user_service import (
     update_user_password, delete_user, create_password_reset_token,
     verify_reset_token, reset_password, get_user_by_email, UserService
 )
+from app.models.user import User
 from app.log.logging import logger
 from app.core.email import send_email
 from app.core.config import settings
@@ -460,8 +462,9 @@ async def get_current_user_profile(
     db: AsyncSession = Depends(get_db)
 ) -> Dict[str, Any]:
     """
-    Retrieve username and email of the authenticated user.
-    If user_id is provided, it will return that user's profile instead of the authenticated user's profile.
+    Retrieve the profile of the authenticated user.
+    For non-admin users, any provided user_id is ignored.
+    Admin users can retrieve other users' profiles by providing a valid user_id.
     """
     try:
         # Verify token and get payload
@@ -500,6 +503,7 @@ async def get_current_user_profile(
             detail="Could not validate credentials"
         ) from e
 
+
 @router.post("/reset-password")
 async def reset_password_with_token(
     reset_data: PasswordReset,
@@ -518,3 +522,41 @@ async def reset_password_with_token(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token"
         ) from e
+
+
+@router.get("/users/{user_id}/email",
+    response_model=Dict[str, str],
+    responses={
+        200: {"description": "User email retrieved successfully"},
+        404: {"description": "User not found"}
+    }
+)
+async def get_email_by_user_id(user_id: int, db: AsyncSession = Depends(get_db)) -> Dict[str, str]:
+    """Get user's email by user ID without requiring authentication."""
+    try:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            logger.warning(
+                "Email retrieval failed - user not found",
+                event_type="email_retrieval_error",
+                user_id=user_id,
+                error_type="user_not_found"
+            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        
+        logger.info(
+            "Email retrieved by user_id",
+            event_type="email_retrieved",
+            user_id=user_id
+        )
+        return {"email": str(user.email)}
+    except Exception as e:
+        logger.error(
+            "Failed to retrieve email by user_id",
+            event_type="email_retrieval_error",
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error_details=str(e)
+        )
+        raise
