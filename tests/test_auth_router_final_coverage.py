@@ -44,8 +44,8 @@ async def test_user(client: AsyncClient):
 # Test user not found explicitly raising UserNotFoundError
 @patch("app.routers.auth_router.get_user_by_username")
 async def test_get_user_details_raises_error(mock_get_user, client: AsyncClient, test_user):
-    # Mock to raise UserNotFoundError
-    mock_get_user.side_effect = UserNotFoundError()
+    # Mock to raise UserNotFoundError with required identifier parameter
+    mock_get_user.side_effect = UserNotFoundError("nonexistent_user")
     
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     response = await client.get("/auth/users/nonexistent_user", headers=headers)
@@ -130,10 +130,10 @@ async def test_change_email_complete_mock(mock_verify, mock_service, client: Asy
     mock_user.username = "test_user"
     mock_user.email = "updated@example.com"
     
-    # Create a mock service instance
+    # Create a mock service instance with AsyncMock for async methods
     mock_instance = MagicMock()
     mock_service.return_value = mock_instance
-    mock_instance.update_user_email.return_value = mock_user
+    mock_instance.update_user_email = AsyncMock(return_value=mock_user)
     
     # Test the endpoint
     response = await client.put(
@@ -164,11 +164,11 @@ async def test_get_profile_admin_nonexistent_user(mock_get_user, mock_verify, cl
     admin_user.username = "admin_user"
     admin_user.email = "admin@example.com"
     
-    # Set up mock to return admin for first call, but None for second call
+    # Set up mock to return admin for first call, but raise UserNotFoundError for second call
     def side_effect(db, username):
         if username == "admin_user":
             return admin_user
-        return None
+        raise UserNotFoundError("Requested user not found")
     
     mock_get_user.side_effect = side_effect
     
