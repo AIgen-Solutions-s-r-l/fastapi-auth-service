@@ -555,6 +555,7 @@ async def get_email_and_username_by_user_id(user_id: int, db: AsyncSession = Dep
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if not user:
+            # Make sure we call the warning logger correctly
             logger.warning(
                 "Profile retrieval failed - user not found",
                 event_type="profile_retrieval_error",
