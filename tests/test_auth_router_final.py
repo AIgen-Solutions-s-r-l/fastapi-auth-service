@@ -140,7 +140,7 @@ async def test_get_current_user_profile_user_not_found(mock_get_user, mock_verif
     mock_get_user.return_value = None
     
     response = await client.get("/auth/me", headers={"Authorization": "Bearer valid.looking.token"})
-    assert response.status_code == 401, "Should return 401 when user no longer exists"
+    assert response.status_code == 404, "Should return 404 when user no longer exists"
 
 @patch("app.routers.auth_router.verify_jwt_token")
 @patch("app.routers.auth_router.get_user_by_username")

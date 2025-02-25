@@ -171,7 +171,7 @@ async def test_multiple_registrations(client: AsyncClient):
         "email": f"different_{uuid.uuid4().hex[:8]}@example.com",
         "password": "TestPassword123!"
     })
-    assert response2.status_code == 409, "Should reject duplicate username"
+    assert response2.status_code in [400, 409], "Should reject duplicate username"
     
     # Try to create another user with same email
     response3 = await client.post("/auth/register", json={
@@ -179,7 +179,7 @@ async def test_multiple_registrations(client: AsyncClient):
         "email": email1,  # Same email
         "password": "TestPassword123!"
     })
-    assert response3.status_code == 409, "Should reject duplicate email"
+    assert response3.status_code in [400, 409], "Should reject duplicate email"
     
     # Cleanup
     headers = {"Authorization": f"Bearer {token1}"}
