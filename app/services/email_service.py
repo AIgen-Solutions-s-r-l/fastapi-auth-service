@@ -6,17 +6,12 @@ from pathlib import Path
 import os
 
 from fastapi import BackgroundTasks, HTTPException
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.email import send_email
 from app.core.config import settings
 from app.models.user import User
 from app.log.logging import logger
-
-# Initialize template system
-templates_dir = Path(__file__).parent.parent / "templates"
-templates = Jinja2Templates(directory=str(templates_dir))
 
 
 class EmailService:
@@ -54,7 +49,7 @@ class EmailService:
         """
         try:
             # Get the template file path
-            template_path = templates_dir / f"{template_name}.html"
+            template_path = Path(__file__).parent.parent / "templates" / f"{template_name}.html"
             
             # Check if template exists
             if not template_path.exists():
@@ -76,7 +71,7 @@ class EmailService:
                 placeholder = "{{ " + key + " }}"
                 rendered_content = rendered_content.replace(placeholder, str(value))
             
-            # Send the email
+            # Send the email using SendGrid
             self.background_tasks.add_task(
                 send_email,
                 subject=subject,
@@ -173,6 +168,7 @@ class EmailService:
                 "plan_name": plan_name,
                 "amount": amount,
                 "credit_amount": credit_amount,
+                "purchase_date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
                 "renewal_date": renewal_date.strftime("%Y-%m-%d %H:%M"),
                 "dashboard_link": f"{settings.FRONTEND_URL}/dashboard"
             }
@@ -216,7 +212,9 @@ class EmailService:
             recipients=[str(user.email)],
             context={
                 "username": user.username,
-                "login_link": f"{settings.FRONTEND_URL}/login"
+                "login_link": f"{settings.FRONTEND_URL}/login",
+                "ip_address": "Not available",  # Could be passed in from the request
+                "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
             }
         )
     
