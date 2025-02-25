@@ -1,6 +1,7 @@
 """Pydantic models for authentication-related request and response schemas."""
 
-from pydantic import BaseModel, EmailStr, ConfigDict
+from typing import Optional
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, model_validator, field_validator
 
 
 class LoginRequest(BaseModel):
@@ -11,13 +12,12 @@ class LoginRequest(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-from pydantic import BaseModel, EmailStr, ConfigDict, Field, model_validator, field_validator
-
 class UserCreate(BaseModel):
     """Pydantic model for creating a new user."""
     username: str
     email: EmailStr
     password: str = Field(..., min_length=8, description="Password must be at least 8 characters long")
+    email_verification_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -73,5 +73,38 @@ class EmailChange(BaseModel):
     """Pydantic model for email change request."""
     new_email: EmailStr
     current_password: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class VerifyEmail(BaseModel):
+    """Schema for email verification."""
+    token: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ResendVerification(BaseModel):
+    """Schema for resending verification email."""
+    email: EmailStr
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserResponse(BaseModel):
+    """Schema for user response data."""
+    username: str
+    email: EmailStr
+    is_verified: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RegistrationResponse(BaseModel):
+    """Schema for registration response."""
+    message: str
+    username: str
+    email: EmailStr
+    verification_sent: bool
 
     model_config = ConfigDict(from_attributes=True)

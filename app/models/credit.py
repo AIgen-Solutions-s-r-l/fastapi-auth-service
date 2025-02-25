@@ -13,6 +13,10 @@ class TransactionType(str, Enum):
     """Types of credit transactions."""
     CREDIT_ADDED = "credit_added"
     CREDIT_USED = "credit_used"
+    PLAN_PURCHASE = "plan_purchase"
+    PLAN_RENEWAL = "plan_renewal"
+    PLAN_UPGRADE = "plan_upgrade"
+    ONE_TIME_PURCHASE = "one_time_purchase"
 
 
 class UserCredit(Base):
@@ -42,7 +46,13 @@ class CreditTransaction(Base):
     reference_id = Column(String(100))
     description = Column(Text)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    
+    # Additional fields for plan-related transactions
+    plan_id = Column(Integer, ForeignKey("plans.id"), nullable=True)
+    subscription_id = Column(Integer, ForeignKey("subscriptions.id"), nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="credit_transactions")
     user_credit = relationship("UserCredit", back_populates="transactions")
+    plan = relationship("Plan", foreign_keys=[plan_id])
+    subscription = relationship("Subscription", foreign_keys=[subscription_id])

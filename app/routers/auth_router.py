@@ -12,7 +12,8 @@ from app.core.exceptions import UserAlreadyExistsError, UserNotFoundError, Inval
 from app.core.security import create_access_token, verify_jwt_token
 from app.schemas.auth_schemas import (
     LoginRequest, Token, UserCreate, PasswordChange,
-    PasswordResetRequest, PasswordReset, RefreshToken, EmailChange
+    PasswordResetRequest, PasswordReset, RefreshToken, EmailChange,
+    VerifyEmail, ResendVerification, UserResponse, RegistrationResponse
 )
 from app.services.user_service import (
     create_user, authenticate_user, get_user_by_username,
@@ -23,6 +24,7 @@ from app.models.user import User
 from app.log.logging import logger
 from app.core.email import send_email
 from app.core.config import settings
+from app.services.email_service import EmailService
 
 
 router = APIRouter(tags=["authentication"])
@@ -71,7 +73,7 @@ async def login(
 @router.post(
     "/register",
     status_code=status.HTTP_201_CREATED,
-    response_model=Dict[str, Any],
+    response_model=RegistrationResponse,
     responses={
         201: {
             "description": "User successfully registered",
@@ -80,8 +82,8 @@ async def login(
                     "example": {
                         "message": "User registered successfully",
                         "username": "john_doe",
-                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                        "token_type": "bearer"
+                        "email": "john@example.com",
+                        "verification_sent": True
                     }
                 }
             }
@@ -91,52 +93,220 @@ async def login(
 )
 async def register_user(
         user: UserCreate,
+        background_tasks: BackgroundTasks,
         db: AsyncSession = Depends(get_db)
-) -> Dict[str, Any]:
+) -> RegistrationResponse:
     """
-    Register a new user and return access token for immediate authentication.
+    Register a new user and send a verification email.
 
     Returns:
-        Dict containing:
+        RegistrationResponse containing:
         - success message
         - username
-        - JWT access token
-        - token type (always "bearer")
+        - email
+        - verification_sent status
     """
     try:
+        # Create the user (initially not verified)
         new_user = await create_user(db, user.username, str(user.email), user.password)
+        
+        # Send verification email
+        user_service = UserService(db)
+        verification_sent = await user_service.send_verification_email(new_user, background_tasks)
 
-        # Calculate expiration time using timezone-aware datetime
+        logger.info("User registered", 
+                  event_type="user_registered", 
+                  username=new_user.username, 
+                  email=str(user.email),
+                  verification_sent=verification_sent)
+
+        return RegistrationResponse(
+            message="User registered successfully. Please check your email to verify your account.",
+            username=new_user.username,
+            email=str(new_user.email),
+            verification_sent=verification_sent
+        )
+        
+    except UserAlreadyExistsError as e:
+        logger.error("Registration failed", 
+                   event_type="registration_error", 
+                   username=user.username, 
+                   email=str(user.email), 
+                   error_type="user_exists")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, 
+            detail={"message": "User already exists", "detail": str(e)}
+        ) from e
+
+
+@router.post(
+    "/verify-email",
+    response_model=Dict[str, Any],
+    responses={
+        200: {"description": "Email successfully verified"},
+        400: {"description": "Invalid or expired verification token"}
+    }
+)
+async def verify_email(
+    verification: VerifyEmail,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Verify user's email using the token sent via email.
+    
+    Args:
+        verification: Contains the verification token
+        background_tasks: FastAPI background tasks
+        db: Database session
+        
+    Returns:
+        Dict containing success message
+        
+    Raises:
+        HTTPException: If token is invalid or expired
+    """
+    try:
+        user_service = UserService(db)
+        success, user = await user_service.verify_email(verification.token)
+        
+        if not success or not user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification token"
+            )
+            
+        # Send welcome email
+        email_service = EmailService(background_tasks, db)
+        await email_service.send_welcome_email(user)
+        
+        logger.info(
+            "Email verification successful",
+            event_type="email_verified",
+            user_id=user.id,
+            username=user.username
+        )
+        
+        # Generate a token for immediate login
         expires_delta = timedelta(minutes=60)
         expire_time = datetime.now(timezone.utc) + expires_delta
-
+        
         access_token = create_access_token(
             data={
                 "sub": user.username,
-                "id": new_user.id,
-                "is_admin": new_user.is_admin,
+                "id": user.id,
+                "is_admin": user.is_admin,
                 "exp": expire_time.timestamp()
             },
             expires_delta=expires_delta
         )
-
-        logger.info("User registered", event_type="user_registered", username=new_user.username, email=str(user.email))
-
+        
         return {
-            "message": "User registered successfully",
-            "username": new_user.username,
+            "message": "Email verified successfully",
+            "username": user.username,
+            "email": str(user.email),
+            "is_verified": True,
             "access_token": access_token,
             "token_type": "bearer"
         }
-    except UserAlreadyExistsError as e:
-        logger.error("Registration failed", event_type="registration_error", username=user.username, email=str(user.email), error_type="user_exists")
+        
+    except HTTPException as http_ex:
+        logger.error(
+            "Email verification failed",
+            event_type="email_verification_error",
+            token=verification.token,
+            error=str(http_ex.detail)
+        )
+        raise http_ex
+        
+    except Exception as e:
+        logger.error(
+            "Email verification error",
+            event_type="email_verification_error",
+            token=verification.token,
+            error_type=type(e).__name__,
+            error_details=str(e)
+        )
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail={"message": "User already exists", "detail": str(e)}) from e
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error verifying email: {str(e)}"
+        )
+
+
+@router.post(
+    "/resend-verification",
+    response_model=Dict[str, Any],
+    responses={
+        200: {"description": "Verification email resent"},
+        404: {"description": "User not found"}
+    }
+)
+async def resend_verification_email(
+    request: ResendVerification,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Resend verification email to a user.
+    
+    Args:
+        request: Contains the email address
+        background_tasks: FastAPI background tasks
+        db: Database session
+        
+    Returns:
+        Dict containing success message
+    """
+    try:
+        # Get user by email
+        user_service = UserService(db)
+        user = await user_service.get_user_by_email(str(request.email))
+        
+        if not user:
+            # For security, don't reveal if the email exists or not
+            return {
+                "message": "If your email is registered, a verification link has been sent."
+            }
+            
+        # Check if already verified
+        if user.is_verified:
+            return {
+                "message": "Email is already verified."
+            }
+            
+        # Send verification email
+        sent = await user_service.send_verification_email(user, background_tasks)
+        
+        logger.info(
+            "Verification email resent",
+            event_type="verification_email_resent",
+            user_id=user.id,
+            username=user.username,
+            email=str(user.email),
+            success=sent
+        )
+        
+        return {
+            "message": "Verification email has been resent."
+        }
+        
+    except Exception as e:
+        logger.error(
+            "Error resending verification email",
+            event_type="resend_verification_error",
+            email=str(request.email),
+            error_type=type(e).__name__,
+            error_details=str(e)
+        )
+        # For security, don't reveal specific errors
+        return {
+            "message": "If your email is registered, a verification link has been sent."
+        }
 
 
 @router.get(
     "/users/{username}",
-    response_model=Dict[str, Any],
+    response_model=UserResponse,
     responses={
         200: {"description": "User details retrieved successfully"},
         404: {"description": "User not found"}
@@ -145,20 +315,21 @@ async def register_user(
 async def get_user_details(
         username: str,
         db: AsyncSession = Depends(get_db)
-) -> Dict[str, Any]:
+) -> UserResponse:
     """Retrieve user details by username."""
     try:
         user = await get_user_by_username(db, username)
         logger.info("User details retrieved", event_type="user_details_retrieved", username=username)
-        # Add debug logging to check if user is None
-        logger.info(f"User object is: {user}", event_type="user_details_debug")
         if user is None:
             logger.error("User object is None", event_type="user_lookup_error", username=username)
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-        return {
-            "username": user.username,
-            "email": str(user.email)
-        }
+            
+        return UserResponse(
+            username=user.username,
+            email=user.email,
+            is_verified=user.is_verified
+        )
+        
     except UserNotFoundError as e:
         logger.error("User lookup failed", event_type="user_lookup_error", username=username, error_type="user_not_found")
         raise HTTPException(
@@ -176,7 +347,8 @@ async def get_user_details(
                     "example": {
                         "message": "Email updated successfully",
                         "username": "john_doe",
-                        "email": "new.email@example.com"
+                        "email": "new.email@example.com",
+                        "verification_sent": True
                     }
                 }
             }
@@ -189,11 +361,12 @@ async def get_user_details(
 async def change_email(
     username: str,
     email_change: EmailChange,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     token: str = Depends(oauth2_scheme)
 ) -> Dict[str, Any]:
     """
-    Change user's email address.
+    Change user's email address and send verification.
 
     Requires authentication and current password verification.
     The new email must not be already registered by another user.
@@ -201,6 +374,7 @@ async def change_email(
     Args:
         username: Username of the user
         email_change: New email and current password
+        background_tasks: FastAPI background tasks
         db: Database session
         token: JWT token for authentication
 
@@ -227,24 +401,29 @@ async def change_email(
             )
 
         # Update email through service
-        service = UserService(db)
-        updated_user = await service.update_user_email(
+        user_service = UserService(db)
+        updated_user = await user_service.update_user_email(
             username,
             email_change.current_password,
             str(email_change.new_email)
         )
 
+        # Send verification email for new email address
+        verification_sent = await user_service.send_verification_email(updated_user, background_tasks)
+
         logger.info(
             "Email changed successfully",
             event_type="email_changed",
             username=username,
-            new_email=str(email_change.new_email)
+            new_email=str(email_change.new_email),
+            verification_sent=verification_sent
         )
 
         return {
-            "message": "Email updated successfully",
+            "message": "Email updated successfully. Please verify your new email address.",
             "username": updated_user.username,
-            "email": str(updated_user.email)
+            "email": str(updated_user.email),
+            "verification_sent": verification_sent
         }
 
     except JWTError as e:
@@ -287,11 +466,12 @@ async def change_email(
 async def change_password(
         username: str,
         passwords: PasswordChange,
+        background_tasks: BackgroundTasks,
         db: AsyncSession = Depends(get_db),
         _: str = Depends(oauth2_scheme)
 ) -> Dict[str, str]:
     """
-    Change user password.
+    Change user password and send confirmation email.
 
     Requires authentication and verification of current password.
     """
@@ -303,14 +483,29 @@ async def change_password(
                 detail="New password must be at least 8 characters long"
             )
             
-        await update_user_password(
-            db,
+        # Update password
+        user_service = UserService(db)
+        success = await user_service.update_user_password(
             username,
             passwords.current_password,
             passwords.new_password
         )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update password"
+            )
+            
+        # Get user for email
+        user = await user_service.get_user_by_username(username)
+        if user:
+            # Send confirmation email
+            await user_service.send_password_change_confirmation(user, background_tasks)
+        
         logger.info("Password changed", event_type="password_changed", username=username)
         return {"message": "Password updated successfully"}
+        
     except (UserNotFoundError, InvalidCredentialsError) as e:
         logger.error("Password change failed", event_type="password_change_error", username=username, error_type=type(e).__name__)
         raise HTTPException(
@@ -412,7 +607,12 @@ async def logout(token: str = Depends(oauth2_scheme)) -> Dict[str, str]:
         ) from e
 
 
-@router.post("/password-reset-request")
+@router.post(
+    "/password-reset-request",
+    responses={
+        200: {"description": "Password reset link sent if account exists"}
+    }
+)
 async def request_password_reset(
     request: PasswordResetRequest,
     background_tasks: BackgroundTasks,
@@ -423,15 +623,20 @@ async def request_password_reset(
         token = await create_password_reset_token(db, request.email)
         reset_link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
 
-        background_tasks.add_task(
-            send_email,
-            to_email=request.email,
-            subject="Password Reset Request",
-            template="password_reset.html",
-            context={
-                "reset_link": reset_link,
-                "username": request.email
-            }
+        # Create email service
+        email_service = EmailService(background_tasks, db)
+        
+        # Get user for email
+        user_service = UserService(db)
+        user = await user_service.get_user_by_email(str(request.email))
+        
+        if user:
+            await email_service.send_password_change_request(user, token)
+
+        logger.info(
+            "Password reset requested",
+            event_type="password_reset_requested",
+            email=str(request.email)
         )
 
         return {"message": "Password reset link sent to email if account exists"}
@@ -439,6 +644,41 @@ async def request_password_reset(
         logger.error("Password reset request failed", event_type="password_reset_request_error", email=request.email, error=str(e))
         # Return same message to prevent email enumeration
         return {"message": "Password reset link sent to email if account exists"}
+
+
+@router.post(
+    "/reset-password",
+    responses={
+        200: {"description": "Password successfully reset"},
+        400: {"description": "Invalid or expired reset token"}
+    }
+)
+async def reset_password_with_token(
+    reset_data: PasswordReset,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Reset password using the token received via email."""
+    try:
+        user_id = await verify_reset_token(reset_data.token)
+        await reset_password(db, user_id, reset_data.new_password)
+
+        # Send confirmation email
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        
+        if user:
+            user_service = UserService(db)
+            await user_service.send_password_change_confirmation(user, background_tasks)
+
+        logger.info("Password reset successful", event_type="password_reset_success", user_id=user_id)
+        return {"message": "Password has been reset successfully"}
+    except (UserNotFoundError, jwt.JWTError, ValueError) as e:
+        logger.error("Password reset failed", event_type="password_reset_error", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        ) from e
 
 
 @router.post(
@@ -496,18 +736,10 @@ async def refresh_token(
 
 @router.get(
     "/me",
-    response_model=Dict[str, Any],
+    response_model=UserResponse,
     responses={
         200: {
-            "description": "User profile retrieved successfully",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "username": "john_doe",
-                        "email": "john@example.com"
-                    }
-                }
-            }
+            "description": "User profile retrieved successfully"
         },
         401: {"description": "Not authenticated"},
         404: {"description": "User not found"}
@@ -517,7 +749,7 @@ async def get_current_user_profile(
     user_id: int | None = None,
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db)
-) -> Dict[str, Any]:
+) -> UserResponse:
     """
     Retrieve the profile of the authenticated user.
     For non-admin users, any provided user_id is ignored.
@@ -548,10 +780,11 @@ async def get_current_user_profile(
         
         logger.info("User profile retrieved", event_type="profile_retrieved", username=user.username)
         
-        return {
-            "username": user.username,
-            "email": str(user.email)
-        }
+        return UserResponse(
+            username=user.username,
+            email=user.email,
+            is_verified=user.is_verified
+        )
         
     except jwt.JWTError as e:
         logger.error("Profile retrieval failed - token error", event_type="profile_retrieval_error", error_type="JWTError", error_details=str(e))
@@ -564,26 +797,6 @@ async def get_current_user_profile(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
-        ) from e
-
-
-@router.post("/reset-password")
-async def reset_password_with_token(
-    reset_data: PasswordReset,
-    db: AsyncSession = Depends(get_db)
-) -> dict:
-    """Reset password using the token received via email."""
-    try:
-        user_id = await verify_reset_token(reset_data.token)
-        await reset_password(db, user_id, reset_data.new_password)
-
-        logger.info("Password reset successful", event_type="password_reset_success", user_id=user_id)
-        return {"message": "Password has been reset successfully"}
-    except (UserNotFoundError, jwt.JWTError, ValueError) as e:
-        logger.error("Password reset failed", event_type="password_reset_error", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired reset token"
         ) from e
 
 
@@ -664,7 +877,11 @@ async def get_email_and_username_by_user_id(user_id: int, db: AsyncSession = Dep
             event_type="profile_retrieved",
             user_id=user_id
         )
-        return {"email": str(user.email), "username": user.username}
+        return {
+            "email": str(user.email), 
+            "username": user.username,
+            "is_verified": user.is_verified
+        }
     except HTTPException as http_ex:
         # Re-log but keep the original HTTPException status code
         logger.error(
