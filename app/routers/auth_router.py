@@ -310,6 +310,15 @@ async def change_password(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
         ) from e
+    except Exception as e:
+        logger.error(f"Unhandled exception in change_password: {type(e).__name__}: {str(e)}",
+                    event_type="debug_password_change_error",
+                    error_type=type(e).__name__,
+                    error_details=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error changing password: {str(e)}"
+        ) from e
 
 
 @router.delete(
@@ -340,6 +349,15 @@ async def remove_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
+        ) from e
+    except Exception as e:
+        logger.error(f"Unhandled exception in remove_user: {type(e).__name__}: {str(e)}",
+                    event_type="debug_user_deletion_error",
+                    error_type=type(e).__name__,
+                    error_details=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting user: {str(e)}"
         ) from e
 
 
@@ -514,11 +532,17 @@ async def get_current_user_profile(
             "email": str(user.email)
         }
         
-    except (jwt.JWTError, UserNotFoundError) as e:
-        logger.error("Profile retrieval failed", event_type="profile_retrieval_error", error_type=type(e).__name__, error_details=str(e))
+    except jwt.JWTError as e:
+        logger.error("Profile retrieval failed - token error", event_type="profile_retrieval_error", error_type="JWTError", error_details=str(e))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials"
+        ) from e
+    except UserNotFoundError as e:
+        logger.error("Profile retrieval failed - user not found", event_type="profile_retrieval_error", error_type="UserNotFoundError", error_details=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
         ) from e
 
 
