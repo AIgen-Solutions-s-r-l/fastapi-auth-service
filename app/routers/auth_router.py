@@ -131,7 +131,7 @@ async def register_user(
     except UserAlreadyExistsError as e:
         logger.error("Registration failed", event_type="registration_error", username=user.username, email=str(user.email), error_type="user_exists")
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+            status_code=status.HTTP_409_CONFLICT, detail={"message": "User already exists", "detail": str(e)}) from e
 
 
 @router.get(
@@ -296,6 +296,13 @@ async def change_password(
     Requires authentication and verification of current password.
     """
     try:
+        # Explicitly check for empty new password
+        if not passwords.new_password or len(passwords.new_password) < 8:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="New password must be at least 8 characters long"
+            )
+            
         await update_user_password(
             db,
             username,
@@ -310,6 +317,13 @@ async def change_password(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
         ) from e
+    except HTTPException as http_ex:
+        # Re-raise HTTP exceptions without changing status code
+        logger.error(f"HTTP exception in change_password: {http_ex.status_code}: {http_ex.detail}",
+                    event_type="password_change_error",
+                    error_type="HTTPException",
+                    error_details=str(http_ex.detail))
+        raise http_ex
     except Exception as e:
         logger.error(f"Unhandled exception in change_password: {type(e).__name__}: {str(e)}",
                     event_type="debug_password_change_error",
@@ -350,6 +364,13 @@ async def remove_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
         ) from e
+    except HTTPException as http_ex:
+        # Re-raise HTTP exceptions without changing status code
+        logger.error(f"HTTP exception in remove_user: {http_ex.status_code}: {http_ex.detail}",
+                    event_type="user_deletion_error",
+                    error_type="HTTPException",
+                    error_details=str(http_ex.detail))
+        raise http_ex
     except Exception as e:
         logger.error(f"Unhandled exception in remove_user: {type(e).__name__}: {str(e)}",
                     event_type="debug_user_deletion_error",
@@ -564,6 +585,56 @@ async def reset_password_with_token(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token"
         ) from e
+
+
+@router.get("/users/{user_id}/email",
+    response_model=Dict[str, str],
+    responses={
+        200: {"description": "User email retrieved successfully"},
+        404: {"description": "User not found"}
+    }
+)
+async def get_email_by_user_id(user_id: int, db: AsyncSession = Depends(get_db)) -> Dict[str, str]:
+    """Get user's email by user ID without requiring authentication."""
+    try:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            logger.warning(
+                "Email retrieval failed - user not found",
+                event_type="email_retrieval_error",
+                user_id=user_id,
+                error_type="user_not_found"
+            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        
+        logger.info(
+            "Email retrieved by user_id",
+            event_type="email_retrieved",
+            user_id=user_id
+        )
+        return {"email": str(user.email)}
+    except HTTPException as http_ex:
+        # Re-log but keep the original HTTPException status code
+        logger.error(
+            "Failed to retrieve email by user_id",
+            event_type="email_retrieval_error",
+            user_id=user_id,
+            error_type="HTTPException",
+            error_details=str(http_ex.detail)
+        )
+        # Re-raise the same HTTPException to maintain the status code
+        raise http_ex
+    except Exception as e:
+        logger.error(
+            "Failed to retrieve email by user_id",
+            event_type="email_retrieval_error",
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error_details=str(e)
+        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                           detail="Internal server error when retrieving user email")
 
 
 @router.get("/users/{user_id}/profile",

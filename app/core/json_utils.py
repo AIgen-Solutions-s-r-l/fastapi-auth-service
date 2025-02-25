@@ -6,9 +6,12 @@ from typing import Any
 
 
 class CustomJSONEncoder(json.JSONEncoder):
-    """Custom JSON encoder that handles Decimal values."""
+    """Custom JSON encoder that handles Decimal values and exceptions."""
     def default(self, obj: Any) -> Any:
         if isinstance(obj, Decimal):
+            return str(obj)
+        # Handle ValueError and other exceptions
+        if isinstance(obj, Exception):
             return str(obj)
         return super().default(obj)
 
