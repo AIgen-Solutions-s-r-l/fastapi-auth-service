@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     MAIL_STARTTLS: bool = os.getenv("MAIL_STARTTLS", "True").lower() == "true"
 
     # SendGrid via Azure settings
-    SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "SG.REMOVED_KEY")
+    SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "")
     SENDGRID_HOST: str = os.getenv("SENDGRID_HOST", "https://api.sendgrid.com")
     AZURE_DOMAIN: str = os.getenv("AZURE_DOMAIN", "em8606.laborolabs.com")
     EMAIL_FROM_NAME: str = os.getenv("EMAIL_FROM_NAME", "Auth Service")
