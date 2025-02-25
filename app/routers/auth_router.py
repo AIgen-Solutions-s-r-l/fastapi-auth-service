@@ -2,7 +2,7 @@
 
 from datetime import timedelta, datetime, timezone
 from typing import Dict, Any
-from jose import jwt
+from jose import jwt, JWTError
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -150,6 +150,16 @@ async def get_user_details(
     try:
         user = await get_user_by_username(db, username)
         logger.info("User details retrieved", event_type="user_details_retrieved", username=username)
+        
+        # Check if user is None before accessing attributes
+        if user is None:
+            logger.error("User not found", event_type="user_lookup_error", username=username)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with identifier '{username}' not found"
+            )
+            
+        # Only execute this if user exists
         return {
             "username": user.username,
             "email": str(user.email)
@@ -242,6 +252,19 @@ async def change_email(
             "email": str(updated_user.email)
         }
 
+    except JWTError as e:
+        # Handle JWT authentication errors
+        logger.error(
+            "Email change failed - invalid token",
+            event_type="email_change_error",
+            username=username,
+            error_type="JWTError",
+            error_details=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        ) from e
     except HTTPException as e:
         # Re-raise HTTP exceptions from the service layer
         raise e
@@ -551,6 +574,17 @@ async def get_email_and_username_by_user_id(user_id: int, db: AsyncSession = Dep
             user_id=user_id
         )
         return {"email": str(user.email), "username": user.username}
+    except HTTPException as http_ex:
+        # Re-log but keep the original HTTPException status code
+        logger.error(
+            "Failed to retrieve email by user_id",
+            event_type="email_retrieval_error",
+            user_id=user_id,
+            error_type="HTTPException",
+            error_details=str(http_ex.detail)
+        )
+        # Re-raise the same HTTPException to maintain the status code
+        raise http_ex
     except Exception as e:
         logger.error(
             "Failed to retrieve email by user_id",
@@ -559,4 +593,7 @@ async def get_email_and_username_by_user_id(user_id: int, db: AsyncSession = Dep
             error_type=type(e).__name__,
             error_details=str(e)
         )
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error when retrieving user profile"
+        )
