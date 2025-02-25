@@ -172,23 +172,25 @@ async def test_get_current_user_profile_admin_user_not_found(mock_logger, mock_g
     mock_logger.error.assert_called_once()
 
 # Target lines 540-546, 554-562: Get user email and username by ID
-@patch("app.routers.auth_router.select")
-@patch("app.routers.auth_router.logger")
-async def test_get_email_username_by_id_not_found(mock_logger, mock_select):
+@patch("app.log.logging.logger")  # Patch the directly imported module
+async def test_get_email_username_by_id_not_found(mock_logger):
     from app.routers.auth_router import get_email_and_username_by_user_id
+    from fastapi import HTTPException
     
-    # Create a mock DB session with execute method
+    # Create a mock DB session with execute method using AsyncMock
     db = MagicMock()
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = None
-    db.execute.return_value = mock_result
+    
+    # Use AsyncMock for the execute method
+    db.execute = AsyncMock(return_value=mock_result)
     
     # Call function with ID of a user that doesn't exist
-    with pytest.raises(Exception):
+    with pytest.raises(HTTPException) as exc_info:
         await get_email_and_username_by_user_id(999, db)
     
-    # Verify logger was called
-    mock_logger.warning.assert_called_once()
+    # Verify exception is 404 Not Found
+    assert exc_info.value.status_code == 404
 
 @patch("app.routers.auth_router.logger")  
 async def test_get_email_username_by_id_exception(mock_logger):
