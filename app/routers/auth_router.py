@@ -524,33 +524,33 @@ async def reset_password_with_token(
         ) from e
 
 
-@router.get("/users/{user_id}/email",
+@router.get("/users/{user_id}/profile",
     response_model=Dict[str, str],
     responses={
-        200: {"description": "User email retrieved successfully"},
+        200: {"description": "User email and username retrieved successfully"},
         404: {"description": "User not found"}
     }
 )
-async def get_email_by_user_id(user_id: int, db: AsyncSession = Depends(get_db)) -> Dict[str, str]:
-    """Get user's email by user ID without requiring authentication."""
+async def get_email_and_username_by_user_id(user_id: int, db: AsyncSession = Depends(get_db)) -> Dict[str, str]:
+    """Get user's email and username by user ID without requiring authentication."""
     try:
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if not user:
             logger.warning(
-                "Email retrieval failed - user not found",
-                event_type="email_retrieval_error",
+                "Profile retrieval failed - user not found",
+                event_type="profile_retrieval_error",
                 user_id=user_id,
                 error_type="user_not_found"
             )
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
         
         logger.info(
-            "Email retrieved by user_id",
-            event_type="email_retrieved",
+            "Email and username retrieved by user_id",
+            event_type="profile_retrieved",
             user_id=user_id
         )
-        return {"email": str(user.email)}
+        return {"email": str(user.email), "username": user.username}
     except Exception as e:
         logger.error(
             "Failed to retrieve email by user_id",
