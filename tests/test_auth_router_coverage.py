@@ -142,7 +142,7 @@ async def test_get_user_details_return_none(mock_get_user, client: AsyncClient, 
 @patch("app.routers.auth_router.update_user_password")
 async def test_change_password_exception(mock_update_password, client: AsyncClient, test_user):
     # Set up to raise different types of exceptions
-    mock_update_password.side_effect = InvalidCredentialsError("Invalid password")
+    mock_update_password.side_effect = InvalidCredentialsError()
     
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     response = await client.put(
@@ -156,7 +156,7 @@ async def test_change_password_exception(mock_update_password, client: AsyncClie
 @patch("app.routers.auth_router.delete_user")
 async def test_remove_user_exception(mock_delete_user, client: AsyncClient, test_user):
     # Set up to raise different types of exceptions
-    mock_delete_user.side_effect = InvalidCredentialsError("Invalid password")
+    mock_delete_user.side_effect = InvalidCredentialsError()
     
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     response = await client.delete(

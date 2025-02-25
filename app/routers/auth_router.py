@@ -150,6 +150,11 @@ async def get_user_details(
     try:
         user = await get_user_by_username(db, username)
         logger.info("User details retrieved", event_type="user_details_retrieved", username=username)
+        # Add debug logging to check if user is None
+        logger.info(f"User object is: {user}", event_type="user_details_debug")
+        if user is None:
+            logger.error("User object is None", event_type="user_lookup_error", username=username)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
         return {
             "username": user.username,
             "email": str(user.email)
@@ -559,4 +564,5 @@ async def get_email_and_username_by_user_id(user_id: int, db: AsyncSession = Dep
             error_type=type(e).__name__,
             error_details=str(e)
         )
-        raise
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                           detail="Internal server error when retrieving user profile")
