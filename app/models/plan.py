@@ -10,11 +10,13 @@ from app.core.base import Base
 
 
 class PlanTier(str, Enum):
-    """Plan tier levels."""
-    BASIC = "basic"
-    STANDARD = "standard"
-    PREMIUM = "premium"
-    CUSTOM = "custom"
+    """Plan tier levels based on application count."""
+    TIER_100 = "tier_100"
+    TIER_200 = "tier_200"
+    TIER_300 = "tier_300"
+    TIER_500 = "tier_500"
+    TIER_1000 = "tier_1000"
+    CUSTOM = "custom"  # Keep custom tier for special cases
 
 
 class Plan(Base):

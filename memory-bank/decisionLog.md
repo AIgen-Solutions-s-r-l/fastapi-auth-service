@@ -2,6 +2,20 @@
 
 This document tracks key architectural and design decisions made during the development of the auth_service project.
 
+## February 26, 2025 - Subscription Tier System Update
+
+**Context:** The current subscription tier system has 3 tiers (Basic, Standard, Premium), but new requirements specify a 5-tier system based on application counts (100, 200, 300, 500, 1000) with specific pricing for each tier.
+
+**Decision:** Update the subscription tier system to implement the 5-tier structure with corresponding prices and credit amounts.
+
+**Rationale:** The new tier structure better aligns with business requirements by providing more granular options for users with different application volume needs. This will improve revenue potential and user satisfaction by offering more tailored pricing options.
+
+**Implementation:** Created a comprehensive plan in subscription_tier_update_plan.md that includes:
+- Updating the PlanTier enum in app/models/plan.py to reflect the new tiers
+- Creating a database migration to update existing plans and add new ones
+- Updating any code references to the old tier names
+- Testing plan creation, upgrades, and renewals with the new tier structure
+
 ## February 26, 2025 - Email Sending Diagnostic and Implementation Plan
 
 **Context:** Users are not receiving registration confirmation emails when registering with an email address like rocchi.b.a@gmail.com. This issue affects the user experience and prevents proper account verification.

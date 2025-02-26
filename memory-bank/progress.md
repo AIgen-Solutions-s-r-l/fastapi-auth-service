@@ -18,6 +18,8 @@
 - Diagnosed email sending issue and created implementation plan:
   - email_diagnostic_plan.md: Diagnostic steps for email sending issue
   - email_implementation.md: Implementation plan for fixing email functionality
+- Analyzed subscription tier system and created update plan:
+  - subscription_tier_update_plan.md: Plan for updating to 5-tier subscription system
 
 ## Current Status
 The auth_service project is a well-structured authentication service with:
@@ -26,10 +28,13 @@ The auth_service project is a well-structured authentication service with:
 - Email integration
 - Comprehensive logging
 - Database integration with PostgreSQL
+- Subscription tier system (currently 3 tiers, needs update to 5 tiers)
 
 We have completed the initial analysis of the project architecture, code structure, security considerations, and documentation needs. This provides a solid foundation for future development and improvements.
 
 We have identified an issue with email sending functionality where users are not receiving registration confirmation emails. We've created a comprehensive diagnostic and implementation plan to address this issue.
+
+We have also analyzed the current subscription tier system and created a plan to update it from 3 tiers to 5 tiers based on new requirements.
 
 ## Next Steps
 
@@ -42,6 +47,13 @@ We have identified an issue with email sending functionality where users are not
    - Validate email configuration at startup
    - Test email sending with various providers
    - Document the solution
+
+2. **Update Subscription Tier System**:
+   - Update PlanTier enum in app/models/plan.py
+   - Create database migration for new tier structure
+   - Update any code references to old tier names
+   - Test plan creation, upgrades, and renewals
+   - Document the changes
 
 ### Short-term Tasks (1-2 weeks)
 1. ✅ Document the current architecture in detail (completed in architecture.md)
