@@ -856,60 +856,6 @@ async def get_email_by_user_id(user_id: int, db: AsyncSession = Depends(get_db))
         )
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                            detail="Internal server error when retrieving user email")
-@router.get("/users/{user_id}/profile",
-    response_model=Dict[str, str],
-    responses={
-        200: {"description": "User email and username retrieved successfully"},
-        404: {"description": "User not found"}
-    }
-)
-async def get_email_and_username_by_user_id(user_id: int, db: AsyncSession = Depends(get_db)) -> Dict[str, str]:
-    """Get user's email and username by user ID without requiring authentication."""
-    try:
-        result = await db.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
-        if not user:
-            # Make sure we call the warning logger correctly
-            logger.warning(
-                "Profile retrieval failed - user not found",
-                event_type="profile_retrieval_error",
-                user_id=user_id,
-                error_type="user_not_found"
-            )
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-        
-        logger.info(
-            "Email and username retrieved by user_id",
-            event_type="profile_retrieved",
-            user_id=user_id
-        )
-        return {
-            "email": str(user.email),
-            "username": user.username,
-            "is_verified": user.is_verified
-        }
-    except HTTPException as http_ex:
-        # Re-log but keep the original HTTPException status code
-        logger.error(
-            "Failed to retrieve email by user_id",
-            event_type="email_retrieval_error",
-            user_id=user_id,
-            error_type="HTTPException",
-            error_details=str(http_ex.detail)
-        )
-        # Re-raise the same HTTPException to maintain the status code
-        raise http_ex
-    except Exception as e:
-        logger.error(
-            "Failed to retrieve email by user_id",
-            event_type="email_retrieval_error",
-            user_id=user_id,
-            error_type=type(e).__name__,
-            error_details=str(e)
-        )
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                           detail="Internal server error when retrieving user profile")
-
 
 @router.post(
     "/test-email",

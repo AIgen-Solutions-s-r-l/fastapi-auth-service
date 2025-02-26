@@ -26,6 +26,12 @@
   - Added email configuration validation at startup
 - Analyzed subscription tier system and created update plan:
   - subscription_tier_update_plan.md: Plan for updating to 5-tier subscription system
+- Implemented subscription tier updates to support the new 5-tier system
+- Created plan for auth router modification:
+  - auth_router_modification_plan.md: Plan for simplifying the user email retrieval endpoint
+- Implemented auth router modifications:
+  - Removed the redundant `/users/{user_id}/profile` endpoint
+  - Kept the existing `/users/{user_id}/email` endpoint that returns only the email
 
 ## Current Status
 The auth_service project is a well-structured authentication service with:
@@ -34,13 +40,16 @@ The auth_service project is a well-structured authentication service with:
 - Email integration
 - Comprehensive logging
 - Database integration with PostgreSQL
-- Subscription tier system (currently 3 tiers, needs update to 5 tiers)
+- Subscription tier system (updated to 5 tiers)
+- Simplified API endpoints for user data retrieval
 
 We have completed the initial analysis of the project architecture, code structure, security considerations, and documentation needs. This provides a solid foundation for future development and improvements.
 
 We have successfully resolved the email sending issue by implementing comprehensive diagnostic endpoints, enhanced error logging, retry mechanisms, template verification, and configuration validation. The email system now has improved reliability and better error handling.
 
-We have also analyzed the current subscription tier system and created a plan to update it from 3 tiers to 5 tiers based on new requirements.
+We have updated the subscription tier system from 3 tiers to 5 tiers based on new requirements.
+
+We have simplified the auth router by removing redundant endpoints, specifically consolidating the user email retrieval functionality to a single endpoint.
 
 ## Next Steps
 
@@ -60,6 +69,19 @@ We have also analyzed the current subscription tier system and created a plan to
    - ✅ Update any code references to old tier names
    - ✅ Test plan creation and verify all 5 tiers are in the database
    - ✅ Document the changes
+
+3. **Modify Auth Router**:
+   - ✅ Create plan for simplifying the user email retrieval endpoint
+   - ✅ Implement changes to auth_router.py
+   - Test the modified endpoint
+   - Update affected tests:
+     - Several tests in the following files need to be updated or removed:
+       - tests/test_auth_router_final.py
+       - tests/test_auth_router_coverage_patched.py
+       - tests/test_auth_router_final_uncovered.py
+       - tests/test_auth_router_coverage.py
+       - tests/test_auth_router_coverage_final.py
+       - tests/test_auth_router_extended.py
 
 ### Short-term Tasks (1-2 weeks)
 1. ✅ Document the current architecture in detail (completed in architecture.md)

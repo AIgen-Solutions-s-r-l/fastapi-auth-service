@@ -2,6 +2,19 @@
 
 This document tracks key architectural and design decisions made during the development of the auth_service project.
 
+## February 26, 2025 - Auth Router Endpoint Simplification
+
+**Context:** The auth router currently has two similar endpoints for retrieving user email information: `/users/{user_id}/email` and `/users/{user_id}/profile`. The first returns only the email, while the second returns email, username, and verification status. This creates unnecessary duplication and potential confusion for API consumers.
+
+**Decision:** Simplify the API by removing the `/users/{user_id}/profile` endpoint and its implementation (`get_email_and_username_by_user_id`), keeping only the `/users/{user_id}/email` endpoint that returns just the email.
+
+**Rationale:** Having two endpoints with overlapping functionality increases maintenance burden and can confuse API consumers. Since the requirement is to have a function that returns only the email, it makes sense to use the existing `get_email_by_user_id` function and remove the redundant endpoint.
+
+**Implementation:** Created a plan in auth_router_modification_plan.md that includes:
+- Removing the `/users/{user_id}/profile` endpoint and its implementation
+- Keeping the existing `/users/{user_id}/email` endpoint unchanged
+- Updating any affected tests
+
 ## February 26, 2025 - Subscription Tier System Update
 
 **Context:** The current subscription tier system has 3 tiers (Basic, Standard, Premium), but new requirements specify a 5-tier system based on application counts (100, 200, 300, 500, 1000) with specific pricing for each tier.
