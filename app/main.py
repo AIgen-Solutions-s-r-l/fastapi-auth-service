@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi_sqlalchemy import DBSessionMiddleware
 
-from app.core.config import settings
+from app.core.config import settings, validate_email_config
 from app.core.exceptions import AuthException
 from app.core.error_handlers import validation_exception_handler, auth_exception_handler, http_exception_handler, generic_exception_handler
 from app.log.logging import logger, InterceptHandler
@@ -23,10 +23,28 @@ logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 async def lifespan(app: FastAPI):
     """Lifespan context manager for FastAPI application."""
     # Startup
-    logger.info("Starting application",status="starting",event="service_startup")
+    logger.info("Starting application", status="starting", event="service_startup")
+    
+    # Validate email configuration
+    email_config_valid, validation_details = validate_email_config()
+    if not email_config_valid:
+        logger.warning(
+            "Email configuration is invalid or incomplete",
+            event_type="startup_warning",
+            component="email",
+            issues=validation_details["issues"]
+        )
+    else:
+        logger.info(
+            "Email configuration validated successfully",
+            event_type="startup_info",
+            component="email",
+            warnings=validation_details.get("warnings", [])
+        )
+    
     yield
     # Shutdown
-    logger.info("Shutting down application",status="stopping",event="service_shutdown")
+    logger.info("Shutting down application", status="stopping", event="service_shutdown")
 
 
 # Initialize FastAPI app

@@ -2,6 +2,23 @@
 
 This document tracks key architectural and design decisions made during the development of the auth_service project.
 
+## February 26, 2025 - Email Sending Diagnostic and Implementation Plan
+
+**Context:** Users are not receiving registration confirmation emails when registering with an email address like rocchi.b.a@gmail.com. This issue affects the user experience and prevents proper account verification.
+
+**Decision:** Develop a comprehensive diagnostic and implementation plan to identify and fix the email sending issues.
+
+**Rationale:** Email functionality is critical for user verification, password resets, and notifications. A systematic approach to diagnosing and fixing the issue will ensure reliable email delivery and improve user experience.
+
+**Implementation:** Created the following documentation and implementation plans:
+- email_diagnostic_plan.md: Detailed diagnostic steps to identify the root cause of email sending failures
+- email_implementation.md: Specific implementation steps to enhance email sending reliability, including:
+  - Adding a test email endpoint for direct testing
+  - Enhancing error logging in the email sending process
+  - Implementing retry logic for transient failures
+  - Adding template verification functionality
+  - Validating email configuration at startup
+
 ## February 26, 2025 - Comprehensive Architectural Documentation
 
 **Context:** Need for detailed architectural documentation, code structure analysis, security review, and documentation planning to guide future development of the auth_service project.

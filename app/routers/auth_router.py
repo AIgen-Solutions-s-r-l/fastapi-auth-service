@@ -848,8 +848,6 @@ async def get_email_by_user_id(user_id: int, db: AsyncSession = Depends(get_db))
         )
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                            detail="Internal server error when retrieving user email")
-
-
 @router.get("/users/{user_id}/profile",
     response_model=Dict[str, str],
     responses={
@@ -878,7 +876,7 @@ async def get_email_and_username_by_user_id(user_id: int, db: AsyncSession = Dep
             user_id=user_id
         )
         return {
-            "email": str(user.email), 
+            "email": str(user.email),
             "username": user.username,
             "is_verified": user.is_verified
         }
@@ -903,3 +901,163 @@ async def get_email_and_username_by_user_id(user_id: int, db: AsyncSession = Dep
         )
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                            detail="Internal server error when retrieving user profile")
+
+
+@router.post(
+    "/test-email",
+    response_model=Dict[str, Any],
+    responses={
+        200: {"description": "Test email sent successfully"},
+        500: {"description": "Failed to send test email"}
+    }
+)
+async def test_email(
+    email_test: Dict[str, str],
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Test endpoint to verify email sending functionality.
+    Requires an email address to send the test to.
+    
+    Example request:
+    ```json
+    {
+        "email": "test@example.com"
+    }
+    ```
+    """
+    try:
+        email = email_test.get("email")
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email address is required"
+            )
+            
+        # Create email service
+        email_service = EmailService(background_tasks, db)
+        
+        # Send a test email directly (not in background)
+        from app.core.email import send_email
+        result = await send_email(
+            subject="Test Email from Auth Service",
+            recipients=[email],
+            body="<p>This is a test email to verify the email sending functionality.</p>"
+        )
+        
+        logger.info(
+            "Test email sent",
+            event_type="test_email_sent",
+            recipient=email,
+            status_code=result
+        )
+        
+        return {
+            "message": "Test email sent",
+            "status_code": result,
+            "recipient": email
+        }
+    except Exception as e:
+        logger.error(
+            "Failed to send test email",
+            event_type="test_email_error",
+            error=str(e),
+            error_type=type(e).__name__
+        )
+        
+        return {
+            "message": "Failed to send test email",
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
+
+
+@router.get(
+    "/verify-email-templates",
+    response_model=Dict[str, Any],
+    responses={
+        200: {"description": "Template verification results"}
+    }
+)
+async def verify_email_templates(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Verify that all email templates exist and can be rendered.
+    """
+    results = {}
+    
+    # Create email service
+    email_service = EmailService(BackgroundTasks(), db)
+    
+    # Test registration confirmation template
+    results["registration_confirmation"] = email_service.verify_template(
+        "registration_confirmation",
+        {
+            "username": "test_user",
+            "verification_link": "https://example.com/verify?token=test_token",
+            "hours_valid": 24
+        }
+    )
+    
+    # Test welcome template
+    results["welcome"] = email_service.verify_template(
+        "welcome",
+        {
+            "username": "test_user",
+            "login_link": "https://example.com/login"
+        }
+    )
+    
+    # Test password change request template
+    results["password_change_request"] = email_service.verify_template(
+        "password_change_request",
+        {
+            "username": "test_user",
+            "reset_link": "https://example.com/reset?token=test_token",
+            "hours_valid": 24
+        }
+    )
+    
+    # Test password change confirmation template
+    results["password_change_confirmation"] = email_service.verify_template(
+        "password_change_confirmation",
+        {
+            "username": "test_user",
+            "login_link": "https://example.com/login",
+            "ip_address": "127.0.0.1",
+            "time": "2025-02-26 11:30:00 UTC"
+        }
+    )
+    
+    # Test one time credit purchase template
+    results["one_time_credit_purchase"] = email_service.verify_template(
+        "one_time_credit_purchase",
+        {
+            "username": "test_user",
+            "amount": 50.0,
+            "credits": 100.0,
+            "purchase_date": "2025-02-26 11:30:00",
+            "dashboard_link": "https://example.com/dashboard"
+        }
+    )
+    
+    # Test plan upgrade template
+    results["plan_upgrade"] = email_service.verify_template(
+        "plan_upgrade",
+        {
+            "username": "test_user",
+            "old_plan": "Basic",
+            "new_plan": "Premium",
+            "additional_credits": 200.0,
+            "upgrade_date": "2025-02-26 11:30:00",
+            "renewal_date": "2025-03-26 11:30:00",
+            "dashboard_link": "https://example.com/dashboard"
+        }
+    )
+    
+    return {
+        "message": "Template verification completed",
+        "results": results
+    }

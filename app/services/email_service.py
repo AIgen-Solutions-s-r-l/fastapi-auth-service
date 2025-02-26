@@ -1,14 +1,14 @@
 """Service layer for managing email communications."""
 
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, Tuple
 from pathlib import Path
 import os
 
 from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.email import send_email
+from app.core.email import send_email, send_email_with_retry
 from app.core.config import settings
 from app.models.user import User
 from app.log.logging import logger
@@ -28,15 +28,64 @@ class EmailService:
         self.background_tasks = background_tasks
         self.db = db
     
+    def verify_template(self, template_name: str, context: Dict[str, Any] = None) -> bool:
+        """
+        Verify that a template exists and can be rendered with the given context.
+        
+        Args:
+            template_name: Name of the template file (without .html extension)
+            context: Dictionary of template variables (optional)
+            
+        Returns:
+            bool: True if template exists and can be rendered, False otherwise
+        """
+        try:
+            template_path = Path(__file__).parent.parent / "templates" / f"{template_name}.html"
+            
+            if not template_path.exists():
+                logger.error(
+                    f"Template verification failed: {template_name} not found",
+                    event_type="template_verification_error",
+                    template=template_name,
+                    error="template_not_found"
+                )
+                return False
+            
+            # If context is provided, check if all keys are in the template
+            if context:
+                with open(template_path, "r") as f:
+                    template_content = f.read()
+                
+                # Check if all context keys are in the template
+                for key in context.keys():
+                    placeholder = "{{ " + key + " }}"
+                    if placeholder not in template_content:
+                        logger.warning(
+                            f"Template variable {key} not found in template {template_name}",
+                            event_type="template_variable_missing",
+                            template=template_name,
+                            variable=key
+                        )
+            
+            return True
+        except Exception as e:
+            logger.error(
+                f"Template verification failed: {str(e)}",
+                event_type="template_verification_error",
+                template=template_name,
+                error=str(e)
+            )
+            return False
+    
     async def _send_templated_email(
-        self, 
+        self,
         template_name: str,
         subject: str,
-        recipients: List[str], 
+        recipients: List[str],
         context: Dict[str, Any]
     ) -> None:
         """
-        Send an email using a template.
+        Send an email using a template with retry logic.
         
         Args:
             template_name: Name of the template file (without .html extension)
@@ -71,9 +120,9 @@ class EmailService:
                 placeholder = "{{ " + key + " }}"
                 rendered_content = rendered_content.replace(placeholder, str(value))
             
-            # Send the email using SendGrid
+            # Send the email using SendGrid with retry logic
             self.background_tasks.add_task(
-                send_email,
+                send_email_with_retry,  # Use the retry version
                 subject=subject,
                 recipients=recipients,
                 body=rendered_content

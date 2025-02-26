@@ -1,6 +1,7 @@
 import os
-from typing import Optional
+from typing import Optional, Dict, Any, Tuple
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from app.log.logging import logger
 
 
 class Settings(BaseSettings):
@@ -50,3 +51,75 @@ class Settings(BaseSettings):
 
     
 settings = Settings()
+
+
+def validate_email_config() -> Tuple[bool, Dict[str, Any]]:
+    """
+    Validate email configuration and log warnings for missing or invalid settings.
+    
+    Returns:
+        Tuple[bool, Dict[str, Any]]:
+            - Boolean indicating if configuration is valid
+            - Dictionary with validation details
+    """
+    valid = True
+    issues = []
+    warnings = []
+    
+    # Check SendGrid API key
+    if not settings.SENDGRID_API_KEY:
+        issue = "SendGrid API key not configured (SENDGRID_API_KEY)"
+        logger.error(
+            issue,
+            event_type="config_error",
+            setting="SENDGRID_API_KEY"
+        )
+        issues.append(issue)
+        valid = False
+    
+    # Check FROM email address
+    if not settings.EMAIL_FROM_ADDRESS:
+        issue = "Email FROM address not configured (EMAIL_FROM_ADDRESS)"
+        logger.error(
+            issue,
+            event_type="config_error",
+            setting="EMAIL_FROM_ADDRESS"
+        )
+        issues.append(issue)
+        valid = False
+    
+    # Check FROM name (warning only)
+    if not settings.EMAIL_FROM_NAME:
+        warning = "Email FROM name not configured (EMAIL_FROM_NAME)"
+        logger.warning(
+            warning,
+            event_type="config_warning",
+            setting="EMAIL_FROM_NAME"
+        )
+        warnings.append(warning)
+    
+    # Check Frontend URL (warning only)
+    if not settings.FRONTEND_URL:
+        warning = "Frontend URL not configured (FRONTEND_URL)"
+        logger.warning(
+            warning,
+            event_type="config_warning",
+            setting="FRONTEND_URL"
+        )
+        warnings.append(warning)
+    
+    # Check Azure domain (warning only)
+    if not settings.AZURE_DOMAIN:
+        warning = "Azure domain not configured (AZURE_DOMAIN)"
+        logger.warning(
+            warning,
+            event_type="config_warning",
+            setting="AZURE_DOMAIN"
+        )
+        warnings.append(warning)
+    
+    return valid, {
+        "valid": valid,
+        "issues": issues,
+        "warnings": warnings
+    }
