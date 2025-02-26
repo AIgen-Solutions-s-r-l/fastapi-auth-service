@@ -149,8 +149,8 @@ class EmailService:
             )
     
     async def send_registration_confirmation(
-        self, 
-        user: User, 
+        self,
+        user: User,
         verification_token: str
     ) -> None:
         """
@@ -160,7 +160,16 @@ class EmailService:
             user: User model instance
             verification_token: Token for email verification
         """
-        verification_link = f"{settings.FRONTEND_URL}/verify-email?token={verification_token}"
+        verification_link = f"{settings.FRONTEND_URL}/auth/verify-email?token={verification_token}"
+        
+        # Log the verification link for debugging
+        logger.info(
+            "Sending registration confirmation email with link",
+            event_type="registration_confirmation_email_sending",
+            user_id=user.id,
+            username=user.username,
+            verification_link=verification_link
+        )
         
         await self._send_templated_email(
             template_name="registration_confirmation",
@@ -224,8 +233,8 @@ class EmailService:
         )
     
     async def send_password_change_request(
-        self, 
-        user: User, 
+        self,
+        user: User,
         reset_token: str
     ) -> None:
         """
@@ -235,7 +244,16 @@ class EmailService:
             user: User model instance
             reset_token: Token for password reset
         """
-        reset_link = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+        reset_link = f"{settings.FRONTEND_URL}/auth/reset-password?token={reset_token}"
+        
+        # Log the reset link for debugging
+        logger.info(
+            "Sending password reset email with link",
+            event_type="password_reset_email_sending",
+            user_id=user.id,
+            username=user.username,
+            reset_link=reset_link
+        )
         
         await self._send_templated_email(
             template_name="password_change_request",

@@ -621,7 +621,8 @@ async def request_password_reset(
     """Request a password reset link to be sent via email."""
     try:
         token = await create_password_reset_token(db, request.email)
-        reset_link = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+        # Use the correct endpoint for password reset
+        reset_link = f"{settings.FRONTEND_URL}/auth/reset-password?token={token}"
 
         # Create email service
         email_service = EmailService(background_tasks, db)
@@ -631,6 +632,13 @@ async def request_password_reset(
         user = await user_service.get_user_by_email(str(request.email))
         
         if user:
+            # Log the reset link for debugging
+            logger.info(
+                "Generated password reset link",
+                event_type="password_reset_link_generated",
+                email=str(request.email),
+                reset_link=reset_link
+            )
             await email_service.send_password_change_request(user, token)
 
         logger.info(
