@@ -6,7 +6,7 @@ import secrets
 import string
 
 from fastapi import HTTPException, status, BackgroundTasks
-from sqlalchemy import select, update
+from sqlalchemy import select, update, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
@@ -229,10 +229,9 @@ class UserService:
             )
             
             # Remove any existing unused tokens for this user
-            await self.db.execute(
-                "DELETE FROM email_verification_tokens WHERE user_id = :user_id AND used = FALSE",
-                {"user_id": user_id}
-            )
+            # Use SQLAlchemy's text() function for raw SQL
+            sql = text("DELETE FROM email_verification_tokens WHERE user_id = :user_id AND used = FALSE")
+            await self.db.execute(sql, {"user_id": user_id})
             
             # Save the new token
             self.db.add(verification_token)
