@@ -138,3 +138,5 @@ venv
 venv/*
 
 .idea
+.roomodes
+.clinerules*
