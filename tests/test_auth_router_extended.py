@@ -164,16 +164,11 @@ async def test_get_current_user_profile_admin_access(
     data = response.json()
     assert data["username"] == "target_user", "Should return the target user's username"
 
-# Test get email and username by user ID
-async def test_get_email_and_username_by_user_id(client: AsyncClient, test_user):
-    # First, get the user's ID
-    headers = {"Authorization": f"Bearer {test_user['token']}"}
-    profile_response = await client.get("/auth/me", headers=headers)
-    assert profile_response.status_code == 200
-    
-    # Use an invalid user ID
+# Test get email by user ID
+async def test_get_email_by_user_id(client: AsyncClient, test_user):
+    # Use an invalid user ID directly
     nonexistent_id = 999999  # Assuming this user ID doesn't exist
-    response = await client.get(f"/auth/users/{nonexistent_id}/profile")
+    response = await client.get(f"/auth/users/{nonexistent_id}/email")
     assert response.status_code == 404, "Expected 404 for nonexistent user ID"
 
 # Test password reset request with mock email sending

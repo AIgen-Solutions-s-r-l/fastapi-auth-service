@@ -166,13 +166,13 @@ async def test_remove_user_exception(mock_delete_user, client: AsyncClient, test
     )
     assert response.status_code == 401, "Should return 401 for invalid credentials"
 
-# Test get_email_and_username_by_user_id (lines 538-562)
+# Test get_email_by_user_id (lines 811-858)
 # This is a special case that requires different mocking approach
 @patch("app.routers.auth_router.select")
-async def test_get_email_username_by_id_error(mock_select, client: AsyncClient):
+async def test_get_email_by_id_error(mock_select, client: AsyncClient):
     # Setting up for the execute call to raise exception
     with patch("sqlalchemy.ext.asyncio.AsyncSession.execute", side_effect=Exception("Database error")):
-        response = await client.get("/auth/users/123/profile")
+        response = await client.get("/auth/users/123/email")
         assert response.status_code == 500, "Should return 500 on database error"
 
 # Test the full login-logout flow to increase coverage

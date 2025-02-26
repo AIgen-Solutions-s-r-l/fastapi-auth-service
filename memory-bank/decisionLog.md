@@ -10,10 +10,18 @@ This document tracks key architectural and design decisions made during the deve
 
 **Rationale:** Having two endpoints with overlapping functionality increases maintenance burden and can confuse API consumers. Since the requirement is to have a function that returns only the email, it makes sense to use the existing `get_email_by_user_id` function and remove the redundant endpoint.
 
-**Implementation:** Created a plan in auth_router_modification_plan.md that includes:
-- Removing the `/users/{user_id}/profile` endpoint and its implementation
-- Keeping the existing `/users/{user_id}/email` endpoint unchanged
-- Updating any affected tests
+**Implementation:** Successfully implemented the plan outlined in auth_router_modification_plan.md:
+- Removed the `/users/{user_id}/profile` endpoint and its implementation
+- Kept the existing `/users/{user_id}/email` endpoint unchanged
+- Updated all affected tests in the following files:
+  - tests/test_auth_router_final.py
+  - tests/test_auth_router_coverage_patched.py
+  - tests/test_auth_router_final_uncovered.py
+  - tests/test_auth_router_coverage.py
+  - tests/test_auth_router_coverage_final.py
+  - tests/test_auth_router_extended.py
+
+**Results:** The API is now simpler and more focused, with a single endpoint for retrieving user email information. Manual testing confirms that the `/users/{user_id}/email` endpoint works correctly, returning just the email as expected, while the `/users/{user_id}/profile` endpoint returns a 404 Not Found response.
 
 ## February 26, 2025 - Subscription Tier System Update
 

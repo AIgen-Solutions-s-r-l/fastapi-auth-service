@@ -157,9 +157,9 @@ async def test_get_current_user_profile_edge_cases_direct(mock_get_user, mock_ve
     with pytest.raises(Exception):
         await get_current_user_profile(None, token, db)
 
-# Target get_email_and_username_by_user_id (lines 540-546)
-async def test_get_email_username_by_user_id_direct_not_found():
-    from app.routers.auth_router import get_email_and_username_by_user_id
+# Target get_email_by_user_id (lines 811-858)
+async def test_get_email_by_user_id_direct_not_found():
+    from app.routers.auth_router import get_email_by_user_id
     from app.models.user import User
     
     # Create mock DB session
@@ -172,4 +172,4 @@ async def test_get_email_username_by_user_id_direct_not_found():
     
     # Call function with non-existent user
     with pytest.raises(Exception):
-        await get_email_and_username_by_user_id(999, db)
+        await get_email_by_user_id(999, db)

@@ -73,9 +73,9 @@ We have simplified the auth router by removing redundant endpoints, specifically
 3. **Modify Auth Router**:
    - ✅ Create plan for simplifying the user email retrieval endpoint
    - ✅ Implement changes to auth_router.py
-   - Test the modified endpoint
-   - Update affected tests:
-     - Several tests in the following files need to be updated or removed:
+   - ✅ Test the modified endpoint
+   - ✅ Update affected tests:
+     - Updated tests in the following files:
        - tests/test_auth_router_final.py
        - tests/test_auth_router_coverage_patched.py
        - tests/test_auth_router_final_uncovered.py

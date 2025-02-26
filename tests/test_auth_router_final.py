@@ -72,44 +72,42 @@ async def test_register_user_already_exists(mock_create_user, client: AsyncClien
     response_json = response.json()
     assert any("already exists" in str(val) for val in response_json.values()), "Response should indicate user exists"
 
-# Test get_email_and_username_by_user_id function (lines 538-562)
+# Test get_email_by_user_id function
 @patch("sqlalchemy.ext.asyncio.AsyncSession.execute")
-async def test_get_email_and_username_by_user_id_found(mock_execute, client: AsyncClient):
+async def test_get_email_by_user_id_found(mock_execute, client: AsyncClient):
     # Create a mock user to return
     mock_user = MagicMock()
     mock_user.email = "test@example.com"
-    mock_user.username = "testuser"
     
     # Mock the database query result
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = mock_user
     mock_execute.return_value = mock_result
     
-    response = await client.get("/auth/users/123/profile")
+    response = await client.get("/auth/users/123/email")
     assert response.status_code == 200, "Should return 200 when user is found"
     data = response.json()
     assert data["email"] == "test@example.com", "Should return user's email"
-    assert data["username"] == "testuser", "Should return user's username"
 
 @patch("sqlalchemy.ext.asyncio.AsyncSession.execute")
-async def test_get_email_and_username_by_user_id_not_found(mock_execute, client: AsyncClient):
+async def test_get_email_by_user_id_not_found(mock_execute, client: AsyncClient):
     # Mock the database query result - user not found
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = None
     mock_execute.return_value = mock_result
     
-    response = await client.get("/auth/users/999/profile")
+    response = await client.get("/auth/users/999/email")
     assert response.status_code == 404, "Should return 404 when user is not found"
     # More flexible check for the error message
     response_json = response.json()
     assert any("not found" in str(val).lower() for val in response_json.values()), "Response should indicate user not found"
 
 @patch("sqlalchemy.ext.asyncio.AsyncSession.execute")
-async def test_get_email_and_username_by_user_id_exception(mock_execute, client: AsyncClient):
+async def test_get_email_by_user_id_exception(mock_execute, client: AsyncClient):
     # Mock the database query to raise an exception
     mock_execute.side_effect = Exception("Database error")
     
-    response = await client.get("/auth/users/123/profile")
+    response = await client.get("/auth/users/123/email")
     assert response.status_code == 500, "Should return 500 on database error"
 
 # Test refresh_token function (lines 406-430)
