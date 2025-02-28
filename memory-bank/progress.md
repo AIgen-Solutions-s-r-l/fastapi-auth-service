@@ -2,6 +2,12 @@
 
 ## Work Done
 
+### February 28, 2025
+- Fixed environment variable loading issue:
+  - Added proper configuration to the Settings class to load variables from .env file
+  - Fixed the issue where the SendGrid API key wasn't being detected despite being in the .env file
+  - Updated decisionLog.md to document the rationale behind this change
+
 ### February 26, 2025
 - Initialized Memory Bank for the auth_service project
 - Created core Memory Bank files:

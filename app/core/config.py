@@ -8,6 +8,11 @@ class Settings(BaseSettings):
     """
     Configuration class for environment variables and service settings.
     """
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"  # Ignore extra fields not defined in the class
+    )
     # Service settings
     #service_name: str = os.getenv("SERVICE_NAME", "authService")
     #environment: str = os.getenv("ENVIRONMENT", "development")

@@ -1,7 +1,7 @@
 # Auth Service - Active Context
 
 ## Current Session Context
-February 26, 2025, 6:21 PM (Europe/Berlin, UTC+1:00)
+February 28, 2025, 7:03 PM (Europe/Berlin, UTC+1:00)
 
 ## Project Status
 Memory Bank has been initialized for the auth_service project. We've created comprehensive documentation covering architecture, code structure, security, and documentation planning. We've successfully implemented improvements to the email system, including diagnostic endpoints, enhanced error logging, retry mechanisms, template verification, and configuration validation. We've also completed the update of the subscription tier system to match new requirements.
@@ -54,6 +54,15 @@ Memory Bank has been initialized for the auth_service project. We've created com
 - **auth_router_modification_plan.md**: Plan for modifying the auth router to simplify email retrieval
 
 ## Current Issues
+
+### ✅ Environment Variable Loading (Resolved)
+We identified and fixed an issue with environment variables not loading correctly from the .env file:
+
+- ✅ Fixed the Settings class to properly load environment variables from .env file
+- ✅ Added configuration to ignore extra fields not defined in the Settings class
+- ✅ Verified that the SendGrid API key is now being loaded correctly
+- The root cause was that pydantic-settings wasn't configured to load from the .env file
+- The fix was to add proper model_config with env_file=".env" and extra="ignore" parameters
 
 ### ✅ Email Sending (Resolved)
 We've successfully implemented improvements to the email system:
