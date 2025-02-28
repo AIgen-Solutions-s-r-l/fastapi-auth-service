@@ -17,31 +17,7 @@ pytestmark = pytest.mark.asyncio
 async def client(async_client: AsyncClient):
     return async_client
 
-@pytest.fixture
-async def test_user(client: AsyncClient):
-    # Generate a unique username and email
-    username = f"testuser_{uuid.uuid4().hex[:8]}"
-    email = f"{username}@example.com"
-    password = "TestPassword123!"
-    
-    # Register the user
-    response = await client.post("/auth/register", json={
-        "username": username,
-        "email": email,
-        "password": password
-    })
-    if response.status_code != 201:
-        pytest.skip("Registration failed, skipping auth router tests")
-    data = response.json()
-    token = data.get("access_token")
-    user_data = {"username": username, "email": email, "password": password, "token": token}
-    
-    yield user_data
-    
-    # Cleanup: delete the user after tests run
-    await client.delete(f"/auth/users/{username}",
-                       params={"password": password},
-                       headers={"Authorization": f"Bearer {token}"})
+# No need to redefine test_user - it's imported from conftest.py
 
 # Test login function error handling (lines 47-68)
 @patch("app.routers.auth_router.authenticate_user")
@@ -172,15 +148,24 @@ async def test_change_email_server_error(mock_user_service, client: AsyncClient,
     # Mock update_user_email to raise an exception
     mock_service_instance.update_user_email.side_effect = Exception("Database error")
     
-    headers = {"Authorization": f"Bearer {test_user['token']}"}
-    response = await client.put(
-        f"/auth/users/{test_user['username']}/email",
-        json={
-            "new_email": "new@example.com",
-            "current_password": test_user["password"]
-        },
-        headers=headers
-    )
+    # Mock the JWT verification to pass auth checks
+    with patch("app.routers.auth_router.verify_jwt_token") as mock_verify:
+        mock_verify.return_value = {
+            "sub": test_user["username"],
+            "id": 1,
+            "is_admin": False
+        }
+        
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        response = await client.put(
+            f"/auth/users/{test_user['username']}/email",
+            json={
+                "new_email": "new@example.com",
+                "current_password": test_user["password"]
+            },
+            headers=headers
+        )
+        
     assert response.status_code == 500, "Should return 500 on server error"
     
     # More flexible assertion for the error message

@@ -27,6 +27,10 @@ async def test_register_direct():
     from app.routers.auth_router import register_user
     from app.schemas.auth_schemas import UserCreate
     from app.models.user import User
+    from app.core.config import settings
+
+    # Create a background tasks mock
+    background_tasks = MagicMock()
     
     # Create a fully mocked user and DB for direct function call
     user_data = UserCreate(username="newuser", email="new@example.com", password="Password123!")
@@ -41,17 +45,22 @@ async def test_register_direct():
     # Mock DB
     db = MagicMock()
     
-    # Mock create_user to return our mock user
-    with patch("app.routers.auth_router.create_user", return_value=new_user):
-        # Mock create_access_token
-        with patch("app.routers.auth_router.create_access_token", return_value="access.token.here"):
+    # Mock UserService
+    with patch("app.routers.auth_router.UserService") as mock_service:
+        mock_service_instance = MagicMock()
+        mock_service.return_value = mock_service_instance
+        mock_service_instance.send_verification_email = AsyncMock(return_value=True)
+        
+        # Mock create_user to return our mock user
+        with patch("app.routers.auth_router.create_user", return_value=new_user):
             # Call the function directly
-            result = await register_user(user_data, db)
+            result = await register_user(user_data, background_tasks, db)
             
-            # Verify the result
-            assert result["username"] == "newuser"
-            assert result["access_token"] == "access.token.here"
-            assert result["token_type"] == "bearer"
+            # Verify the result (properly access Pydantic model fields)
+            assert result.username == "newuser"
+            assert result.email == "new@example.com"
+            assert result.message == "User registered successfully. Please check your email to verify your account."
+            assert result.verification_sent == True
 
 # Target get_user_details (lines 152-153)
 @patch("app.routers.auth_router.get_user_by_username")
@@ -63,6 +72,7 @@ async def test_get_user_details_direct(mock_get_user):
     user = MagicMock(spec=User)
     user.username = "testuser"
     user.email = "test@example.com"
+    user.is_verified = True
     mock_get_user.return_value = user
     
     # Mock DB
@@ -71,9 +81,10 @@ async def test_get_user_details_direct(mock_get_user):
     # Call directly
     result = await get_user_details("testuser", db)
     
-    # Verify
-    assert result["username"] == "testuser"
-    assert result["email"] == "test@example.com"
+    # Verify (properly access Pydantic model fields)
+    assert result.username == "testuser"
+    assert result.email == "test@example.com"
+    assert result.is_verified == True
 
 # Target email change function (lines 232-239, 248-256)
 @patch("app.routers.auth_router.verify_jwt_token")
@@ -90,7 +101,7 @@ async def test_email_change_scenarios(mock_service, mock_verify):
     token = "invalid.token.here"
     
     with pytest.raises(Exception):
-        await change_email("testuser", email_change, db, token)
+        await change_email("testuser", email_change, MagicMock(), db, token)
     
     # Scenario 2: General exception
     mock_verify.side_effect = None
@@ -102,7 +113,7 @@ async def test_email_change_scenarios(mock_service, mock_verify):
     mock_service.return_value = mock_instance
     
     with pytest.raises(Exception):
-        await change_email("testuser", email_change, db, token)
+        await change_email("testuser", email_change, MagicMock(), db, token)
 
 # Target refresh token function (lines 407-408)
 @patch("app.routers.auth_router.verify_jwt_token")

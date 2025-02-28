@@ -9,31 +9,7 @@ pytestmark = pytest.mark.asyncio
 async def client(async_client: AsyncClient):
     return async_client
 
-@pytest.fixture
-async def test_user(client: AsyncClient):
-    # Generate a unique username and email
-    username = f"testuser_{uuid.uuid4().hex[:8]}"
-    email = f"{username}@example.com"
-    password = "TestPassword123!"
-    
-    # Register the user
-    response = await client.post("/auth/register", json={
-        "username": username,
-        "email": email,
-        "password": password
-    })
-    if response.status_code != 201:
-        pytest.skip("Registration failed, skipping auth router tests")
-    data = response.json()
-    token = data.get("access_token")
-    user_data = {"username": username, "email": email, "password": password, "token": token}
-    
-    yield user_data
-    
-    # Cleanup: delete the user after tests run
-    await client.delete(f"/auth/users/{username}",
-                       params={"password": password},
-                       headers={"Authorization": f"Bearer {token}"})
+# Use the shared test_user fixture from conftest.py that performs login to get token
 
 # Test login with malformed credentials
 async def test_login_malformed(client: AsyncClient):
@@ -162,8 +138,15 @@ async def test_multiple_registrations(client: AsyncClient):
         "password": password1
     })
     assert response1.status_code == 201
-    data1 = response1.json()
-    token1 = data1.get("access_token")
+    
+    # Login to get token
+    login_response = await client.post("/auth/login", json={
+        "username": username1,
+        "password": password1
+    })
+    assert login_response.status_code == 200
+    login_data = login_response.json()
+    token1 = login_data.get("access_token")
     
     # Try to create another user with same username
     response2 = await client.post("/auth/register", json={
