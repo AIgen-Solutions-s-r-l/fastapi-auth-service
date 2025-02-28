@@ -91,7 +91,7 @@ async def test_user(async_client: AsyncClient):
     
     # Login to get a valid token
     login_response = await async_client.post("/auth/login", json={
-        "username": username,
+        "email": email,
         "password": password
     })
     assert login_response.status_code == 200, "Login failed"

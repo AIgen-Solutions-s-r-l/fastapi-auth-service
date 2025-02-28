@@ -7,6 +7,21 @@
   - Added proper configuration to the Settings class to load variables from .env file
   - Fixed the issue where the SendGrid API key wasn't being detected despite being in the .env file
   - Updated decisionLog.md to document the rationale behind this change
+- Created email login implementation plan:
+  - Developed high-level plan for switching from username-based to email-based login in email_login_implementation_plan.md
+  - Created detailed technical implementation plan with specific code changes in email_login_technical_implementation.md
+  - Updated decisionLog.md to document the decision, rationale, and implementation approach
+  - Updated activeContext.md to reflect the current focus on authentication system changes
+- Implemented email-based login while maintaining backward compatibility:
+  - Updated authentication schemas to use email with optional username for backward compatibility
+  - Modified user service to authenticate with either email or username
+  - Updated auth router login endpoint to handle both email and username authentication
+  - Updated JWT token generation to use email as the subject for all new tokens
+  - Enhanced token verification to work with both email and username-based tokens
+  - Fixed email change functionality to issue new tokens with updated email
+  - Created comprehensive test file for email-based login
+  - Updated all existing tests to work with the modified authentication system
+  - Fixed edge cases in authentication flows and token handling
 
 ### February 26, 2025
 - Initialized Memory Bank for the auth_service project
@@ -41,9 +56,9 @@
 
 ## Current Status
 The auth_service project is a well-structured authentication service with:
-- User authentication and management
+- User authentication and management (now using email-based login with backward compatibility for username)
 - Credit system functionality
-- Email integration
+- Email integration with enhanced error handling and diagnostics
 - Comprehensive logging
 - Database integration with PostgreSQL
 - Subscription tier system (updated to 5 tiers)
@@ -56,6 +71,8 @@ We have successfully resolved the email sending issue by implementing comprehens
 We have updated the subscription tier system from 3 tiers to 5 tiers based on new requirements.
 
 We have simplified the auth router by removing redundant endpoints, specifically consolidating the user email retrieval functionality to a single endpoint.
+
+We have successfully implemented email-based login while maintaining backward compatibility with the username-based system. This allows for a smooth transition period where both authentication methods are supported, with all new tokens using email as the primary identifier. The implementation includes proper handling of token refresh, email change scenarios, and comprehensive test coverage.
 
 ## Next Steps
 
@@ -76,7 +93,7 @@ We have simplified the auth router by removing redundant endpoints, specifically
    - ✅ Test plan creation and verify all 5 tiers are in the database
    - ✅ Document the changes
 
-3. **Modify Auth Router**:
+3. ✅ **Modify Auth Router**:
    - ✅ Create plan for simplifying the user email retrieval endpoint
    - ✅ Implement changes to auth_router.py
    - ✅ Test the modified endpoint
@@ -88,6 +105,19 @@ We have simplified the auth router by removing redundant endpoints, specifically
        - tests/test_auth_router_coverage.py
        - tests/test_auth_router_coverage_final.py
        - tests/test_auth_router_extended.py
+
+4. ✅ **Implement Email-based Login**:
+   - ✅ Create high-level implementation plan (completed in email_login_implementation_plan.md)
+   - ✅ Develop detailed technical implementation plan (completed in email_login_technical_implementation.md)
+   - ✅ Update auth_schemas.py to use email with username as an optional field for backward compatibility
+   - ✅ Modify user_service.py authentication methods to work with both email and username
+   - ✅ Update auth_router.py login endpoint to handle email-based authentication
+   - ✅ Update JWT token generation to use email as the subject for all new tokens
+   - ✅ Update auth.py to handle both email and username-based token verification
+   - ✅ Fix email change functionality to issue new tokens with updated email
+   - ✅ Create comprehensive tests for email-based login
+   - ✅ Update existing tests to work with the modified authentication system
+   - ✅ Document the changes and backward compatibility considerations
 
 ### Short-term Tasks (1-2 weeks)
 1. ✅ Document the current architecture in detail (completed in architecture.md)
@@ -121,6 +151,10 @@ We have simplified the auth router by removing redundant endpoints, specifically
    - Complete API documentation
    - Create component documentation
    - Develop operational guides
+7. Plan for complete removal of username field:
+   - Identify all dependencies on username throughout the codebase
+   - Create migration plan for removing username field
+   - Develop API version strategy for backward compatibility
 
 ### Long-term Tasks (1-3 months)
 1. Plan and implement architectural improvements:
@@ -140,11 +174,22 @@ We have simplified the auth router by removing redundant endpoints, specifically
    - Enhance test coverage
    - Implement security testing
    - Add performance testing
+5. Complete username field removal:
+   - Make username field nullable in database
+   - Update all references to use email instead of username
+   - Remove username field completely when safe to do so
 
 ## Implementation Priorities
 
+### Authentication System Improvements
+1. **High Priority**:
+   - Change login from username-based to email-based
+   - Update JWT token generation and verification
+   - Ensure backward compatibility during transition
+   - Test all authentication flows thoroughly
+
 ### Email Functionality Improvements
-1. **Critical Priority**:
+1. **Critical Priority** (Completed):
    - Fix email sending in registration flow
    - Implement proper error handling and logging
    - Add retry mechanism for transient failures

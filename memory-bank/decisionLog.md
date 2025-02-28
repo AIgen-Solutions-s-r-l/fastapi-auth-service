@@ -2,6 +2,41 @@
 
 This document tracks key architectural and design decisions made during the development of the auth_service project.
 
+## February 28, 2025 - Authentication System Change from Username to Email
+
+**Context:** The current authentication system uses username for login, but the requirement has changed to use email for authentication instead. Username will remain as an optional field for now but will be completely removed in the future.
+
+**Decision:** Modify the authentication system to use email as the primary identifier for login instead of username while keeping the username field temporarily for backward compatibility.
+
+**Rationale:** 
+- Using email for authentication aligns with industry best practices, as email addresses are unique and users typically remember their email addresses better than usernames
+- Email addresses are already required to be unique in the system, making them suitable as a primary identifier
+- Keeping the username field temporarily allows for a smoother transition and backward compatibility with existing code and systems
+- Moving to email-based authentication simplifies the user experience by reducing the number of credentials users need to remember
+
+**Implementation:** Created detailed implementation plans:
+- email_login_implementation_plan.md: High-level plan outlining the changes needed to implement email-based login
+- email_login_technical_implementation.md: Detailed technical implementation plan with specific code changes required, including:
+  - Updating authentication schemas to use email instead of username
+  - Modifying user service authentication methods
+  - Updating the authentication router login endpoint
+  - Changing JWT token generation to use email as the subject instead of username
+  - Updating token verification to retrieve users by email instead of username
+
+**Expected Results:** Users will be able to log in using their email address and password, while the system maintains backward compatibility with existing code. This change will simplify the authentication flow and align with modern authentication best practices.
+
+**Implementation Results:** Successfully implemented all planned changes while maintaining backward compatibility:
+- Updated LoginRequest schema to accept either email or username with a validator to ensure at least one is provided
+- Modified user service to authenticate with either email or username via the authenticate_user_by_username_or_email function
+- Updated auth router login endpoint to use the new authentication function
+- Changed JWT token generation to always use email as the subject for new tokens
+- Enhanced token verification to support both email and username-based tokens for a smooth transition
+- Fixed email change functionality to issue new tokens with the updated email address
+- Created comprehensive tests for email-based login and updated all existing tests to work with the modified authentication system
+- Addressed edge cases in authentication flows and token handling, including token refresh and user profile access
+
+The implementation enables a seamless transition from username to email-based authentication while maintaining compatibility with existing tokens. This approach allows systems that depend on the current authentication flow to continue working while new authentications use email as the primary identifier.
+
 ## February 28, 2025 - Environment Variable Loading Fix
 
 **Context:** The application wasn't loading environment variables from the .env file despite having a properly configured .env file. This caused the SendGrid API key to not be detected, resulting in errors: "SendGrid API key not configured (SENDGRID_API_KEY)" during application startup.
