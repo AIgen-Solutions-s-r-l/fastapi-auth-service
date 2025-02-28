@@ -256,26 +256,50 @@ async def add_credits_from_stripe(
                     detail="Subscription ID not found in transaction data"
                 )
             
-            # Look up or create plan in our system
+            # Look up plan ID based on the Stripe plan ID
             plan_id = None
-            if analysis.get("plan_id"):
-                # TODO: Implement plan lookup/creation based on Stripe plan ID
-                # This would typically involve looking up the plan by Stripe ID
-                # or creating a new plan if it doesn't exist
-                pass
+            stripe_plan_id = analysis.get("plan_id")
+            
+            if stripe_plan_id:
+                # Get plans from database to find the matching plan
+                plans = await credit_service.get_all_active_plans()
+                matching_plans = [p for p in plans if p.stripe_price_id == stripe_plan_id]
+                
+                if matching_plans:
+                    plan_id = matching_plans[0].id
+                else:
+                    # If no exact match found, fallback to a default plan
+                    # In production, you might want to create a new plan or raise an error
+                    if plans:
+                        plan_id = plans[0].id
+                    else:
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail="No matching plan found for this subscription"
+                        )
+            else:
+                # If no plan ID in analysis, use a default plan
+                # Get the first active plan as a fallback
+                plans = await credit_service.get_all_active_plans()
+                if plans:
+                    plan_id = plans[0].id
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="No active plans found in the system"
+                    )
             
             # Purchase plan or handle renewal
             transaction, subscription = await credit_service.purchase_plan(
                 user_id=user.id,
-                plan_id=100,  # Replace with actual plan ID lookup
+                plan_id=plan_id,
                 reference_id=analysis["transaction_id"],
                 description=f"Subscription from Stripe: {subscription_id}",
                 background_tasks=background_tasks
             )
             
             # Update subscription with Stripe IDs
-            # In a real implementation, you would update the subscription with
-            # the Stripe subscription ID for future reference
+            # This would typically be done in the purchase_plan method in a production environment
             
             logger.info(f"Processed subscription from Stripe",
                       event_type="stripe_subscription_processed",
@@ -307,8 +331,40 @@ async def add_credits_from_stripe(
             
         else:
             # Handle one-time purchase
-            # Calculate credits (e.g., $1 = 10 credits)
-            credit_amount = analysis["amount"] * Decimal('10')
+            # Find appropriate plan or credit calculation based on the payment amount
+            plans = await credit_service.get_all_active_plans()
+            
+            # Calculate credit amount based on similar plans
+            # This approaches finds the best credit-to-dollar ratio from existing plans
+            # rather than using a hardcoded conversion rate
+            credit_amount = None
+            
+            if plans:
+                # Find plans with similar prices
+                payment_amount = analysis["amount"]
+                similar_plans = sorted(plans, key=lambda p: abs(p.price - payment_amount))
+                
+                if similar_plans:
+                    # Use the most similar plan's credit-to-price ratio to calculate credits
+                    best_match = similar_plans[0]
+                    ratio = best_match.credit_amount / best_match.price
+                    credit_amount = payment_amount * ratio
+                    
+                    logger.info(f"Calculated credits using plan-based ratio",
+                              event_type="credit_calculation",
+                              payment_amount=payment_amount,
+                              similar_plan_id=best_match.id,
+                              ratio=float(ratio),
+                              credit_amount=float(credit_amount))
+            
+            # Fallback if no plans found or calculation resulted in zero credits
+            if not credit_amount or credit_amount <= 0:
+                # Use a default ratio as fallback (e.g., $1 = 10 credits)
+                credit_amount = analysis["amount"] * Decimal('10')
+                logger.warning(f"Using fallback credit calculation",
+                             event_type="credit_calculation_fallback",
+                             payment_amount=float(analysis["amount"]),
+                             credit_amount=float(credit_amount))
             
             # Add credits
             transaction = await credit_service.purchase_one_time_credits(

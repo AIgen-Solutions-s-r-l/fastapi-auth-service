@@ -88,7 +88,7 @@ The webhook handler verifies the Stripe signature to ensure the request is legit
 1. Customer makes a payment through Stripe checkout
 2. Frontend calls `/credits/stripe/add` with the payment intent ID
 3. Backend verifies the transaction in Stripe
-4. Credits are added to the user's account based on the payment amount
+4. Credits are calculated based on plan ratios (explained below)
 5. Confirmation email is sent to the user
 6. User can immediately use the new credits
 
@@ -149,12 +149,26 @@ The integration includes comprehensive error handling:
 
 All errors are properly logged with relevant context for troubleshooting.
 
-## Conversion Rates
+## Credit Calculation
 
-For one-time purchases, the credit conversion rate is:
-- $1 = 10 credits
+### For Subscriptions
+For subscription-based purchases, the credit amount is determined by the plan configuration in the database.
 
-For subscription plans, credit amounts are defined in the Plan model.
+### For One-time Purchases
+One-time purchases use a dynamic credit calculation approach:
+
+1. Find plans with similar prices to the payment amount
+2. Use the credit-to-price ratio from the most similar plan
+3. Calculate credits = payment amount × ratio
+
+For example, if:
+- Plan A costs $10 and provides 120 credits (ratio = 12)
+- Plan B costs $50 and provides 700 credits (ratio = 14)
+- Customer pays $30
+
+The system would use the ratio from Plan B (as it's closer to $30 than Plan A), resulting in $30 × 14 = 420 credits.
+
+If no similar plans are found, the system falls back to a default ratio as a safety measure.
 
 ## Testing
 
