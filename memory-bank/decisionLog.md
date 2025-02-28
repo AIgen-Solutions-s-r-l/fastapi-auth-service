@@ -2,6 +2,40 @@
 
 This document tracks key architectural and design decisions made during the development of the auth_service project.
 
+## February 28, 2025 - Stripe Integration for Credit System
+
+**Context:** The current credit system needs to be integrated with Stripe for payment processing, allowing users to purchase credits via either subscriptions or one-time payments.
+
+**Decision:** Implement a comprehensive Stripe integration for the credit system that handles both subscription-based and one-time purchases.
+
+**Rationale:**
+- Stripe is an industry-standard payment processor with robust API and documentation
+- Integrating with Stripe allows for secure handling of payment information without storing sensitive data
+- Supporting both subscription and one-time purchases gives users flexibility in how they purchase credits
+- Analyzing Stripe transactions allows for proper credit allocation based on transaction type
+
+**Implementation:**
+- Added Stripe API configuration settings to core/config.py
+- Created a StripeService class to handle all Stripe API interactions
+- Implemented transaction search by both transaction ID and customer email
+- Added logic to analyze transactions and determine their type (subscription vs. one-time)
+- Created a new endpoint (/credits/stripe/add) to process transactions from Stripe
+- Updated credit_router.py to integrate with the Stripe processing logic
+- Created comprehensive documentation in docs/stripe_integration.md
+- Added example code in examples/stripe_credits_example.py
+
+**Expected Results:** The credit system will be able to process payments from Stripe, either as subscriptions or one-time purchases, and allocate the appropriate credits to user accounts. The system will handle edge cases such as missing transactions, transaction type mismatches, and API errors gracefully.
+
+**Implementation Results:** Successfully implemented the Stripe integration with the following features:
+- Transaction lookup by ID or customer email
+- Automatic detection of transaction type (subscription vs. one-time purchase)
+- Proper credit allocation based on transaction amount
+- Subscription renewal configuration
+- Comprehensive error handling and logging
+- Detailed documentation for frontend integration
+
+The implementation enables a seamless payment experience for users while maintaining the security and reliability standards expected of a payment system.
+
 ## February 28, 2025 - Authentication System Change from Username to Email
 
 **Context:** The current authentication system uses username for login, but the requirement has changed to use email for authentication instead. Username will remain as an optional field for now but will be completely removed in the future.

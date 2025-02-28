@@ -2,12 +2,12 @@
 
 from datetime import datetime, UTC, timedelta
 from decimal import Decimal
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Union
 from calendar import monthrange
 import uuid
 
 from fastapi import HTTPException, status, BackgroundTasks
-from sqlalchemy import desc, select, and_
+from sqlalchemy import desc, select, and_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -805,3 +805,167 @@ class CreditService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error purchasing one-time credits: {str(e)}"
             )
+
+    # Methods for Stripe integration and webhook handling
+
+    async def get_subscription_by_id(self, subscription_id: int) -> Optional[Subscription]:
+        """
+        Get subscription by ID.
+        
+        Args:
+            subscription_id: The ID of the subscription to retrieve
+            
+        Returns:
+            Optional[Subscription]: The subscription if found, None otherwise
+        """
+        result = await self.db.execute(
+            select(Subscription).where(Subscription.id == subscription_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def update_subscription_auto_renew(
+        self, 
+        subscription_id: int, 
+        auto_renew: bool
+    ) -> Subscription:
+        """
+        Update the auto-renewal setting for a subscription.
+        
+        Args:
+            subscription_id: The ID of the subscription to update
+            auto_renew: The new auto-renewal setting
+            
+        Returns:
+            Subscription: The updated subscription
+            
+        Raises:
+            HTTPException: If the subscription is not found
+        """
+        subscription = await self.get_subscription_by_id(subscription_id)
+        if not subscription:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Subscription not found"
+            )
+            
+        subscription.auto_renew = auto_renew
+        await self.db.commit()
+        await self.db.refresh(subscription)
+        
+        logger.info(f"Subscription auto-renew updated: {subscription_id}, auto_renew={auto_renew}",
+                  event_type="subscription_auto_renew_updated",
+                  subscription_id=subscription_id,
+                  auto_renew=auto_renew)
+        
+        return subscription
+
+    async def get_user_subscriptions(
+        self, 
+        user_id: int, 
+        include_inactive: bool = False
+    ) -> List[Subscription]:
+        """
+        Get user's subscriptions.
+        
+        Args:
+            user_id: The ID of the user
+            include_inactive: Whether to include inactive subscriptions
+            
+        Returns:
+            List[Subscription]: List of subscriptions for the user
+        """
+        query = select(Subscription).where(Subscription.user_id == user_id)
+        
+        if not include_inactive:
+            query = query.where(Subscription.is_active == True)  # noqa: E712
+            
+        query = query.order_by(desc(Subscription.created_at))
+        
+        result = await self.db.execute(query)
+        return result.scalars().all()
+
+    async def get_subscription_by_stripe_id(self, stripe_subscription_id: str) -> Optional[Subscription]:
+        """
+        Get subscription by Stripe subscription ID.
+        
+        Args:
+            stripe_subscription_id: The Stripe subscription ID
+            
+        Returns:
+            Optional[Subscription]: The subscription if found, None otherwise
+        """
+        result = await self.db.execute(
+            select(Subscription).where(Subscription.stripe_subscription_id == stripe_subscription_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def update_subscription_status(
+        self, 
+        stripe_subscription_id: str, 
+        status: str
+    ) -> Optional[Subscription]:
+        """
+        Update the status of a subscription.
+        
+        Args:
+            stripe_subscription_id: The Stripe subscription ID
+            status: The new status
+            
+        Returns:
+            Optional[Subscription]: The updated subscription if found, None otherwise
+        """
+        subscription = await self.get_subscription_by_stripe_id(stripe_subscription_id)
+        if not subscription:
+            logger.warning(f"Subscription not found for Stripe ID: {stripe_subscription_id}",
+                         event_type="stripe_subscription_not_found",
+                         stripe_subscription_id=stripe_subscription_id)
+            return None
+            
+        # Update the status and active status based on Stripe status
+        subscription.status = status
+        
+        # Determine if subscription should be active based on status
+        if status in ["active", "trialing"]:
+            subscription.is_active = True
+        elif status in ["canceled", "unpaid", "past_due"]:
+            subscription.is_active = False
+        
+        await self.db.commit()
+        await self.db.refresh(subscription)
+        
+        logger.info(f"Subscription status updated: {stripe_subscription_id}, status={status}",
+                  event_type="subscription_status_updated",
+                  stripe_subscription_id=stripe_subscription_id,
+                  status=status,
+                  is_active=subscription.is_active)
+        
+        return subscription
+
+    async def get_user_by_stripe_customer_id(self, stripe_customer_id: str) -> Optional[User]:
+        """
+        Get user by Stripe customer ID.
+        
+        Args:
+            stripe_customer_id: The Stripe customer ID
+            
+        Returns:
+            Optional[User]: The user if found, None otherwise
+        """
+        result = await self.db.execute(
+            select(User).where(User.stripe_customer_id == stripe_customer_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_all_active_plans(self) -> List[Plan]:
+        """
+        Get all active plans.
+        
+        Returns:
+            List[Plan]: List of active plans
+        """
+        result = await self.db.execute(
+            select(Plan)
+            .where(Plan.is_active == True)  # noqa: E712
+            .order_by(Plan.price)
+        )
+        return result.scalars().all()
