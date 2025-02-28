@@ -2,6 +2,26 @@
 
 This document tracks key architectural and design decisions made during the development of the auth_service project.
 
+## February 28, 2025 - Environment Variable Loading Fix
+
+**Context:** The application wasn't loading environment variables from the .env file despite having a properly configured .env file. This caused the SendGrid API key to not be detected, resulting in errors: "SendGrid API key not configured (SENDGRID_API_KEY)" during application startup.
+
+**Decision:** Update the `Settings` class in `app/core/config.py` to properly load environment variables from the .env file using pydantic-settings' configuration option and configure it to ignore extra fields.
+
+**Rationale:** While the application was using pydantic-settings' BaseSettings class, it wasn't configured to load variables from a .env file. The application was only using direct OS environment variables via os.getenv(). By adding the proper configuration, we ensure that environment variables are loaded correctly from the .env file, which improves configuration management and deployment flexibility. Additionally, we needed to configure pydantic to ignore extra fields since the .env file contains some variables that aren't defined in the Settings class.
+
+**Implementation:** Added the `model_config` attribute to the `Settings` class in `app/core/config.py`:
+```python
+model_config = SettingsConfigDict(
+    env_file=".env",
+    env_file_encoding="utf-8",
+    extra="ignore"  # Ignore extra fields not defined in the class
+)
+```
+This tells pydantic-settings to load environment variables from the .env file in the project root directory and ignore any extra fields that aren't defined in the Settings class.
+
+**Results:** After making these changes, the application successfully loads all environment variables from the .env file, including the SendGrid API key. The email configuration is now validated successfully at startup with no issues or warnings.
+
 ## February 26, 2025 - Auth Router Endpoint Simplification
 
 **Context:** The auth router currently has two similar endpoints for retrieving user email information: `/users/{user_id}/email` and `/users/{user_id}/profile`. The first returns only the email, while the second returns email, username, and verification status. This creates unnecessary duplication and potential confusion for API consumers.
