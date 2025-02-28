@@ -146,12 +146,12 @@ async def test_current_user_profile_edge_cases(mock_get_user, mock_verify, clien
     response = await client.get("/auth/me?user_id=456", headers={"Authorization": "Bearer valid.token"})
     assert response.status_code == 403
 
-# Test get_email_and_username_by_user_id (lines 540-546, 554-562)
-async def test_get_user_profile_by_id(client: AsyncClient):
+# Test get_email_by_user_id (lines 811-858)
+async def test_get_user_email_by_id(client: AsyncClient):
     # Test with a non-existent ID
-    response = await client.get("/auth/users/999999/profile")
+    response = await client.get("/auth/users/999999/email")
     assert response.status_code == 404
     
     # Test with invalid ID format
-    response = await client.get("/auth/users/not-an-id/profile")
+    response = await client.get("/auth/users/not-an-id/email")
     assert response.status_code in [404, 422]

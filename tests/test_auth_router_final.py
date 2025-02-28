@@ -17,31 +17,7 @@ pytestmark = pytest.mark.asyncio
 async def client(async_client: AsyncClient):
     return async_client
 
-@pytest.fixture
-async def test_user(client: AsyncClient):
-    # Generate a unique username and email
-    username = f"testuser_{uuid.uuid4().hex[:8]}"
-    email = f"{username}@example.com"
-    password = "TestPassword123!"
-    
-    # Register the user
-    response = await client.post("/auth/register", json={
-        "username": username,
-        "email": email,
-        "password": password
-    })
-    if response.status_code != 201:
-        pytest.skip("Registration failed, skipping auth router tests")
-    data = response.json()
-    token = data.get("access_token")
-    user_data = {"username": username, "email": email, "password": password, "token": token}
-    
-    yield user_data
-    
-    # Cleanup: delete the user after tests run
-    await client.delete(f"/auth/users/{username}",
-                       params={"password": password},
-                       headers={"Authorization": f"Bearer {token}"})
+# No need to redefine test_user - it's imported from conftest.py
 
 # Test login function error handling (lines 47-68)
 @patch("app.routers.auth_router.authenticate_user")
@@ -72,44 +48,42 @@ async def test_register_user_already_exists(mock_create_user, client: AsyncClien
     response_json = response.json()
     assert any("already exists" in str(val) for val in response_json.values()), "Response should indicate user exists"
 
-# Test get_email_and_username_by_user_id function (lines 538-562)
+# Test get_email_by_user_id function
 @patch("sqlalchemy.ext.asyncio.AsyncSession.execute")
-async def test_get_email_and_username_by_user_id_found(mock_execute, client: AsyncClient):
+async def test_get_email_by_user_id_found(mock_execute, client: AsyncClient):
     # Create a mock user to return
     mock_user = MagicMock()
     mock_user.email = "test@example.com"
-    mock_user.username = "testuser"
     
     # Mock the database query result
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = mock_user
     mock_execute.return_value = mock_result
     
-    response = await client.get("/auth/users/123/profile")
+    response = await client.get("/auth/users/123/email")
     assert response.status_code == 200, "Should return 200 when user is found"
     data = response.json()
     assert data["email"] == "test@example.com", "Should return user's email"
-    assert data["username"] == "testuser", "Should return user's username"
 
 @patch("sqlalchemy.ext.asyncio.AsyncSession.execute")
-async def test_get_email_and_username_by_user_id_not_found(mock_execute, client: AsyncClient):
+async def test_get_email_by_user_id_not_found(mock_execute, client: AsyncClient):
     # Mock the database query result - user not found
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = None
     mock_execute.return_value = mock_result
     
-    response = await client.get("/auth/users/999/profile")
+    response = await client.get("/auth/users/999/email")
     assert response.status_code == 404, "Should return 404 when user is not found"
     # More flexible check for the error message
     response_json = response.json()
     assert any("not found" in str(val).lower() for val in response_json.values()), "Response should indicate user not found"
 
 @patch("sqlalchemy.ext.asyncio.AsyncSession.execute")
-async def test_get_email_and_username_by_user_id_exception(mock_execute, client: AsyncClient):
+async def test_get_email_by_user_id_exception(mock_execute, client: AsyncClient):
     # Mock the database query to raise an exception
     mock_execute.side_effect = Exception("Database error")
     
-    response = await client.get("/auth/users/123/profile")
+    response = await client.get("/auth/users/123/email")
     assert response.status_code == 500, "Should return 500 on database error"
 
 # Test refresh_token function (lines 406-430)
@@ -174,15 +148,24 @@ async def test_change_email_server_error(mock_user_service, client: AsyncClient,
     # Mock update_user_email to raise an exception
     mock_service_instance.update_user_email.side_effect = Exception("Database error")
     
-    headers = {"Authorization": f"Bearer {test_user['token']}"}
-    response = await client.put(
-        f"/auth/users/{test_user['username']}/email",
-        json={
-            "new_email": "new@example.com",
-            "current_password": test_user["password"]
-        },
-        headers=headers
-    )
+    # Mock the JWT verification to pass auth checks
+    with patch("app.routers.auth_router.verify_jwt_token") as mock_verify:
+        mock_verify.return_value = {
+            "sub": test_user["username"],
+            "id": 1,
+            "is_admin": False
+        }
+        
+        headers = {"Authorization": f"Bearer {test_user['token']}"}
+        response = await client.put(
+            f"/auth/users/{test_user['username']}/email",
+            json={
+                "new_email": "new@example.com",
+                "current_password": test_user["password"]
+            },
+            headers=headers
+        )
+        
     assert response.status_code == 500, "Should return 500 on server error"
     
     # More flexible assertion for the error message

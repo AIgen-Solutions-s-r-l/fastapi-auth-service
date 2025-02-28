@@ -15,31 +15,7 @@ pytestmark = pytest.mark.asyncio
 async def client(async_client: AsyncClient):
     return async_client
 
-@pytest.fixture
-async def test_user(client: AsyncClient):
-    # Generate a unique username and email
-    username = f"testuser_{uuid.uuid4().hex[:8]}"
-    email = f"{username}@example.com"
-    password = "TestPassword123!"
-    
-    # Register the user
-    response = await client.post("/auth/register", json={
-        "username": username,
-        "email": email,
-        "password": password
-    })
-    if response.status_code != 201:
-        pytest.skip("Registration failed, skipping auth router tests")
-    data = response.json()
-    token = data.get("access_token")
-    user_data = {"username": username, "email": email, "password": password, "token": token}
-    
-    yield user_data
-    
-    # Cleanup: delete the user after tests run
-    await client.delete(f"/auth/users/{username}",
-                       params={"password": password},
-                       headers={"Authorization": f"Bearer {token}"})
+# No need to redefine test_user - it's imported from conftest.py
 
 # Test user not found explicitly raising UserNotFoundError
 @patch("app.routers.auth_router.get_user_by_username")
@@ -52,7 +28,7 @@ async def test_get_user_details_raises_error(mock_get_user, client: AsyncClient,
     assert response.status_code == 404
 
 # Test the exception cases of change_password with a custom exception
-@patch("app.routers.auth_router.update_user_password")
+@patch("app.routers.auth_router.UserService.update_user_password")
 async def test_change_password_error(mock_update, client: AsyncClient, test_user):
     # Create a custom exception that matches the signature
     class CustomError(Exception):
@@ -135,6 +111,9 @@ async def test_change_email_complete_mock(mock_verify, mock_service, client: Asy
     mock_service.return_value = mock_instance
     mock_instance.update_user_email = AsyncMock(return_value=mock_user)
     
+    # Also mock the send_verification_email method
+    mock_instance.send_verification_email = AsyncMock(return_value=True)
+    
     # Test the endpoint
     response = await client.put(
         "/auth/users/test_user/email",
@@ -197,12 +176,21 @@ async def test_register_comprehensive(client: AsyncClient):
     assert response.status_code == 201
     data = response.json()
     assert data["username"] == username
-    assert "access_token" in data
-    assert data["token_type"] == "bearer"
+    assert data["email"] == email
     assert "message" in data
     
+    # Login to get token
+    login_response = await client.post("/auth/login", json={
+        "username": username,
+        "password": password
+    })
+    
+    assert login_response.status_code == 200
+    login_data = login_response.json()
+    assert "access_token" in login_data
+    
     # Cleanup - delete the user
-    headers = {"Authorization": f"Bearer {data['access_token']}"}
+    headers = {"Authorization": f"Bearer {login_data['access_token']}"}
     await client.delete(
         f"/auth/users/{username}",
         params={"password": password},
@@ -210,22 +198,22 @@ async def test_register_comprehensive(client: AsyncClient):
     )
 
 # Test handling of profile retrieval by user ID
-@patch("app.routers.auth_router.select")
-async def test_get_user_profile_by_id_mocked(mock_select, client: AsyncClient):
-    # Create a mock user result for the select query
+@patch("app.routers.auth_router.get_user_by_username")
+async def test_get_user_profile_by_id_mocked(mock_get_user, client: AsyncClient, test_user):
+    # Create a mock user for the get_user_by_username call
     mock_user = MagicMock()
-    mock_user.email = "user123@example.com"
     mock_user.username = "user123"
+    mock_user.email = "user123@example.com"
+    mock_user.is_verified = True
     
-    # Create a mock for the result of db.execute
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none.return_value = mock_user
+    # Set up the mock to return our user
+    mock_get_user.return_value = mock_user
     
-    # Set up db.execute to be properly mocked within the context of where it's used
-    with patch("sqlalchemy.ext.asyncio.AsyncSession.execute", return_value=mock_result):
-        response = await client.get("/auth/users/123/profile")
-        
-        assert response.status_code == 200
-        data = response.json()
-        assert data["email"] == "user123@example.com"
-        assert data["username"] == "user123"
+    # Test the endpoint with authentication
+    headers = {"Authorization": f"Bearer {test_user['token']}"}
+    response = await client.get("/auth/users/user123", headers=headers)
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["email"] == "user123@example.com"
+    assert data["username"] == "user123"

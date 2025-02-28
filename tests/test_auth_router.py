@@ -8,32 +8,7 @@ pytestmark = pytest.mark.asyncio
 async def client(async_client: AsyncClient):
     return async_client
 
-@pytest.fixture
-async def test_user(client: AsyncClient):
-    # Generate a unique username and email
-    username = f"testuser_{uuid.uuid4().hex[:8]}"
-    email = f"{username}@example.com"
-    password = "TestPassword123!"
-    
-    # Register the user
-    response = await client.post("/auth/register", json={
-        "username": username,
-        "email": email,
-        "password": password
-    })
-    if response.status_code != 201:
-        pytest.skip("Registration failed, skipping auth router tests")
-    data = response.json()
-    token = data.get("access_token")
-    user_data = {"username": username, "email": email, "password": password, "token": token}
-    
-    yield user_data
-
-    # Cleanup: delete the user after tests run
-    await client.delete(f"/auth/users/{username}",
-                       params={"password": password},
-                       headers={"Authorization": f"Bearer {token}"})
-
+# No need to redefine test_user - it's imported from conftest.py
 
 async def test_login(client: AsyncClient, test_user):
     # Test login with correct credentials

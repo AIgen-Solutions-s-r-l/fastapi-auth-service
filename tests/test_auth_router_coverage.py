@@ -17,31 +17,7 @@ pytestmark = pytest.mark.asyncio
 async def client(async_client: AsyncClient):
     return async_client
 
-@pytest.fixture
-async def test_user(client: AsyncClient):
-    # Generate a unique username and email
-    username = f"testuser_{uuid.uuid4().hex[:8]}"
-    email = f"{username}@example.com"
-    password = "TestPassword123!"
-    
-    # Register the user
-    response = await client.post("/auth/register", json={
-        "username": username,
-        "email": email,
-        "password": password
-    })
-    if response.status_code != 201:
-        pytest.skip("Registration failed, skipping auth router tests")
-    data = response.json()
-    token = data.get("access_token")
-    user_data = {"username": username, "email": email, "password": password, "token": token}
-    
-    yield user_data
-    
-    # Cleanup: delete the user after tests run
-    await client.delete(f"/auth/users/{username}",
-                       params={"password": password},
-                       headers={"Authorization": f"Bearer {token}"})
+# Use the shared test_user fixture from conftest.py
 
 # Test login function error handling (lines 47-68)
 @patch("app.routers.auth_router.authenticate_user")
@@ -108,7 +84,15 @@ async def test_get_current_user_profile_non_admin_access_other(mock_get_user, mo
 
 # Test error scenarios for change_email
 @patch("app.routers.auth_router.UserService")
-async def test_change_email_server_error(mock_user_service, client: AsyncClient, test_user):
+@patch("app.routers.auth_router.verify_jwt_token")
+async def test_change_email_server_error(mock_verify, mock_user_service, client: AsyncClient, test_user):
+    # Mock JWT verification to pass auth checks
+    mock_verify.return_value = {
+        "sub": test_user["username"],
+        "id": 1,
+        "is_admin": False
+    }
+    
     # Create a mock service instance
     mock_service_instance = MagicMock()
     mock_user_service.return_value = mock_service_instance
@@ -166,13 +150,13 @@ async def test_remove_user_exception(mock_delete_user, client: AsyncClient, test
     )
     assert response.status_code == 401, "Should return 401 for invalid credentials"
 
-# Test get_email_and_username_by_user_id (lines 538-562)
+# Test get_email_by_user_id (lines 811-858)
 # This is a special case that requires different mocking approach
 @patch("app.routers.auth_router.select")
-async def test_get_email_username_by_id_error(mock_select, client: AsyncClient):
+async def test_get_email_by_id_error(mock_select, client: AsyncClient):
     # Setting up for the execute call to raise exception
     with patch("sqlalchemy.ext.asyncio.AsyncSession.execute", side_effect=Exception("Database error")):
-        response = await client.get("/auth/users/123/profile")
+        response = await client.get("/auth/users/123/email")
         assert response.status_code == 500, "Should return 500 on database error"
 
 # Test the full login-logout flow to increase coverage

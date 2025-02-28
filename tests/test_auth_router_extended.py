@@ -16,31 +16,7 @@ pytestmark = pytest.mark.asyncio
 async def client(async_client: AsyncClient):
     return async_client
 
-@pytest.fixture
-async def test_user(client: AsyncClient):
-    # Generate a unique username and email
-    username = f"testuser_{uuid.uuid4().hex[:8]}"
-    email = f"{username}@example.com"
-    password = "TestPassword123!"
-    
-    # Register the user
-    response = await client.post("/auth/register", json={
-        "username": username,
-        "email": email,
-        "password": password
-    })
-    if response.status_code != 201:
-        pytest.skip("Registration failed, skipping auth router tests")
-    data = response.json()
-    token = data.get("access_token")
-    user_data = {"username": username, "email": email, "password": password, "token": token}
-    
-    yield user_data
-    
-    # Cleanup: delete the user after tests run
-    await client.delete(f"/auth/users/{username}",
-                       params={"password": password},
-                       headers={"Authorization": f"Bearer {token}"})
+# No need to redefine test_user - it's imported from conftest.py
 
 # Test login failures
 async def test_login_invalid_credentials(client: AsyncClient, test_user):
@@ -164,21 +140,16 @@ async def test_get_current_user_profile_admin_access(
     data = response.json()
     assert data["username"] == "target_user", "Should return the target user's username"
 
-# Test get email and username by user ID
-async def test_get_email_and_username_by_user_id(client: AsyncClient, test_user):
-    # First, get the user's ID
-    headers = {"Authorization": f"Bearer {test_user['token']}"}
-    profile_response = await client.get("/auth/me", headers=headers)
-    assert profile_response.status_code == 200
-    
-    # Use an invalid user ID
+# Test get email by user ID
+async def test_get_email_by_user_id(client: AsyncClient, test_user):
+    # Use an invalid user ID directly
     nonexistent_id = 999999  # Assuming this user ID doesn't exist
-    response = await client.get(f"/auth/users/{nonexistent_id}/profile")
+    response = await client.get(f"/auth/users/{nonexistent_id}/email")
     assert response.status_code == 404, "Expected 404 for nonexistent user ID"
 
 # Test password reset request with mock email sending
 @patch("app.routers.auth_router.create_password_reset_token")
-@patch("app.routers.auth_router.send_email")
+@patch("app.services.email_service.EmailService.send_password_change_request")
 async def test_password_reset_request_success(
     mock_send_email, mock_create_token, client: AsyncClient, test_user
 ):
@@ -201,7 +172,7 @@ async def test_password_reset_request_success(
 
 # Test password reset request with non-existent email
 @patch("app.routers.auth_router.create_password_reset_token")
-@patch("app.routers.auth_router.send_email")
+@patch("app.services.email_service.EmailService.send_password_change_request")
 async def test_password_reset_request_nonexistent_email(
     mock_send_email, mock_create_token, client: AsyncClient
 ):

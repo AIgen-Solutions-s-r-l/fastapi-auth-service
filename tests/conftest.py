@@ -1,6 +1,7 @@
 """Test configuration and fixtures."""
 
 import asyncio
+import uuid
 import pytest
 from typing import AsyncGenerator, Generator
 from fastapi import FastAPI
@@ -70,3 +71,42 @@ async def async_client(test_app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
         base_url="http://test"
     ) as client:
         yield client
+
+
+@pytest.fixture
+async def test_user(async_client: AsyncClient):
+    """Create a test user with authentication token."""
+    # Generate a unique username and email
+    username = f"testuser_{uuid.uuid4().hex[:8]}"
+    email = f"{username}@example.com"
+    password = "TestPassword123!"
+    
+    # Register the user
+    response = await async_client.post("/auth/register", json={
+        "username": username,
+        "email": email,
+        "password": password
+    })
+    assert response.status_code == 201, "User registration failed"
+    
+    # Login to get a valid token
+    login_response = await async_client.post("/auth/login", json={
+        "username": username,
+        "password": password
+    })
+    assert login_response.status_code == 200, "Login failed"
+    
+    data = login_response.json()
+    token = data.get("access_token")
+    assert token, "No access token in login response"
+    
+    user_data = {"username": username, "email": email, "password": password, "token": token}
+    
+    yield user_data
+    
+    # Cleanup: delete the user after tests run
+    await async_client.delete(
+        f"/auth/users/{username}",
+        params={"password": password},
+        headers={"Authorization": f"Bearer {token}"}
+    )
