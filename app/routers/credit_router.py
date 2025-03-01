@@ -14,8 +14,8 @@ from app.schemas.credit_schemas import (
     TransactionResponse,
     TransactionHistoryResponse,
     CreditBalanceResponse,
-    CreditsUseRequest,
-    CreditsAddRequest
+    UseCreditRequest as CreditsUseRequest,
+    AddCreditRequest as CreditsAddRequest
 )
 from app.schemas.stripe_schemas import (
     StripeTransactionRequest,

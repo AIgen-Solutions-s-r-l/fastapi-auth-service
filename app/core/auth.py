@@ -63,3 +63,29 @@ async def get_current_user(
         raise credentials_exception
         
     return user
+
+
+async def get_current_active_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """
+    Get the current active user.
+    
+    This dependency first authenticates the user using get_current_user,
+    then checks if the user's email is verified.
+    
+    Args:
+        current_user: The authenticated user from get_current_user
+        
+    Returns:
+        User: Current active user
+        
+    Raises:
+        HTTPException: If user is not verified
+    """
+    if not current_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive user. Please verify your email address."
+        )
+    return current_user
