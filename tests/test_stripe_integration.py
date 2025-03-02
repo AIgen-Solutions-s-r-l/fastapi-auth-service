@@ -207,8 +207,8 @@ class TestStripeService:
     @patch('stripe.Invoice.retrieve', side_effect=Exception("Not found"))
     async def test_find_transaction_by_id_not_found(self, mock_invoice, mock_charge, mock_subscription, mock_payment):
         """Test finding a transaction by ID when it's not found."""
-        # Initialize service
-        service = StripeService()
+        # Initialize service with test_mode=True to avoid API key validation
+        service = StripeService(test_mode=True)
         
         # Call the method
         transaction = await service.find_transaction_by_id("nonexistent_id")
