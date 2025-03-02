@@ -246,7 +246,10 @@ class TestStripeWebhook:
         
         # Assert subscription renewal was called
         mock_credit_service.get_subscription_by_stripe_id.assert_called_once_with("sub_1234567890")
-        mock_credit_service.renew_subscription.assert_called_once_with(456, mock_background_tasks)
+        mock_credit_service.renew_subscription.assert_called_once_with(
+            subscription_id=456,
+            background_tasks=mock_background_tasks
+        )
     
     @pytest.mark.asyncio
     @patch('app.routers.stripe_webhook.CreditService')
@@ -302,7 +305,8 @@ class TestStripeWebhook:
         # Assert subscription update was processed
         mock_credit_service.get_user_by_stripe_customer_id.assert_called_once_with("cus_1234567890")
         mock_credit_service.update_subscription_status.assert_called_once_with(
-            "sub_1234567890", "active"
+            stripe_subscription_id="sub_1234567890",
+            status="active"
         )
     
     @pytest.mark.asyncio
