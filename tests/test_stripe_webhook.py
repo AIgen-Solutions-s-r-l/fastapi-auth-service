@@ -198,12 +198,14 @@ class TestStripeWebhook:
     """Tests for Stripe webhook handling."""
     
     @pytest.mark.asyncio
+    @patch('app.routers.stripe_webhook.StripeService')  # Add StripeService mock
     @patch('app.routers.stripe_webhook.CreditService')
     @patch('stripe.Webhook.construct_event')
     async def test_handle_invoice_payment_succeeded(
-        self, 
-        mock_construct_event, 
+        self,
+        mock_construct_event,
         mock_credit_service_class,
+        mock_stripe_service_class,  # Add new parameter
         mock_credit_service,
         mock_stripe_invoice_payment_succeeded_event
     ):
@@ -211,8 +213,10 @@ class TestStripeWebhook:
         # This would be imported from the webhook router in your actual implementation
         from app.routers.stripe_webhook import stripe_webhook_handler
         
-        # Set up mock credit service
+        # Set up mock services
         mock_credit_service_class.return_value = mock_credit_service
+        mock_stripe_service = AsyncMock()
+        mock_stripe_service_class.return_value = mock_stripe_service
         
         # Set up mock event construction
         mock_construct_event.return_value = mock_stripe_invoice_payment_succeeded_event
@@ -256,8 +260,8 @@ class TestStripeWebhook:
     @patch('app.routers.stripe_webhook.StripeService')
     @patch('stripe.Webhook.construct_event')
     async def test_handle_customer_subscription_updated(
-        self, 
-        mock_construct_event, 
+        self,
+        mock_construct_event,
         mock_stripe_service_class,
         mock_credit_service_class,
         mock_credit_service,
@@ -269,6 +273,11 @@ class TestStripeWebhook:
         
         # Set up mock services
         mock_credit_service_class.return_value = mock_credit_service
+        # Set up user that will be returned
+        mock_user = MagicMock(id=1, email="customer@example.com", username="testuser")
+        mock_credit_service.get_user_by_stripe_customer_id.return_value = mock_user
+        
+        # Set up stripe service
         mock_stripe_service = AsyncMock()
         mock_stripe_service_class.return_value = mock_stripe_service
         
@@ -314,8 +323,8 @@ class TestStripeWebhook:
     @patch('app.routers.stripe_webhook.StripeService')
     @patch('stripe.Webhook.construct_event')
     async def test_handle_payment_intent_succeeded(
-        self, 
-        mock_construct_event, 
+        self,
+        mock_construct_event,
         mock_stripe_service_class,
         mock_credit_service_class,
         mock_credit_service,
@@ -327,10 +336,31 @@ class TestStripeWebhook:
         
         # Set up mock services
         mock_credit_service_class.return_value = mock_credit_service
+        
+        # Set up user that will be returned
+        mock_user = MagicMock(id=1, email="customer@example.com", username="testuser")
+        mock_credit_service.get_user_by_stripe_customer_id.return_value = mock_user
+        
+        # Set up active plans for credit calculation
+        mock_plan = MagicMock(id=1, price=Decimal('29.99'), credit_amount=Decimal('300.00'))
+        mock_credit_service.get_all_active_plans.return_value = [mock_plan]
+        
+        # Set up transaction to be returned by purchase_one_time_credits
+        mock_transaction = MagicMock(id=789, amount=Decimal('300.00'), new_balance=Decimal('300.00'))
+        mock_credit_service.purchase_one_time_credits.return_value = mock_transaction
+        
+        # Set up stripe service
         mock_stripe_service = AsyncMock()
         mock_stripe_service_class.return_value = mock_stripe_service
         
-        # Set up analysis result for the payment intent
+        # Set up analysis result for the payment intent - with _format_transaction call
+        mock_stripe_service._format_transaction.return_value = {
+            "transaction_id": "pi_1234567890",
+            "customer_id": "cus_1234567890",
+            "amount": 2999,
+        }
+        
+        # Analysis result that will be returned by analyze_transaction
         analysis_result = {
             "transaction_type": "oneoff",
             "recurring": False,
