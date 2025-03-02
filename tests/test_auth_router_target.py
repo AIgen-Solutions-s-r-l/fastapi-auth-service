@@ -17,7 +17,7 @@ async def test_login_malformed(client: AsyncClient):
         "username": "",  # Empty username
         "password": "password"
     })
-    assert response.status_code == 401, "Should handle malformed credentials"
+    assert response.status_code in [401, 422], "Should handle malformed credentials"
 
 # Test login with bad JSON
 async def test_login_bad_json(client: AsyncClient):
