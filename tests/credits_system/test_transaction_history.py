@@ -6,10 +6,10 @@ from httpx import AsyncClient
 
 pytestmark = pytest.mark.asyncio
 
-async def test_get_transaction_history(async_client: AsyncClient, test_user):
+async def test_get_transaction_history(async_client: AsyncClient, verified_test_user):
     """Test retrieving transaction history."""
     # First create some transactions
-    headers = {"Authorization": f"Bearer {test_user['token']}"}
+    headers = {"Authorization": f"Bearer {verified_test_user['token']}"}
     
     # Add credits
     await async_client.post(
@@ -47,9 +47,9 @@ async def test_get_transaction_history(async_client: AsyncClient, test_user):
     assert any(t["transaction_type"] == "credit_added" for t in transactions), "Add transaction not found"
     assert any(t["transaction_type"] == "credit_used" for t in transactions), "Use transaction not found"
 
-async def test_get_transaction_history_pagination(async_client: AsyncClient, test_user):
+async def test_get_transaction_history_pagination(async_client: AsyncClient, verified_test_user):
     """Test transaction history pagination."""
-    headers = {"Authorization": f"Bearer {test_user['token']}"}
+    headers = {"Authorization": f"Bearer {verified_test_user['token']}"}
     
     # Create multiple transactions
     for i in range(3):

@@ -6,9 +6,9 @@ from httpx import AsyncClient
 
 pytestmark = pytest.mark.asyncio
 
-async def test_get_initial_balance(async_client: AsyncClient, test_user):
+async def test_get_initial_balance(async_client: AsyncClient, verified_test_user):
     """Test getting initial credit balance."""
-    headers = {"Authorization": f"Bearer {test_user['token']}"}
+    headers = {"Authorization": f"Bearer {verified_test_user['token']}"}
     response = await async_client.get("/credits/balance", headers=headers)
     
     assert response.status_code == 200, f"Get balance failed with status {response.status_code}"

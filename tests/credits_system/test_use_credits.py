@@ -6,10 +6,10 @@ from httpx import AsyncClient
 
 pytestmark = pytest.mark.asyncio
 
-async def test_use_credits(async_client: AsyncClient, test_user):
+async def test_use_credits(async_client: AsyncClient, verified_test_user):
     """Test using credits from user's balance."""
     # First add credits
-    headers = {"Authorization": f"Bearer {test_user['token']}"}
+    headers = {"Authorization": f"Bearer {verified_test_user['token']}"}
     add_amount = Decimal("100.50")
     await async_client.post(
         "/credits/add",
@@ -39,9 +39,9 @@ async def test_use_credits(async_client: AsyncClient, test_user):
     assert data["transaction_type"] == "credit_used", "Wrong transaction type"
     assert Decimal(data["new_balance"]) == add_amount - use_amount, "New balance incorrect after usage"
 
-async def test_use_credits_insufficient_balance(async_client: AsyncClient, test_user):
+async def test_use_credits_insufficient_balance(async_client: AsyncClient, verified_test_user):
     """Test using more credits than available."""
-    headers = {"Authorization": f"Bearer {test_user['token']}"}
+    headers = {"Authorization": f"Bearer {verified_test_user['token']}"}
     response = await async_client.post(
         "/credits/use",
         headers=headers,

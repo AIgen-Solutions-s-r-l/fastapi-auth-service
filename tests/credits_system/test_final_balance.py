@@ -6,9 +6,9 @@ from httpx import AsyncClient
 
 pytestmark = pytest.mark.asyncio
 
-async def test_final_balance_check(async_client: AsyncClient, test_user):
+async def test_final_balance_check(async_client: AsyncClient, verified_test_user):
     """Test final balance after all operations."""
-    headers = {"Authorization": f"Bearer {test_user['token']}"}
+    headers = {"Authorization": f"Bearer {verified_test_user['token']}"}
     
     # Add initial credits
     await async_client.post(
