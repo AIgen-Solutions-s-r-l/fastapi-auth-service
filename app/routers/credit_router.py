@@ -301,6 +301,9 @@ async def add_credits_from_stripe(
             # Update subscription with Stripe IDs
             # This would typically be done in the purchase_plan method in a production environment
             
+            # Handle subscription renewal in Stripe
+            await stripe_service.handle_subscription_renewal(subscription_id)
+            
             logger.info(f"Processed subscription from Stripe",
                       event_type="stripe_subscription_processed",
                       user_id=user.id,
