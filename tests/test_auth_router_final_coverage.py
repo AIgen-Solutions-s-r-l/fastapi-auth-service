@@ -91,9 +91,10 @@ async def test_refresh_token_mock_full_flow(mock_get_user, mock_verify, client: 
     assert data["token_type"] == "bearer"
 
 # Test the email update function with a complete mock
+@patch("app.routers.auth_router.create_access_token")
 @patch("app.routers.auth_router.UserService")
 @patch("app.routers.auth_router.verify_jwt_token")
-async def test_change_email_complete_mock(mock_verify, mock_service, client: AsyncClient):
+async def test_change_email_complete_mock(mock_verify, mock_service, mock_token, client: AsyncClient):
     # Mock JWT verification
     mock_verify.return_value = {
         "sub": "test_user",
@@ -101,17 +102,31 @@ async def test_change_email_complete_mock(mock_verify, mock_service, client: Asy
         "is_admin": False
     }
     
-    # Create a mock user
-    mock_user = MagicMock()
-    mock_user.username = "test_user"
-    mock_user.email = "updated@example.com"
+    # Mock token creation
+    mock_token.return_value = "mocked_access_token"
     
-    # Create a mock service instance with AsyncMock for async methods
+    # Create a class to simulate a User object with proper string attributes
+    class MockUser:
+        def __init__(self):
+            self.username = "test_user"
+            self.email = "updated@example.com"
+            self.id = 123
+            self.is_admin = False
+            
+        def __str__(self):
+            return f"User(username={self.username}, email={self.email})"
+    
+    # Create the mock user
+    mock_user = MockUser()
+    
+    # Create a mock service instance with AsyncMock for all async methods
     mock_instance = MagicMock()
     mock_service.return_value = mock_instance
-    mock_instance.update_user_email = AsyncMock(return_value=mock_user)
     
-    # Also mock the send_verification_email method
+    # Mock all async methods used in the endpoint
+    mock_instance.get_user_by_email = AsyncMock(return_value=mock_user)
+    mock_instance.get_user_by_username = AsyncMock(return_value=mock_user)
+    mock_instance.update_user_email = AsyncMock(return_value=mock_user)
     mock_instance.send_verification_email = AsyncMock(return_value=True)
     
     # Test the endpoint
