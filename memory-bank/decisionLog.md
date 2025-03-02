@@ -2,6 +2,28 @@
 
 This document tracks key architectural and design decisions made during the development of the auth_service project.
 
+## March 2, 2025 - Credit System Test Fix for User Verification
+
+**Context:** The credit system tests were failing on GitHub Actions with a 403 Forbidden error and the message "Inactive user. Please verify your email address." This happened because all credit system endpoints require verified users (using the `get_current_active_user` dependency), but the test fixtures were creating unverified test users.
+
+**Decision:** Create a new test fixture specifically for the credit system tests that extends the existing test user fixture by verifying the user's email address.
+
+**Rationale:**
+- The credit features should only be accessible to verified users, which is a valid security requirement
+- Rather than modifying the app logic to allow unverified users to access credit features, the tests should adapt to the app's requirements
+- Creating a specific test fixture keeps the tests isolated and avoids side effects on other test suites
+- This approach maintains the security requirements while allowing tests to run successfully
+
+**Implementation:**
+- Created a new `verified_test_user` fixture in `tests/credits_system/conftest.py` that:
+  - Uses the existing `test_user` fixture to create a user
+  - Finds the user in the database by email
+  - Updates the `is_verified` flag to `True`
+  - Returns the same user information but now with a verified status
+- Updated all credit system tests to use the new `verified_test_user` fixture instead of `test_user`
+
+**Results:** All credit system tests now pass successfully. The tests properly verify that credit operations require email verification, while still being able to test the credit functionality itself.
+
 ## February 28, 2025 - Stripe Integration for Credit System
 
 **Context:** The current credit system needs to be integrated with Stripe for payment processing, allowing users to purchase credits via either subscriptions or one-time payments.

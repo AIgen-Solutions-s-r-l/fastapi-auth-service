@@ -2,6 +2,15 @@
 
 ## Work Done
 
+### March 2, 2025
+- Fixed failing credit system tests:
+  - Identified the root cause as tests using unverified users with endpoints that require verified users
+  - Created a new `verified_test_user` fixture in tests/credits_system/conftest.py
+  - Updated all credit system tests to use the verified test user fixture
+  - Ensured all tests pass locally and should now pass on GitHub Actions
+  - Updated decisionLog.md to document the rationale behind this approach
+  - Updated Memory Bank to track this progress
+
 ### February 28, 2025
 - Fixed environment variable loading issue:
   - Added proper configuration to the Settings class to load variables from .env file

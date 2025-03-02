@@ -46,6 +46,7 @@ Memory Bank has been initialized for the auth_service project. We've created com
 - Updated tests to support both email and username authentication methods
 - Fixed edge cases in authentication flows including token refresh and email change
 - Implemented Stripe integration for the credit system including API endpoints to process subscriptions and one-time purchases
+- Fixed failing credit system tests by implementing a verified test user fixture
 
 ## Current Documentation
 - **productContext.md**: Project overview, vision, goals, and constraints
