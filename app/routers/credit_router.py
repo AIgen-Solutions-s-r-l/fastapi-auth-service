@@ -1,116 +1,79 @@
 """Router for credit-related endpoints."""
 
-from typing import Optional
 from decimal import Decimal
+from datetime import datetime, UTC
+from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from app.log.logging import logger 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import get_current_user
 from app.core.database import get_db
-from app.core.responses import DecimalJSONResponse
+from app.core.auth import get_current_active_user
 from app.models.user import User
-from app.schemas import credit_schemas, plan_schemas
+from app.schemas.credit_schemas import (
+    TransactionResponse,
+    TransactionHistoryResponse,
+    CreditBalanceResponse,
+    UseCreditRequest as CreditsUseRequest,
+    AddCreditRequest as CreditsAddRequest
+)
+from app.schemas.stripe_schemas import (
+    StripeTransactionRequest,
+    StripeTransaction,
+    StripeTransactionResponse
+)
 from app.services.credit_service import CreditService, InsufficientCreditsError
 from app.services.user_service import UserService
+from app.services.stripe_service import StripeService
+from app.log.logging import logger
+
 
 router = APIRouter(prefix="/credits", tags=["credits"])
 
 
-@router.get(
-    "/balance",
-    response_model=credit_schemas.CreditBalanceResponse,
-    response_class=DecimalJSONResponse
-)
+@router.get("/balance", response_model=CreditBalanceResponse)
 async def get_credit_balance(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Get current user's credit balance.
-
+    
     Args:
-        current_user: Authenticated user
+        current_user: Current authenticated user
         db: Database session
-
+        
     Returns:
-        CreditBalanceResponse: Current credit balance
+        CreditBalanceResponse: Current balance and last update time
     """
     credit_service = CreditService(db)
-    user_id = current_user.id if isinstance(current_user, User) else current_user['id']
-    return await credit_service.get_balance(user_id)
+    return await credit_service.get_balance(current_user.id)
 
 
-@router.post(
-    "/add",
-    response_model=credit_schemas.TransactionResponse,
-    response_class=DecimalJSONResponse
-)
-async def add_credits(
-    request: credit_schemas.AddCreditRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Add credits to user's balance.
-
-    Args:
-        request: Credit addition details
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        TransactionResponse: Transaction details
-    """
-    credit_service = CreditService(db)
-    try:
-        user_id = current_user.id if isinstance(current_user, User) else current_user['id']
-        return await credit_service.add_credits(
-            user_id=user_id,
-            amount=request.amount,
-            reference_id=request.reference_id,
-            description=request.description
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        logger.exception(f"Error adding credits: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error processing credit addition"
-        )
-
-
-@router.post(
-    "/use",
-    response_model=credit_schemas.TransactionResponse,
-    response_class=DecimalJSONResponse
-)
+@router.post("/use", response_model=TransactionResponse)
 async def use_credits(
-    request: credit_schemas.UseCreditRequest,
-    current_user: User = Depends(get_current_user),
+    request: CreditsUseRequest,
+    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Use credits from user's balance.
-
+    
     Args:
-        request: Credit usage details
-        current_user: Authenticated user
+        request: Credits use request
+        current_user: Current authenticated user
         db: Database session
-
+        
     Returns:
         TransactionResponse: Transaction details
+        
+    Raises:
+        HTTPException: If user has insufficient credits
     """
-    credit_service = CreditService(db)
     try:
-        user_id = current_user.id if isinstance(current_user, User) else current_user['id']
+        credit_service = CreditService(db)
         return await credit_service.use_credits(
-            user_id=user_id,
+            user_id=current_user.id,
             amount=request.amount,
             reference_id=request.reference_id,
             description=request.description
@@ -120,464 +83,332 @@ async def use_credits(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
-    except Exception as e:
-        logger.exception(f"Error using credits: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error processing credit usage"
-        )
 
 
-@router.get(
-    "/transactions",
-    response_model=credit_schemas.TransactionHistoryResponse,
-    response_class=DecimalJSONResponse
-)
-async def get_transaction_history(
-    skip: int = 0,
-    limit: int = 50,
-    current_user: User = Depends(get_current_user),
+@router.post("/add", response_model=TransactionResponse)
+async def add_credits(
+    request: CreditsAddRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get user's credit transaction history.
+    Add credits to user's balance.
+    
+    Args:
+        request: Credits add request
+        background_tasks: FastAPI background tasks
+        current_user: Current authenticated user
+        db: Database session
+        
+    Returns:
+        TransactionResponse: Transaction details
+    """
+    credit_service = CreditService(db)
+    return await credit_service.add_credits(
+        user_id=current_user.id,
+        amount=request.amount,
+        reference_id=request.reference_id,
+        description=request.description
+    )
 
+
+@router.get("/transactions", response_model=TransactionHistoryResponse)
+async def get_transaction_history(
+    skip: int = 0,
+    limit: int = 50,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get user's transaction history.
+    
     Args:
         skip: Number of records to skip
         limit: Maximum number of records to return
-        current_user: Authenticated user
+        current_user: Current authenticated user
         db: Database session
-
+        
     Returns:
         TransactionHistoryResponse: List of transactions and total count
     """
     credit_service = CreditService(db)
-    user_id = current_user.id if isinstance(current_user, User) else current_user['id']
     return await credit_service.get_transaction_history(
-        user_id=user_id,
+        user_id=current_user.id,
         skip=skip,
         limit=limit
     )
 
 
-# New endpoints for plans and subscriptions
-
-@router.get(
-    "/plans",
-    response_model=plan_schemas.PlanListResponse,
-    response_class=DecimalJSONResponse
-)
-async def list_plans(
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    List all available plans.
-
-    Args:
-        db: Database session
-
-    Returns:
-        PlanListResponse: List of available plans
-    """
-    try:
-        credit_service = CreditService(db)
-        plans = await credit_service.get_all_active_plans()
-        return plan_schemas.PlanListResponse(
-            plans=plans,
-            count=len(plans)
-        )
-    except Exception as e:
-        logger.error(f"Error listing plans: {str(e)}", 
-                   event_type="plan_list_error", 
-                   error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error retrieving plans"
-        )
-
-
-@router.post(
-    "/plans/purchase",
-    response_model=credit_schemas.TransactionResponse,
-    response_class=DecimalJSONResponse
-)
-async def purchase_plan(
-    request: plan_schemas.PlanPurchaseRequest,
+@router.post("/stripe/add", response_model=StripeTransactionResponse)
+async def add_credits_from_stripe(
+    request: StripeTransactionRequest,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Purchase a plan and set up a subscription.
-
-    Args:
-        request: Plan purchase details
-        background_tasks: FastAPI background tasks
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        TransactionResponse: Transaction details
-    """
-    try:
-        user_id = current_user.id if isinstance(current_user, User) else current_user['id']
-        credit_service = CreditService(db)
-        
-        # Process payment (mock)
-        logger.info(f"Processing payment for plan: {request.plan_id}", 
-                  event_type="plan_payment_processing",
-                  user_id=user_id,
-                  plan_id=request.plan_id,
-                  payment_method_id=request.payment_method_id,
-                  reference_id=request.reference_id)
-        
-        # Purchase plan
-        transaction, subscription = await credit_service.purchase_plan(
-            user_id=user_id,
-            plan_id=request.plan_id,
-            reference_id=request.reference_id,
-            background_tasks=background_tasks
-        )
-        
-        logger.info(f"Plan purchased successfully", 
-                  event_type="plan_purchased",
-                  user_id=user_id,
-                  plan_id=request.plan_id,
-                  transaction_id=transaction.id,
-                  subscription_id=subscription.id)
-                  
-        return transaction
-        
-    except HTTPException as http_ex:
-        # Re-raise HTTP exceptions
-        raise http_ex
-    except Exception as e:
-        logger.error(f"Error purchasing plan: {str(e)}",
-                   event_type="plan_purchase_error",
-                   user_id=current_user.id if isinstance(current_user, User) else current_user['id'],
-                   plan_id=request.plan_id,
-                   error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error purchasing plan: {str(e)}"
-        )
-
-
-@router.post(
-    "/plans/upgrade",
-    response_model=credit_schemas.TransactionResponse,
-    response_class=DecimalJSONResponse
-)
-async def upgrade_plan(
-    request: plan_schemas.PlanUpgradeRequest,
-    background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Upgrade to a higher tier plan.
-
-    Args:
-        request: Plan upgrade details
-        background_tasks: FastAPI background tasks
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        TransactionResponse: Transaction details for the additional credits
-    """
-    try:
-        user_id = current_user.id if isinstance(current_user, User) else current_user['id']
-        credit_service = CreditService(db)
-        
-        # Process payment (mock)
-        logger.info(f"Processing payment for plan upgrade", 
-                  event_type="plan_upgrade_payment_processing",
-                  user_id=user_id,
-                  current_subscription_id=request.current_subscription_id,
-                  new_plan_id=request.new_plan_id,
-                  payment_method_id=request.payment_method_id,
-                  reference_id=request.reference_id)
-        
-        # Upgrade plan
-        transaction, subscription = await credit_service.upgrade_plan(
-            user_id=user_id,
-            current_subscription_id=request.current_subscription_id,
-            new_plan_id=request.new_plan_id,
-            reference_id=request.reference_id,
-            background_tasks=background_tasks
-        )
-        
-        logger.info(f"Plan upgraded successfully", 
-                  event_type="plan_upgraded",
-                  user_id=user_id,
-                  new_plan_id=request.new_plan_id,
-                  new_subscription_id=subscription.id if subscription else None)
-                  
-        return transaction
-        
-    except HTTPException as http_ex:
-        # Re-raise HTTP exceptions
-        raise http_ex
-    except Exception as e:
-        logger.error(f"Error upgrading plan: {str(e)}",
-                   event_type="plan_upgrade_error",
-                   user_id=current_user.id if isinstance(current_user, User) else current_user['id'],
-                   current_subscription_id=request.current_subscription_id,
-                   new_plan_id=request.new_plan_id,
-                   error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error upgrading plan: {str(e)}"
-        )
-
-
-@router.post(
-    "/one-time-purchase",
-    response_model=credit_schemas.TransactionResponse,
-    response_class=DecimalJSONResponse
-)
-async def purchase_one_time_credits(
-    request: plan_schemas.OneTimePurchaseRequest,
-    background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Purchase credits as a one-time transaction (no subscription).
-
-    Args:
-        request: One-time purchase details
-        background_tasks: FastAPI background tasks
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        TransactionResponse: Transaction details
-    """
-    try:
-        user_id = current_user.id if isinstance(current_user, User) else current_user['id']
-        credit_service = CreditService(db)
-        
-        # Process payment (mock)
-        logger.info(f"Processing payment for one-time credits", 
-                  event_type="one_time_payment_processing",
-                  user_id=user_id,
-                  credit_amount=request.credit_amount,
-                  price=request.price,
-                  payment_method_id=request.payment_method_id,
-                  reference_id=request.reference_id)
-        
-        # Purchase credits
-        transaction = await credit_service.purchase_one_time_credits(
-            user_id=user_id,
-            amount=request.credit_amount,
-            price=request.price,
-            reference_id=request.reference_id,
-            background_tasks=background_tasks
-        )
-        
-        logger.info(f"One-time credits purchased successfully", 
-                  event_type="one_time_credits_purchased",
-                  user_id=user_id,
-                  credit_amount=request.credit_amount,
-                  transaction_id=transaction.id)
-                  
-        return transaction
-        
-    except HTTPException as http_ex:
-        # Re-raise HTTP exceptions
-        raise http_ex
-    except Exception as e:
-        logger.error(f"Error purchasing one-time credits: {str(e)}",
-                   event_type="one_time_purchase_error",
-                   user_id=current_user.id if isinstance(current_user, User) else current_user['id'],
-                   credit_amount=request.credit_amount,
-                   price=request.price,
-                   error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error purchasing one-time credits: {str(e)}"
-        )
-
-
-@router.get(
-    "/subscriptions",
-    response_model=plan_schemas.SubscriptionListResponse,
-    response_class=DecimalJSONResponse
-)
-async def get_user_subscriptions(
-    include_inactive: bool = False,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Get user's subscriptions.
-
-    Args:
-        include_inactive: Whether to include inactive subscriptions
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        SubscriptionListResponse: List of user's subscriptions
-    """
-    try:
-        user_id = current_user.id if isinstance(current_user, User) else current_user['id']
-        credit_service = CreditService(db)
-        
-        subscriptions = await credit_service.get_user_subscriptions(
-            user_id=user_id,
-            include_inactive=include_inactive
-        )
-        
-        return plan_schemas.SubscriptionListResponse(
-            subscriptions=subscriptions,
-            count=len(subscriptions)
-        )
-        
-    except Exception as e:
-        logger.error(f"Error fetching subscriptions: {str(e)}",
-                   event_type="subscription_fetch_error",
-                   user_id=current_user.id if isinstance(current_user, User) else current_user['id'],
-                   error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching subscriptions: {str(e)}"
-        )
-
-
-@router.put(
-    "/subscriptions/{subscription_id}/auto-renew",
-    response_model=plan_schemas.SubscriptionResponse,
-    responses={
-        200: {"description": "Auto-renewal setting updated"},
-        404: {"description": "Subscription not found"}
-    }
-)
-async def update_auto_renew(
-    subscription_id: int,
-    auto_renew: bool,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Update auto-renewal setting for a subscription.
-
-    Args:
-        subscription_id: ID of the subscription
-        auto_renew: New auto-renewal setting
-        current_user: Authenticated user
-        db: Database session
-
-    Returns:
-        SubscriptionResponse: Updated subscription details
-    """
-    try:
-        user_id = current_user.id if isinstance(current_user, User) else current_user['id']
-        credit_service = CreditService(db)
-        
-        # Check if subscription belongs to user
-        subscription = await credit_service.get_subscription_by_id(subscription_id)
-        
-        if not subscription or subscription.user_id != user_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Subscription not found"
-            )
-            
-        # Update auto-renewal setting
-        updated_subscription = await credit_service.update_subscription_auto_renew(
-            subscription_id=subscription_id,
-            auto_renew=auto_renew
-        )
-        
-        logger.info(f"Subscription auto-renewal updated", 
-                  event_type="subscription_auto_renew_updated",
-                  user_id=user_id,
-                  subscription_id=subscription_id,
-                  auto_renew=auto_renew)
-                  
-        return updated_subscription
-        
-    except HTTPException as http_ex:
-        # Re-raise HTTP exceptions
-        raise http_ex
-    except Exception as e:
-        logger.error(f"Error updating subscription auto-renewal: {str(e)}",
-                   event_type="subscription_update_error",
-                   user_id=current_user.id if isinstance(current_user, User) else current_user['id'],
-                   subscription_id=subscription_id,
-                   error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error updating subscription auto-renewal: {str(e)}"
-        )
-
-
-@router.put(
-    "/subscriptions/{subscription_id}/cancel",
-    response_model=plan_schemas.SubscriptionResponse,
-    responses={
-        200: {"description": "Subscription cancelled"},
-        404: {"description": "Subscription not found"}
-    }
-)
-async def cancel_subscription(
-    subscription_id: int,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Cancel a subscription.
+    Add credits based on a Stripe transaction.
     
-    The subscription will remain active until the end of the current billing period,
-    but will not auto-renew.
-
+    This endpoint receives a request with either:
+    - A transaction ID 
+    - An email address
+    
+    It then:
+    1. Looks up the transaction in Stripe
+    2. Analyzes the transaction to determine the type (subscription or oneoff)
+    3. Adds the appropriate credits to the user's account
+    
     Args:
-        subscription_id: ID of the subscription
-        current_user: Authenticated user
+        request: Stripe transaction request
+        background_tasks: FastAPI background tasks
+        current_user: Current authenticated user
         db: Database session
-
+        
     Returns:
-        SubscriptionResponse: Updated subscription details
+        StripeTransactionResponse: Processing result
+        
+    Raises:
+        HTTPException: If transaction not found or other error occurs
     """
     try:
-        user_id = current_user.id if isinstance(current_user, User) else current_user['id']
+        # Initialize services
+        user_service = UserService(db)
         credit_service = CreditService(db)
+        stripe_service = StripeService()
         
-        # Check if subscription belongs to user
-        subscription = await credit_service.get_subscription_by_id(subscription_id)
-        
-        if not subscription or subscription.user_id != user_id:
+        # Get user
+        user = await user_service.get_user_by_id(current_user.id)
+        if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Subscription not found"
+                detail="User not found"
+            )
+        
+        # Log processing
+        logger.info(f"Processing Stripe transaction",
+                  event_type="stripe_transaction_processing",
+                  user_id=user.id,
+                  transaction_type=request.transaction_type,
+                  has_transaction_id=request.transaction_id is not None,
+                  has_email=request.email is not None)
+        
+        # Find transaction by ID or email
+        transaction_data = None
+        if request.transaction_id:
+            # Find by transaction ID
+            transaction_data = await stripe_service.find_transaction_by_id(request.transaction_id)
+            if not transaction_data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Transaction not found: {request.transaction_id}"
+                )
+        elif request.email:
+            # Find by email
+            transactions = await stripe_service.find_transactions_by_email(request.email)
+            if not transactions:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"No transactions found for email: {request.email}"
+                )
+            
+            # Filter by transaction type if specified
+            matching_transactions = []
+            for tx in transactions:
+                # For subscription type, look for subscription object types
+                if request.transaction_type == "subscription" and tx.get("object_type") in ["subscription", "invoice"]:
+                    matching_transactions.append(tx)
+                # For oneoff type, look for payment_intent or charge object types
+                elif request.transaction_type == "oneoff" and tx.get("object_type") in ["payment_intent", "charge"]:
+                    matching_transactions.append(tx)
+            
+            if not matching_transactions:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"No {request.transaction_type} transactions found for email: {request.email}"
+                )
+            
+            # Use the most recent matching transaction
+            transaction_data = matching_transactions[0]
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either transaction_id or email must be provided"
+            )
+        
+        # Analyze transaction
+        analysis = await stripe_service.analyze_transaction(transaction_data)
+        
+        # Validate transaction type matches the requested type
+        if analysis["transaction_type"] != request.transaction_type:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Transaction type mismatch. Requested: {request.transaction_type}, Found: {analysis['transaction_type']}"
+            )
+        
+        # Process based on transaction type
+        if analysis["transaction_type"] == "subscription":
+            # Handle subscription
+            subscription_id = analysis.get("subscription_id")
+            if not subscription_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Subscription ID not found in transaction data"
+                )
+            
+            # Look up plan ID based on the Stripe plan ID
+            plan_id = None
+            stripe_plan_id = analysis.get("plan_id")
+            
+            if stripe_plan_id:
+                # Get plans from database to find the matching plan
+                plans = await credit_service.get_all_active_plans()
+                matching_plans = [p for p in plans if p.stripe_price_id == stripe_plan_id]
+                
+                if matching_plans:
+                    plan_id = matching_plans[0].id
+                else:
+                    # If no exact match found, fallback to a default plan
+                    # In production, you might want to create a new plan or raise an error
+                    if plans:
+                        plan_id = plans[0].id
+                    else:
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail="No matching plan found for this subscription"
+                        )
+            else:
+                # If no plan ID in analysis, use a default plan
+                # Get the first active plan as a fallback
+                plans = await credit_service.get_all_active_plans()
+                if plans:
+                    plan_id = plans[0].id
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="No active plans found in the system"
+                    )
+            
+            # Purchase plan or handle renewal
+            transaction, subscription = await credit_service.purchase_plan(
+                user_id=user.id,
+                plan_id=plan_id,
+                reference_id=analysis["transaction_id"],
+                description=f"Subscription from Stripe: {subscription_id}",
+                background_tasks=background_tasks
             )
             
-        # Cancel subscription (sets auto_renew to false)
-        updated_subscription = await credit_service.update_subscription_auto_renew(
-            subscription_id=subscription_id,
-            auto_renew=False
-        )
-        
-        logger.info(f"Subscription cancelled", 
-                  event_type="subscription_cancelled",
-                  user_id=user_id,
-                  subscription_id=subscription_id)
-                  
-        return updated_subscription
-        
-    except HTTPException as http_ex:
+            # Update subscription with Stripe IDs
+            # This would typically be done in the purchase_plan method in a production environment
+            
+            logger.info(f"Processed subscription from Stripe",
+                      event_type="stripe_subscription_processed",
+                      user_id=user.id,
+                      stripe_transaction_id=analysis["transaction_id"],
+                      stripe_subscription_id=subscription_id,
+                      plan_id=plan_id,
+                      subscription_id=subscription.id,
+                      credit_transaction_id=transaction.id)
+            
+            # Create response
+            return StripeTransactionResponse(
+                applied=True,
+                transaction=StripeTransaction(
+                    transaction_id=analysis["transaction_id"],
+                    transaction_type=analysis["transaction_type"],
+                    amount=analysis["amount"],
+                    customer_id=analysis["customer_id"],
+                    customer_email=analysis["customer_email"],
+                    created_at=analysis["created_at"],
+                    subscription_id=subscription_id,
+                    plan_id=analysis.get("plan_id"),
+                    product_id=analysis.get("product_id")
+                ),
+                credit_transaction_id=transaction.id,
+                subscription_id=subscription.id,
+                new_balance=transaction.new_balance
+            )
+            
+        else:
+            # Handle one-time purchase
+            # Find appropriate plan or credit calculation based on the payment amount
+            plans = await credit_service.get_all_active_plans()
+            
+            # Calculate credit amount based on similar plans
+            # This approaches finds the best credit-to-dollar ratio from existing plans
+            # rather than using a hardcoded conversion rate
+            credit_amount = None
+            
+            if plans:
+                # Find plans with similar prices
+                payment_amount = analysis["amount"]
+                similar_plans = sorted(plans, key=lambda p: abs(p.price - payment_amount))
+                
+                if similar_plans:
+                    # Use the most similar plan's credit-to-price ratio to calculate credits
+                    best_match = similar_plans[0]
+                    ratio = best_match.credit_amount / best_match.price
+                    credit_amount = payment_amount * ratio
+                    
+                    logger.info(f"Calculated credits using plan-based ratio",
+                              event_type="credit_calculation",
+                              payment_amount=payment_amount,
+                              similar_plan_id=best_match.id,
+                              ratio=float(ratio),
+                              credit_amount=float(credit_amount))
+            
+            # Fallback if no plans found or calculation resulted in zero credits
+            if not credit_amount or credit_amount <= 0:
+                # Use a default ratio as fallback (e.g., $1 = 10 credits)
+                credit_amount = analysis["amount"] * Decimal('10')
+                logger.warning(f"Using fallback credit calculation",
+                             event_type="credit_calculation_fallback",
+                             payment_amount=float(analysis["amount"]),
+                             credit_amount=float(credit_amount))
+            
+            # Add credits
+            transaction = await credit_service.purchase_one_time_credits(
+                user_id=user.id,
+                amount=credit_amount,
+                price=analysis["amount"],
+                reference_id=analysis["transaction_id"],
+                description=f"One-time purchase from Stripe: {analysis['transaction_id']}",
+                background_tasks=background_tasks
+            )
+            
+            logger.info(f"Processed one-time purchase from Stripe",
+                      event_type="stripe_oneoff_processed",
+                      user_id=user.id,
+                      stripe_transaction_id=analysis["transaction_id"],
+                      credit_amount=credit_amount,
+                      credit_transaction_id=transaction.id)
+            
+            # Create response
+            return StripeTransactionResponse(
+                applied=True,
+                transaction=StripeTransaction(
+                    transaction_id=analysis["transaction_id"],
+                    transaction_type=analysis["transaction_type"],
+                    amount=analysis["amount"],
+                    customer_id=analysis["customer_id"],
+                    customer_email=analysis["customer_email"],
+                    created_at=analysis["created_at"],
+                    product_id=analysis.get("product_id")
+                ),
+                credit_transaction_id=transaction.id,
+                new_balance=transaction.new_balance
+            )
+            
+    except HTTPException:
         # Re-raise HTTP exceptions
-        raise http_ex
+        raise
+        
     except Exception as e:
-        logger.error(f"Error cancelling subscription: {str(e)}",
-                   event_type="subscription_cancel_error",
-                   user_id=current_user.id if isinstance(current_user, User) else current_user['id'],
-                   subscription_id=subscription_id,
+        logger.error(f"Error processing Stripe transaction: {str(e)}",
+                   event_type="stripe_processing_error",
+                   user_id=current_user.id,
                    error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error cancelling subscription: {str(e)}"
+            detail=f"Error processing Stripe transaction: {str(e)}"
         )

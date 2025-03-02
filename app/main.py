@@ -7,13 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi_sqlalchemy import DBSessionMiddleware
 
-from app.core.config import settings, validate_email_config
+from app.core.config import settings, validate_email_config, validate_stripe_config
 from app.core.exceptions import AuthException
 from app.core.error_handlers import validation_exception_handler, auth_exception_handler, http_exception_handler, generic_exception_handler
 from app.log.logging import logger, InterceptHandler
 from app.routers.auth_router import router as auth_router
 from app.routers.healthcheck_router import router as healthcheck_router
 from app.routers.credit_router import router as credit_router
+from app.routers.stripe_webhook import router as stripe_webhook_router
 import logging
 
 #try to intercept standard messages toward your Loguru
@@ -40,6 +41,23 @@ async def lifespan(app: FastAPI):
             event_type="startup_info",
             component="email",
             warnings=validation_details.get("warnings", [])
+        )
+    
+    # Validate Stripe configuration
+    stripe_config_valid, stripe_validation_details = validate_stripe_config()
+    if not stripe_config_valid:
+        logger.warning(
+            "Stripe configuration is invalid or incomplete",
+            event_type="startup_warning",
+            component="stripe",
+            issues=stripe_validation_details["issues"]
+        )
+    else:
+        logger.info(
+            "Stripe configuration validated successfully",
+            event_type="startup_info",
+            component="stripe",
+            warnings=stripe_validation_details.get("warnings", [])
         )
     
     yield
@@ -90,6 +108,7 @@ async def root():
 app.include_router(auth_router, prefix="/auth")
 app.include_router(healthcheck_router)
 app.include_router(credit_router)
+app.include_router(stripe_webhook_router)
 
 # @app.get("/test-log")
 # async def test_log():

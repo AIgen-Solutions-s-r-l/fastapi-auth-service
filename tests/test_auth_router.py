@@ -107,8 +107,13 @@ async def test_change_email_success(client: AsyncClient, test_user):
     assert data["email"] == new_email, "Email was not updated correctly"
     assert "message" in data and "updated" in data["message"].lower(), "Unexpected response message"
     
+    # Use the new token from the response for subsequent requests
+    new_token = data.get("access_token")
+    assert new_token is not None, "No new access token returned after email change"
+    updated_headers = {"Authorization": f"Bearer {new_token}"}
+    
     # Verify the email was actually changed in the database
-    profile_response = await client.get("/auth/me", headers=headers)
+    profile_response = await client.get("/auth/me", headers=updated_headers)
     assert profile_response.status_code == 200
     assert profile_response.json()["email"] == new_email
 

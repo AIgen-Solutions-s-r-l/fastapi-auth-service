@@ -25,6 +25,7 @@ async def get_current_user(
 ) -> User:
     """
     Get the current authenticated user from the JWT token.
+    Supports both email and username in the 'sub' claim for backward compatibility.
 
     Args:
         token: JWT token
@@ -43,14 +44,48 @@ async def get_current_user(
     )
     try:
         payload = verify_jwt_token(token)
-        username: str = payload.get("sub")
-        if username is None:
+        subject: str = payload.get("sub")
+        if subject is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
 
     user_service = UserService(db)
-    user = await user_service.get_user_by_username(username)
+    
+    # Try to find user by email first (new tokens)
+    user = await user_service.get_user_by_email(subject)
+    
+    # If not found, try to find by username (old tokens)
+    if user is None:
+        user = await user_service.get_user_by_username(subject)
+        
     if user is None:
         raise credentials_exception
+        
     return user
+
+
+async def get_current_active_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """
+    Get the current active user.
+    
+    This dependency first authenticates the user using get_current_user,
+    then checks if the user's email is verified.
+    
+    Args:
+        current_user: The authenticated user from get_current_user
+        
+    Returns:
+        User: Current active user
+        
+    Raises:
+        HTTPException: If user is not verified
+    """
+    if not current_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive user. Please verify your email address."
+        )
+    return current_user

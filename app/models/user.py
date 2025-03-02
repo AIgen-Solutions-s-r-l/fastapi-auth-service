@@ -20,6 +20,7 @@ class User(Base):
         is_verified (bool): Flag indicating if email has been verified.
         verification_token (str): Token for email verification.
         verification_token_expires_at (datetime): Expiration time for verification token.
+        stripe_customer_id (str): Stripe customer ID for payment processing.
     """
     __tablename__ = "users"
 
@@ -31,6 +32,7 @@ class User(Base):
     is_verified = Column(Boolean, default=False, nullable=False)
     verification_token = Column(String(255), nullable=True)
     verification_token_expires_at = Column(DateTime(timezone=True), nullable=True)
+    stripe_customer_id = Column(String(100), nullable=True)
 
     # Relationships
     credits = relationship("UserCredit", back_populates="user", uselist=False, cascade="all, delete-orphan")

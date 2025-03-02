@@ -6,10 +6,18 @@ from pydantic import BaseModel, EmailStr, ConfigDict, Field, model_validator, fi
 
 class LoginRequest(BaseModel):
     """Pydantic model for login request."""
-    username: str
+    email: Optional[EmailStr] = None
+    username: Optional[str] = None
     password: str
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode='after')
+    def check_email_or_username(self) -> 'LoginRequest':
+        """Validate that at least one of email or username is provided."""
+        if not self.email and not self.username:
+            raise ValueError("Either email or username must be provided")
+        return self
 
 
 class UserCreate(BaseModel):

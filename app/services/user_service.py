@@ -96,23 +96,50 @@ class UserService:
                 detail="Username or email already registered"
             )
 
-    async def authenticate_user(self, username: str, password: str) -> Optional[User]:
+    async def authenticate_user(self, email: str, password: str) -> Optional[User]:
         """
-        Authenticate a user.
+        Authenticate a user using email.
 
         Args:
-            username: Username to authenticate
+            email: Email to authenticate
             password: Plain text password to verify
 
         Returns:
             Optional[User]: Authenticated user if successful, None otherwise
         """
-        user = await self.get_user_by_username(username)
+        user = await self.get_user_by_email(email)
         if not user:
             return None
         if not verify_password(password, user.hashed_password):
             return None
         return user
+    
+    async def authenticate_user_by_username_or_email(
+        self, identifier: str, password: str
+    ) -> Optional[User]:
+        """
+        Authenticate a user by username or email.
+        Tries to find the user by email first, then by username.
+
+        Args:
+            identifier: Email or username to authenticate
+            password: Plain text password to verify
+
+        Returns:
+            Optional[User]: Authenticated user if successful, None otherwise
+        """
+        # First try to find by email
+        user = await self.get_user_by_email(identifier)
+        
+        # If not found, try by username
+        if user is None:
+            user = await self.get_user_by_username(identifier)
+        
+        # If user found, verify password
+        if user and verify_password(password, user.hashed_password):
+            return user
+            
+        return None
 
     async def update_user_email(self, username: str, current_password: str, new_email: str) -> User:
         """
@@ -129,7 +156,7 @@ class UserService:
         Raises:
             HTTPException: If authentication fails or email is already in use
         """
-        user = await self.authenticate_user(username, current_password)
+        user = await self.authenticate_user_by_username_or_email(username, current_password)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -172,7 +199,7 @@ class UserService:
         Raises:
             HTTPException: If user not found or password incorrect
         """
-        user = await self.authenticate_user(username, password)
+        user = await self.authenticate_user_by_username_or_email(username, password)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -402,7 +429,7 @@ class UserService:
         Raises:
             HTTPException: If authentication fails
         """
-        user = await self.authenticate_user(username, current_password)
+        user = await self.authenticate_user_by_username_or_email(username, current_password)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -467,10 +494,20 @@ async def create_user(db: AsyncSession, username: str, email: str, password: str
     service = UserService(db)
     return await service.create_user(username, email, password, is_admin)
 
-async def authenticate_user(db: AsyncSession, username: str, password: str) -> Optional[User]:
-    """Authenticate a user."""
+async def authenticate_user(db: AsyncSession, email: str, password: str) -> Optional[User]:
+    """Authenticate a user using email."""
     service = UserService(db)
-    return await service.authenticate_user(username, password)
+    return await service.authenticate_user(email, password)
+
+async def authenticate_user_by_username_or_email(db: AsyncSession, identifier: str, password: str) -> Optional[User]:
+    """Authenticate a user using either username or email."""
+    service = UserService(db)
+    return await service.authenticate_user_by_username_or_email(identifier, password)
+
+async def authenticate_user_by_email(db: AsyncSession, email: str, password: str) -> Optional[User]:
+    """Authenticate a user using email only."""
+    service = UserService(db)
+    return await service.authenticate_user(email, password)
 
 async def get_user_by_username(db: AsyncSession, username: str) -> Optional[User]:
     """Get user by username."""

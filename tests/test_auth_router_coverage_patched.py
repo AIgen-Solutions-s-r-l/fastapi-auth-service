@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 pytestmark = pytest.mark.asyncio
 
 # Target lines 47-65: Login function failure paths
-@patch("app.routers.auth_router.authenticate_user") 
+@patch("app.routers.auth_router.authenticate_user_by_username_or_email")
 @patch("app.routers.auth_router.logger")
 async def test_login_with_none_user(mock_logger, mock_auth):
     from app.routers.auth_router import login
@@ -17,7 +17,7 @@ async def test_login_with_none_user(mock_logger, mock_auth):
     mock_auth.return_value = None
     
     # Call the function directly
-    credentials = LoginRequest(username="testuser", password="password")
+    credentials = LoginRequest(email="test@example.com", password="password")
     
     # Create mock DB session
     db = MagicMock()
@@ -136,29 +136,31 @@ async def test_delete_user_errors(mock_logger, mock_delete):
 # Target line 490: Get current user profile - admin user requesting another user not found
 @patch("app.routers.auth_router.verify_jwt_token")
 @patch("app.routers.auth_router.get_user_by_username")
+@patch("app.routers.auth_router.get_user_by_email")
 @patch("app.routers.auth_router.logger")
-async def test_get_current_user_profile_admin_user_not_found(mock_logger, mock_get_user, mock_verify):
+async def test_get_current_user_profile_admin_user_not_found(mock_logger, mock_get_by_email, mock_get_by_username, mock_verify):
     from app.routers.auth_router import get_current_user_profile
     from app.core.exceptions import UserNotFoundError
     
-    # Setup admin user
+    # Setup admin user with email
+    admin_email = "admin@example.com"
     mock_verify.return_value = {
-        "sub": "admin_user",
+        "sub": admin_email,
         "id": 999,
         "is_admin": True
     }
     
-    # First call returns admin user, second call returns None
+    # Setup admin user object
     admin_user = MagicMock()
     admin_user.id = 999
     admin_user.username = "admin_user"
+    admin_user.email = admin_email
     
-    def side_effect(db, username):
-        if username == "admin_user":
-            return admin_user
-        return None
+    # Mock get_user_by_email to return admin user when admin email is passed
+    mock_get_by_email.side_effect = lambda db, email: admin_user if email == admin_email else None
     
-    mock_get_user.side_effect = side_effect
+    # Mock get_user_by_username to always return None for this test
+    mock_get_by_username.return_value = None
     
     # Create mock DB and token
     db = MagicMock()

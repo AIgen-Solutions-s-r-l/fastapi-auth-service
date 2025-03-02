@@ -16,9 +16,10 @@ from app.schemas.auth_schemas import (
     VerifyEmail, ResendVerification, UserResponse, RegistrationResponse
 )
 from app.services.user_service import (
-    create_user, authenticate_user, get_user_by_username,
-    update_user_password, delete_user, create_password_reset_token,
-    verify_reset_token, reset_password, get_user_by_email, UserService
+    create_user, authenticate_user, authenticate_user_by_username_or_email,
+    get_user_by_username, update_user_password, delete_user,
+    create_password_reset_token, verify_reset_token, reset_password,
+    get_user_by_email, UserService
 )
 from app.models.user import User
 from app.log.logging import logger
@@ -45,28 +46,34 @@ async def login(
 ) -> Token:
     """Authenticate a user and return a JWT token."""
     try:
-        user = await authenticate_user(db, credentials.username, credentials.password)
+        # Determine whether to use email or username for authentication
+        identifier = credentials.email if credentials.email else credentials.username
+        log_field = "email" if credentials.email else "username"
+        
+        user = await authenticate_user_by_username_or_email(db, identifier, credentials.password)
         if not user:
-            logger.warning("Authentication failed", event_type="login_failed", username=credentials.username, reason="invalid_credentials")
+            logger.warning("Authentication failed", event_type="login_failed", **{log_field: identifier}, reason="invalid_credentials")
             raise InvalidCredentialsError()
 
         # Calculate expiration time using timezone-aware datetime
         expires_delta = timedelta(minutes=60)
         expire_time = datetime.now(timezone.utc) + expires_delta
 
+        # Use email as the subject for new tokens
         access_token = create_access_token(
             data={
-                "sub": user.username,
+                "sub": user.email,
                 "id": user.id,
                 "is_admin": user.is_admin,
                 "exp": expire_time.timestamp()
             },
             expires_delta=expires_delta
         )
-        logger.info("User login successful", event_type="login_success", username=user.username)
+        logger.info("User login successful", event_type="login_success", email=user.email, username=user.username)
         return Token(access_token=access_token, token_type="bearer")
     except Exception as e:
-        logger.error("Login error", event_type="login_error", username=credentials.username, error_type=type(e).__name__, error_details=str(e))
+        identifier = credentials.email if credentials.email else credentials.username
+        logger.error("Login error", event_type="login_error", identifier=identifier, error_type=type(e).__name__, error_details=str(e))
         raise InvalidCredentialsError() from e
 
 
@@ -191,9 +198,10 @@ async def verify_email(
         expires_delta = timedelta(minutes=60)
         expire_time = datetime.now(timezone.utc) + expires_delta
         
+        # Create token - always use email as subject for new tokens
         access_token = create_access_token(
             data={
-                "sub": user.username,
+                "sub": user.email,  # Always use email as subject for new tokens
                 "id": user.id,
                 "is_admin": user.is_admin,
                 "exp": expire_time.timestamp()
@@ -387,12 +395,26 @@ async def change_email(
     try:
         # Verify JWT token and check if user is authorized
         payload = verify_jwt_token(token)
-        if payload.get("sub") != username and not payload.get("is_admin", False):
+        token_subject = payload.get("sub")
+        
+        # Get user from token subject (which could be email or username)
+        user_service = UserService(db)
+        token_user = await user_service.get_user_by_email(token_subject)
+        
+        # If not found by email, try by username (for backward compatibility)
+        if not token_user:
+            token_user = await user_service.get_user_by_username(token_subject)
+            
+        # Get the target user
+        target_user = await user_service.get_user_by_username(username)
+        
+        # Check if the token user is authorized to change the target user's email
+        if not token_user or (token_user.username != target_user.username and not payload.get("is_admin", False)):
             logger.error(
                 "Unauthorized email change attempt",
                 event_type="email_change_error",
                 username=username,
-                attempted_by=payload.get("sub"),
+                attempted_by=token_subject,
                 error_type="unauthorized"
             )
             raise HTTPException(
@@ -411,6 +433,21 @@ async def change_email(
         # Send verification email for new email address
         verification_sent = await user_service.send_verification_email(updated_user, background_tasks)
 
+        # Create a new token with the updated email
+        expires_delta = timedelta(minutes=60)
+        expire_time = datetime.now(timezone.utc) + expires_delta
+        
+        # Create new access token with updated email
+        access_token = create_access_token(
+            data={
+                "sub": updated_user.email,  # Use the new email
+                "id": updated_user.id,
+                "is_admin": updated_user.is_admin,
+                "exp": expire_time.timestamp()
+            },
+            expires_delta=expires_delta
+        )
+
         logger.info(
             "Email changed successfully",
             event_type="email_changed",
@@ -423,7 +460,9 @@ async def change_email(
             "message": "Email updated successfully. Please verify your new email address.",
             "username": updated_user.username,
             "email": str(updated_user.email),
-            "verification_sent": verification_sent
+            "verification_sent": verification_sent,
+            "access_token": access_token,
+            "token_type": "bearer"
         }
 
     except JWTError as e:
@@ -594,9 +633,13 @@ async def logout(token: str = Depends(oauth2_scheme)) -> Dict[str, str]:
     try:
         # Verify token and get payload
         payload = verify_jwt_token(token)
-        username = payload.get("sub")
+        subject = payload.get("sub")
         
-        logger.info("User logged out", event_type="user_logout", username=username)
+        # Try to determine if subject is an email or username
+        is_email = "@" in subject if subject else False
+        log_field = "email" if is_email else "username"
+        
+        logger.info("User logged out", event_type="user_logout", **{log_field: subject})
         
         return {"message": "Successfully logged out"}
     except jwt.JWTError as e:
@@ -706,10 +749,18 @@ async def refresh_token(
         # Verify the existing token
         payload = verify_jwt_token(refresh_request.token)
         
-        # Get user from database to ensure they still exist
-        user = await get_user_by_username(db, payload.get("sub"))
+        # Get identifier from token (could be email or username for backward compatibility)
+        subject = payload.get("sub")
+        
+        # Try to find user by email first
+        user = await get_user_by_email(db, subject)
+        
+        # If not found, try by username (for backward compatibility)
         if not user:
-            logger.error("Token refresh failed - user not found", event_type="token_refresh_error", username=payload.get("sub"), error_type="user_not_found")
+            user = await get_user_by_username(db, subject)
+            
+        if not user:
+            logger.error("Token refresh failed - user not found", event_type="token_refresh_error", subject=subject, error_type="user_not_found")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token"
@@ -719,10 +770,10 @@ async def refresh_token(
         expires_delta = timedelta(minutes=60)
         expire_time = datetime.now(timezone.utc) + expires_delta
 
-        # Create new access token
+        # Create new access token - always use email as subject for new tokens
         access_token = create_access_token(
             data={
-                "sub": user.username,
+                "sub": user.email,  # Always use email for new tokens
                 "id": user.id,
                 "is_admin": user.is_admin,
                 "exp": expire_time.timestamp()
@@ -730,7 +781,7 @@ async def refresh_token(
             expires_delta=expires_delta
         )
 
-        logger.info("Token refreshed successfully", event_type="token_refresh_success", username=user.username)
+        logger.info("Token refreshed successfully", event_type="token_refresh_success", email=user.email, username=user.username)
 
         return Token(access_token=access_token, token_type="bearer")
 
@@ -770,9 +821,20 @@ async def get_current_user_profile(
         # Use provided user_id or get from token
         target_user_id = user_id if user_id is not None else payload.get("id")
         
-        # Get user from database
-        user = await get_user_by_username(db, payload.get("sub"))
+        # Get identifier from token (could be email or username)
+        subject = payload.get("sub")
+        
+        # Try to get user by email first (new tokens)
+        user = await get_user_by_email(db, subject)
+        
+        # If not found, try by username (old tokens)
         if not user:
+            user = await get_user_by_username(db, subject)
+            
+        if not user:
+            is_email = "@" in subject if subject else False
+            log_field = "email" if is_email else "username"
+            logger.error("User not found", event_type="user_lookup_error", **{log_field: subject})
             raise UserNotFoundError("User not found")
             
         # If requesting another user's profile, verify admin status

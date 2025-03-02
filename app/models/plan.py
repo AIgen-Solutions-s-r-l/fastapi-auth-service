@@ -44,6 +44,10 @@ class Plan(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
+    # Stripe integration
+    stripe_price_id = Column(String(100), nullable=True)
+    stripe_product_id = Column(String(100), nullable=True)
+    
     # Relationships
     subscriptions = relationship("Subscription", back_populates="plan")
 
@@ -72,6 +76,11 @@ class Subscription(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     auto_renew = Column(Boolean, default=True, nullable=False)
     last_renewal_date = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String(50), default="active", nullable=False)
+    
+    # Stripe integration
+    stripe_subscription_id = Column(String(100), nullable=True)
+    stripe_customer_id = Column(String(100), nullable=True)
     
     # Relationships
     user = relationship("User", back_populates="subscriptions")
