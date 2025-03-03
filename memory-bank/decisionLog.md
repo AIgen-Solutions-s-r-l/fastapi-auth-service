@@ -2,6 +2,26 @@
 
 This document tracks key architectural and design decisions made during the development of the auth_service project.
 
+## March 3, 2025 - Remove SMTP Email Configuration in Favor of SendGrid
+
+**Context:** The application has both SMTP email configuration (MAIL_USERNAME, MAIL_PASSWORD, etc.) and SendGrid configuration in the .env file, but only the SendGrid implementation is being used for sending emails. This creates unnecessary configuration complexity.
+
+**Decision:** Remove the SMTP email configuration from the .env file and related settings from the config.py file, keeping only the SendGrid configuration.
+
+**Rationale:**
+- Simplify configuration by removing unused settings
+- Focus on a single email delivery method (SendGrid) for better maintainability
+- Reduce potential confusion for developers who might think SMTP is being used
+- Streamline the codebase by removing legacy configurations
+
+**Implementation:**
+- Removed SMTP email configuration from .env file (MAIL_USERNAME, MAIL_PASSWORD, MAIL_FROM, MAIL_PORT, MAIL_SERVER, MAIL_SSL_TLS, MAIL_STARTTLS)
+- Removed corresponding settings from app/core/config.py
+- Confirmed that email delivery functionality exclusively uses SendGrid API
+- Verified that no code was using the SMTP settings
+
+**Results:** The configuration is now cleaner and more focused, with only the actively used SendGrid settings present. This simplifies the setup and makes it clear that SendGrid is the only email delivery method being used. All email functionality continues to work as before since it was already using SendGrid exclusively.
+
 ## March 2, 2025 - Credit System Test Fix for User Verification
 
 **Context:** The credit system tests were failing on GitHub Actions with a 403 Forbidden error and the message "Inactive user. Please verify your email address." This happened because all credit system endpoints require verified users (using the `get_current_active_user` dependency), but the test fixtures were creating unverified test users.
