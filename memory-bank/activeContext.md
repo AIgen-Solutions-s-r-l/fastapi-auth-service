@@ -1,10 +1,10 @@
 # Auth Service - Active Context
 
 ## Current Session Context
-February 28, 2025, 9:43 PM (Europe/Berlin, UTC+1:00)
+March 3, 2025, 6:06 PM (Europe/Berlin, UTC+1:00)
 
 ## Project Status
-Memory Bank has been initialized for the auth_service project. We've created comprehensive documentation covering architecture, code structure, security, and documentation planning. We've successfully implemented improvements to the email system, including diagnostic endpoints, enhanced error logging, retry mechanisms, template verification, and configuration validation. We've completed the update of the subscription tier system to match new requirements. We've also successfully implemented email-based login while maintaining backward compatibility with username-based authentication to ensure a smooth transition. Most recently, we've implemented Stripe integration for the credit system to handle payments and subscriptions.
+Memory Bank has been initialized for the auth_service project. We've created comprehensive documentation covering architecture, code structure, security, and documentation planning. We've successfully implemented improvements to the email system, including diagnostic endpoints, enhanced error logging, retry mechanisms, template verification, and configuration validation. We've completed the update of the subscription tier system to match new requirements. We've also successfully implemented email-based login while maintaining backward compatibility with username-based authentication to ensure a smooth transition. We've implemented Stripe integration for the credit system to handle payments and subscriptions. Most recently, we've removed the unused SMTP email configuration to simplify the codebase since we exclusively use SendGrid for email delivery.
 
 ## Current Goals
 1. ✅ Complete Memory Bank initialization
@@ -25,7 +25,8 @@ Memory Bank has been initialized for the auth_service project. We've created com
 16. ✅ Create plan for changing login method from username to email
 17. ✅ Implement email-based login while keeping username optional
 18. ✅ Implement Stripe integration for the credit system
-19. Plan implementation of other identified improvements
+19. ✅ Remove unused SMTP email configuration
+20. Plan implementation of other identified improvements
 
 ## Recent Focus Areas
 - Created detailed architecture documentation
@@ -47,6 +48,7 @@ Memory Bank has been initialized for the auth_service project. We've created com
 - Fixed edge cases in authentication flows including token refresh and email change
 - Implemented Stripe integration for the credit system including API endpoints to process subscriptions and one-time purchases
 - Fixed failing credit system tests by implementing a verified test user fixture
+- Removed unused SMTP email configuration in favor of using only SendGrid for email delivery
 
 ## Current Documentation
 - **productContext.md**: Project overview, vision, goals, and constraints

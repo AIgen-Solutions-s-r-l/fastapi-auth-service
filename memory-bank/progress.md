@@ -2,6 +2,14 @@
 
 ## Work Done
 
+### March 3, 2025
+- Removed SMTP email configuration in favor of SendGrid:
+  - Removed legacy SMTP settings from .env file (MAIL_USERNAME, MAIL_PASSWORD, MAIL_FROM, etc.)
+  - Removed corresponding settings from app/core/config.py
+  - Verified that email functionality is using SendGrid exclusively
+  - Updated decisionLog.md to document this change
+  - Updated Memory Bank to reflect this simplification
+
 ### March 2, 2025
 - Fixed failing credit system tests:
   - Identified the root cause as tests using unverified users with endpoints that require verified users
