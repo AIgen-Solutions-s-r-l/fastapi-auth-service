@@ -74,6 +74,16 @@ async def async_client(test_app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest.fixture
+async def test_app_client(test_app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
+    """Create an async HTTP client for testing (alternative name)."""
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app),
+        base_url="http://test"
+    ) as client:
+        yield client
+
+
+@pytest.fixture
 async def test_user(async_client: AsyncClient):
     """Create a test user with authentication token."""
     # Generate a unique username and email
