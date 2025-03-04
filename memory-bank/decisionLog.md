@@ -16,14 +16,30 @@ This document tracks key architectural and design decisions made during the deve
 - We can leverage the email verification that Google already provides, reducing the need for our own verification process
 
 **Implementation:**
-- Create a comprehensive implementation plan in google_oauth_integration_plan.md
-- Update the User model to add OAuth-related fields (google_id, auth_type)
-- Create a new OAuth service to handle Google authentication
-- Add new endpoints for OAuth flow and account linking
-- Ensure that after successful OAuth authentication, standard JWT tokens are generated
-- Support account linking for users who might use both password and OAuth authentication
+- Created a comprehensive implementation plan in google_oauth_integration_plan.md
+- Updated the User model to add OAuth-related fields (google_id, auth_type)
+- Created a new GoogleOAuthService class in app/services/oauth_service.py
+- Added new endpoints for OAuth flow and account linking/unlinking in auth_router.py:
+  - `/oauth/google/login` - for obtaining Google authorization URL
+  - `/oauth/google/callback` - for processing Google OAuth callbacks
+  - `/link/google` - for linking Google account to existing user
+  - `/unlink/google` - for unlinking Google account from user
+- Added database migrations to support OAuth users:
+  - Made hashed_password nullable for OAuth-only users
+  - Added google_id column with unique index
+  - Added auth_type column to track authentication methods
+- Implemented configuration settings for Google OAuth in config.py
+- Created comprehensive testing in tests/test_google_oauth.py
+- Created documentation and example in docs/google_oauth_integration.md and examples/google_oauth_example.html
 
-**Expected Results:** Users will be able to authenticate using either Google OAuth 2.0 or the traditional email/password method. The authentication method will be transparent to other microservices, as they will continue to receive and validate the same JWT token format regardless of how the user authenticated.
+**Results:** Successfully implemented Google OAuth 2.0 authentication with the following features:
+- Users can authenticate using either Google OAuth or traditional email/password
+- The system generates standard JWT tokens after OAuth authentication
+- Other microservices continue to receive and validate the same JWT format
+- Users can link/unlink their Google accounts to existing accounts
+- OAuth-only users can register without creating a password
+- Email verification is automatic for Google-authenticated users
+- The implementation includes comprehensive documentation and frontend examples
 
 ## March 3, 2025 - Remove SMTP Email Configuration in Favor of SendGrid
 
