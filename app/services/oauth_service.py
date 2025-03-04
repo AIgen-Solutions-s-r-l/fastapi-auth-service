@@ -78,25 +78,38 @@ class GoogleOAuthService:
         }
         
         # Make token request
-        async with httpx.AsyncClient() as client:
-            response = await client.post(token_url, data=data)
-            
-        # Check for errors
-        if response.status_code != 200:
+        try:
+            async with httpx.AsyncClient() as client:
+                # Using url keyword for better test mocking compatibility
+                response = await client.post(url=token_url, data=data)
+                
+            # Check for errors
+            if response.status_code != 200:
+                logger.error(
+                    "Failed to exchange code for tokens",
+                    event_type="oauth_token_exchange_error",
+                    status_code=response.status_code,
+                    response=response.text
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to authenticate with Google"
+                )
+                
+            # Return tokens
+            tokens = response.json()
+            return tokens
+        except Exception as e:
             logger.error(
-                "Failed to exchange code for tokens",
-                event_type="oauth_token_exchange_error",
-                status_code=response.status_code,
-                response=response.text
+                "Exception during code exchange",
+                event_type="oauth_token_exchange_exception",
+                error=str(e),
+                error_type=type(e).__name__
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Failed to authenticate with Google"
             )
-            
-        # Return tokens
-        tokens = response.json()
-        return tokens
     
     async def get_user_profile(self, access_token: str) -> Dict[str, Any]:
         """
@@ -114,26 +127,39 @@ class GoogleOAuthService:
         userinfo_url = "https://www.googleapis.com/oauth2/v3/userinfo"
         headers = {'Authorization': f'Bearer {access_token}'}
         
-        # Make userinfo request
-        async with httpx.AsyncClient() as client:
-            response = await client.get(userinfo_url, headers=headers)
-            
-        # Check for errors
-        if response.status_code != 200:
+        try:
+            # Make userinfo request
+            async with httpx.AsyncClient() as client:
+                # Using url keyword for better test mocking compatibility
+                response = await client.get(url=userinfo_url, headers=headers)
+                
+            # Check for errors
+            if response.status_code != 200:
+                logger.error(
+                    "Failed to get user profile",
+                    event_type="oauth_userinfo_error",
+                    status_code=response.status_code,
+                    response=response.text
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to get user information from Google"
+                )
+                
+            # Return user profile
+            profile = response.json()
+            return profile
+        except Exception as e:
             logger.error(
-                "Failed to get user profile",
-                event_type="oauth_userinfo_error",
-                status_code=response.status_code,
-                response=response.text
+                "Exception during profile retrieval",
+                event_type="oauth_userinfo_exception",
+                error=str(e),
+                error_type=type(e).__name__
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Failed to get user information from Google"
             )
-            
-        # Return user profile
-        profile = response.json()
-        return profile
     
     async def find_or_create_user(self, profile: Dict[str, Any]) -> User:
         """
@@ -230,6 +256,10 @@ class GoogleOAuthService:
         """
         user.google_id = profile.get('sub')
         user.auth_type = 'both'
+        
+        # If email wasn't verified before, verify it now (Google verifies emails)
+        if not user.is_verified:
+            user.is_verified = True
         
         await self.db.commit()
         await self.db.refresh(user)
