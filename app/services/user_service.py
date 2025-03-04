@@ -23,21 +23,6 @@ class UserService:
         """Initialize with database session."""
         self.db = db
 
-    async def get_user_by_username(self, username: str) -> Optional[User]:
-        """
-        Get user by username.
-
-        Args:
-            username: Username to look up
-
-        Returns:
-            Optional[User]: User if found, None otherwise
-        """
-        result = await self.db.execute(
-            select(User).where(User.username == username)
-        )
-        return result.scalar_one_or_none()
-
     async def get_user_by_email(self, email: str) -> Optional[User]:
         """
         Get user by email.
@@ -55,7 +40,6 @@ class UserService:
 
     async def create_user(
         self,
-        username: str,
         email: str,
         password: str,
         is_admin: bool = False,
@@ -65,7 +49,6 @@ class UserService:
         Create a new user.
 
         Args:
-            username: Username for new user
             email: Email for new user
             password: Plain text password
             is_admin: Whether user is admin
@@ -75,11 +58,10 @@ class UserService:
             User: Created user
 
         Raises:
-            HTTPException: If username/email already exists
+            HTTPException: If email already exists
         """
         try:
             user = User(
-                username=username,
                 email=email,
                 hashed_password=get_password_hash(password),
                 is_admin=is_admin,
@@ -93,7 +75,7 @@ class UserService:
             await self.db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username or email already registered"
+                detail="Email already registered"
             )
 
     async def authenticate_user(self, email: str, password: str) -> Optional[User]:
@@ -114,39 +96,12 @@ class UserService:
             return None
         return user
     
-    async def authenticate_user_by_username_or_email(
-        self, identifier: str, password: str
-    ) -> Optional[User]:
-        """
-        Authenticate a user by username or email.
-        Tries to find the user by email first, then by username.
-
-        Args:
-            identifier: Email or username to authenticate
-            password: Plain text password to verify
-
-        Returns:
-            Optional[User]: Authenticated user if successful, None otherwise
-        """
-        # First try to find by email
-        user = await self.get_user_by_email(identifier)
-        
-        # If not found, try by username
-        if user is None:
-            user = await self.get_user_by_username(identifier)
-        
-        # If user found, verify password
-        if user and verify_password(password, user.hashed_password):
-            return user
-            
-        return None
-
-    async def update_user_email(self, username: str, current_password: str, new_email: str) -> User:
+    async def update_user_email(self, email: str, current_password: str, new_email: str) -> User:
         """
         Update user's email address.
 
         Args:
-            username: Username of user to update
+            email: Current email of user to update
             current_password: Current password for verification
             new_email: New email address
 
@@ -156,7 +111,7 @@ class UserService:
         Raises:
             HTTPException: If authentication fails or email is already in use
         """
-        user = await self.authenticate_user_by_username_or_email(username, current_password)
+        user = await self.authenticate_user(email, current_password)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -185,12 +140,12 @@ class UserService:
                 detail="Email already registered"
             )
 
-    async def delete_user(self, username: str, password: str) -> bool:
+    async def delete_user(self, email: str, password: str) -> bool:
         """
         Delete a user.
 
         Args:
-            username: Username of user to delete
+            email: Email of user to delete
             password: Password for verification
 
         Returns:
@@ -199,11 +154,11 @@ class UserService:
         Raises:
             HTTPException: If user not found or password incorrect
         """
-        user = await self.authenticate_user_by_username_or_email(username, password)
+        user = await self.authenticate_user(email, password)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username or password"
+                detail="Invalid email or password"
             )
 
         try:
@@ -354,7 +309,7 @@ class UserService:
                 f"Email verified for user {user.id}",
                 event_type="email_verified",
                 user_id=user.id,
-                username=user.username
+                email=user.email
             )
             
             return True, user
@@ -414,12 +369,12 @@ class UserService:
             )
             return False
 
-    async def update_user_password(self, username: str, current_password: str, new_password: str) -> bool:
+    async def update_user_password(self, email: str, current_password: str, new_password: str) -> bool:
         """
         Update user password.
 
         Args:
-            username: Username of user to update
+            email: Email of user to update
             current_password: Current password for verification
             new_password: New password
 
@@ -429,11 +384,11 @@ class UserService:
         Raises:
             HTTPException: If authentication fails
         """
-        user = await self.authenticate_user_by_username_or_email(username, current_password)
+        user = await self.authenticate_user(email, current_password)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username or password"
+                detail="Invalid email or password"
             )
 
         user.hashed_password = get_password_hash(new_password)
@@ -443,7 +398,7 @@ class UserService:
             f"Password changed for user {user.id}",
             event_type="password_changed",
             user_id=user.id,
-            username=user.username
+            email=user.email
         )
         
         return True
@@ -489,45 +444,30 @@ class UserService:
 
 
 # Function exports for backward compatibility
-async def create_user(db: AsyncSession, username: str, email: str, password: str, is_admin: bool = False) -> User:
+async def create_user(db: AsyncSession, email: str, password: str, is_admin: bool = False) -> User:
     """Create a new user."""
     service = UserService(db)
-    return await service.create_user(username, email, password, is_admin)
+    return await service.create_user(email, password, is_admin)
 
 async def authenticate_user(db: AsyncSession, email: str, password: str) -> Optional[User]:
     """Authenticate a user using email."""
     service = UserService(db)
     return await service.authenticate_user(email, password)
 
-async def authenticate_user_by_username_or_email(db: AsyncSession, identifier: str, password: str) -> Optional[User]:
-    """Authenticate a user using either username or email."""
-    service = UserService(db)
-    return await service.authenticate_user_by_username_or_email(identifier, password)
-
-async def authenticate_user_by_email(db: AsyncSession, email: str, password: str) -> Optional[User]:
-    """Authenticate a user using email only."""
-    service = UserService(db)
-    return await service.authenticate_user(email, password)
-
-async def get_user_by_username(db: AsyncSession, username: str) -> Optional[User]:
-    """Get user by username."""
-    service = UserService(db)
-    return await service.get_user_by_username(username)
-
 async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
     """Get user by email."""
     service = UserService(db)
     return await service.get_user_by_email(email)
 
-async def delete_user(db: AsyncSession, username: str, password: str) -> bool:
+async def delete_user(db: AsyncSession, email: str, password: str) -> bool:
     """Delete a user."""
     service = UserService(db)
-    return await service.delete_user(username, password)
+    return await service.delete_user(email, password)
 
-async def update_user_password(db: AsyncSession, username: str, current_password: str, new_password: str) -> bool:
+async def update_user_password(db: AsyncSession, email: str, current_password: str, new_password: str) -> bool:
     """Update user password."""
     service = UserService(db)
-    return await service.update_user_password(username, current_password, new_password)
+    return await service.update_user_password(email, current_password, new_password)
 
 async def create_password_reset_token(db: AsyncSession, email: str) -> str:
     """
