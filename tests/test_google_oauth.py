@@ -153,3 +153,111 @@ class TestGoogleOAuthService:
         assert user.google_id == google_profile['sub']
         assert user.auth_type == 'both'  # Because test_user has a password
         assert user.is_verified is True  # Should be updated
+        
+    async def test_link_google_account(self, db_session, google_profile, test_user):
+        """Test linking a Google account to an existing user."""
+        # Ensure test user has no Google ID initially
+        assert test_user.google_id is None
+        assert test_user.auth_type == 'password'
+        
+        service = GoogleOAuthService(db_session)
+        await service.link_google_account(test_user, google_profile)
+        
+        # Refresh the user from the database
+        await db_session.refresh(test_user)
+        
+        # Verify user has been updated with Google info
+        assert test_user.google_id == google_profile['sub']
+        assert test_user.auth_type == 'both'
+        assert test_user.is_verified is True
+        
+    async def test_unlink_google_account(self, db_session, google_profile, test_user):
+        """Test unlinking a Google account from an existing user."""
+        # First link a Google account
+        test_user.google_id = google_profile['sub']
+        test_user.auth_type = 'both'
+        db_session.add(test_user)
+        await db_session.commit()
+        
+        service = GoogleOAuthService(db_session)
+        await service.unlink_google_account(test_user)
+        
+        # Refresh the user from the database
+        await db_session.refresh(test_user)
+        
+        # Verify user has had Google info removed
+        assert test_user.google_id is None
+        assert test_user.auth_type == 'password'
+        
+    @patch('app.core.security.create_access_token')
+    async def test_login_with_google_new_user(self, mock_create_token, db_session,
+                                             mock_httpx_client, google_tokens, google_profile):
+        """Test logging in with Google as a new user."""
+        # Mock token exchange response
+        token_response = MagicMock(spec=Response)
+        token_response.status_code = 200
+        token_response.json.return_value = google_tokens
+        mock_httpx_client.post.return_value = token_response
+        
+        # Mock profile response
+        profile_response = MagicMock(spec=Response)
+        profile_response.status_code = 200
+        profile_response.json.return_value = google_profile
+        mock_httpx_client.get.return_value = profile_response
+        
+        # Mock JWT token creation
+        mock_create_token.return_value = "fake.jwt.token"
+        
+        service = GoogleOAuthService(db_session)
+        user, token = await service.login_with_google("test_auth_code")
+        
+        # Verify a new user was created with Google profile data
+        assert user is not None
+        assert user.email == google_profile['email']
+        assert user.google_id == google_profile['sub']
+        assert user.auth_type == 'google'
+        assert token == "fake.jwt.token"
+        
+        # Verify token was created with user's email
+        mock_create_token.assert_called_once()
+        args, kwargs = mock_create_token.call_args
+        assert kwargs['subject'] == user.email
+        
+    @patch('app.core.security.create_access_token')
+    async def test_login_with_google_existing_user(self, mock_create_token, db_session,
+                                                  mock_httpx_client, google_tokens,
+                                                  google_profile, test_user):
+        """Test logging in with Google as an existing user."""
+        # Setup existing user with Google ID
+        test_user.google_id = google_profile['sub']
+        test_user.auth_type = 'both'
+        db_session.add(test_user)
+        await db_session.commit()
+        
+        # Mock token exchange response
+        token_response = MagicMock(spec=Response)
+        token_response.status_code = 200
+        token_response.json.return_value = google_tokens
+        mock_httpx_client.post.return_value = token_response
+        
+        # Mock profile response
+        profile_response = MagicMock(spec=Response)
+        profile_response.status_code = 200
+        profile_response.json.return_value = google_profile
+        mock_httpx_client.get.return_value = profile_response
+        
+        # Mock JWT token creation
+        mock_create_token.return_value = "fake.jwt.token"
+        
+        service = GoogleOAuthService(db_session)
+        user, token = await service.login_with_google("test_auth_code")
+        
+        # Verify existing user was found
+        assert user is not None
+        assert user.id == test_user.id
+        assert token == "fake.jwt.token"
+        
+        # Verify token was created with user's email
+        mock_create_token.assert_called_once()
+        args, kwargs = mock_create_token.call_args
+        assert kwargs['subject'] == user.email
