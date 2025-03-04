@@ -6,6 +6,7 @@ from httpx import Response, AsyncClient
 from starlette.status import (
     HTTP_200_OK, HTTP_401_UNAUTHORIZED, HTTP_400_BAD_REQUEST
 )
+from sqlalchemy import text
 
 from app.services.oauth_service import GoogleOAuthService
 from app.models.user import User
@@ -130,6 +131,7 @@ class TestGoogleOAuthIntegration:
         link_response = await async_client.post(
             "/auth/link/google",
             json={
+                "provider": "google",
                 "code": "test_auth_code",
                 "password": test_user["password"]
             },
@@ -157,7 +159,7 @@ class TestGoogleOAuthIntegration:
         
         # Check that it's the same user account
         user_query = await db_session.execute(
-            "SELECT * FROM users WHERE email = :email", 
+            text("SELECT * FROM users WHERE email = :email"),
             {"email": test_user["email"]}
         )
         users = user_query.fetchall()
@@ -197,6 +199,7 @@ class TestGoogleOAuthIntegration:
         await async_client.post(
             "/auth/link/google",
             json={
+                "provider": "google",
                 "code": "test_auth_code",
                 "password": test_user["password"]
             },
@@ -211,12 +214,24 @@ class TestGoogleOAuthIntegration:
         assert unlink_response.status_code == HTTP_200_OK
         assert unlink_response.json()["message"] == "Google account unlinked successfully"
         
-        # Verify OAuth login no longer works
+        # Verify that after unlinking, OAuth will create a new account
         callback_response = await async_client.post(
             "/auth/oauth/google/callback",
             json={"code": "test_auth_code"}
         )
-        assert callback_response.status_code != HTTP_200_OK  # Should now fail or create new account
+        # OAuth should still work, but it should create a new account now
+        assert callback_response.status_code == HTTP_200_OK
+        new_token = callback_response.json()["access_token"]
+        
+        # Verify the new account is different from the original
+        me_response = await async_client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {new_token}"}
+        )
+        assert me_response.status_code == HTTP_200_OK
+        assert me_response.json()["email"] == google_profile["email"]
+        # Email will be the same, but username should be different
+        assert me_response.json()["username"] != test_user["username"]
         
         # But password login still works
         password_login = await async_client.post(
@@ -283,7 +298,7 @@ class TestGoogleOAuthIntegration:
         
         # Check user in database
         user_query = await db_session.execute(
-            "SELECT * FROM users WHERE email = :email", 
+            text("SELECT * FROM users WHERE email = :email"),
             {"email": google_profile["email"]}
         )
         user = user_query.fetchone()
