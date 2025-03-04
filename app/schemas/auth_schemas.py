@@ -1,7 +1,7 @@
 """Pydantic models for authentication-related request and response schemas."""
 
 from typing import Optional
-from pydantic import BaseModel, EmailStr, ConfigDict, Field, model_validator, field_validator
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 
 class GoogleAuthRequest(BaseModel):
     """Request to initiate Google OAuth flow."""
@@ -37,23 +37,14 @@ class AccountLinkRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     """Pydantic model for login request."""
-    email: Optional[EmailStr] = None
-    username: Optional[str] = None
+    email: EmailStr
     password: str
 
     model_config = ConfigDict(from_attributes=True)
 
-    @model_validator(mode='after')
-    def check_email_or_username(self) -> 'LoginRequest':
-        """Validate that at least one of email or username is provided."""
-        if not self.email and not self.username:
-            raise ValueError("Either email or username must be provided")
-        return self
-
 
 class UserCreate(BaseModel):
     """Pydantic model for creating a new user."""
-    username: str
     email: EmailStr
     password: str = Field(..., min_length=8, description="Password must be at least 8 characters long")
     email_verification_url: Optional[str] = None
@@ -132,7 +123,6 @@ class ResendVerification(BaseModel):
 
 class UserResponse(BaseModel):
     """Schema for user response data."""
-    username: str
     email: EmailStr
     is_verified: bool
 
@@ -142,7 +132,6 @@ class UserResponse(BaseModel):
 class RegistrationResponse(BaseModel):
     """Schema for registration response."""
     message: str
-    username: str
     email: EmailStr
     verification_sent: bool
 

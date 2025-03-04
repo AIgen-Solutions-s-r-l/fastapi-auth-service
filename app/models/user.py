@@ -13,8 +13,7 @@ class User(Base):
 
     Attributes:
         id (int): The primary key for the user.
-        username (str): Unique username for the user.
-        email (str): Unique email for the user.
+        email (str): Unique email for the user (primary identifier).
         hashed_password (str): Hashed password for the user.
         is_admin (bool): Flag indicating if user has admin privileges.
         is_verified (bool): Flag indicating if email has been verified.
@@ -27,7 +26,6 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(50), unique=True, index=True, nullable=False)
     email = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=True)  # Made nullable for OAuth-only users
     google_id = Column(String(255), nullable=True, unique=True)
