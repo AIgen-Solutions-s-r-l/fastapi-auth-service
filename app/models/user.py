@@ -21,13 +21,17 @@ class User(Base):
         verification_token (str): Token for email verification.
         verification_token_expires_at (datetime): Expiration time for verification token.
         stripe_customer_id (str): Stripe customer ID for payment processing.
+        google_id (str): Google OAuth user ID for OAuth authentication.
+        auth_type (str): Authentication type - "password", "google", or "both".
     """
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
     email = Column(String(100), unique=True, index=True, nullable=False)
-    hashed_password = Column(String(255), nullable=False)
+    hashed_password = Column(String(255), nullable=True)  # Made nullable for OAuth-only users
+    google_id = Column(String(255), nullable=True, unique=True)
+    auth_type = Column(String(20), default="password", nullable=False)  # "password", "google", "both"
     is_admin = Column(Boolean, default=False, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
     verification_token = Column(String(255), nullable=True)

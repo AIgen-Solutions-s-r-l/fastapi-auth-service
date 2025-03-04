@@ -1,7 +1,7 @@
 """Router module for authentication-related endpoints including login, registration, and password management."""
 
 from datetime import timedelta, datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from jose import jwt, JWTError
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
@@ -9,11 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.database import get_db
 from app.core.exceptions import UserAlreadyExistsError, UserNotFoundError, InvalidCredentialsError
-from app.core.security import create_access_token, verify_jwt_token
+from app.core.security import create_access_token, verify_jwt_token, verify_password
+from app.core.auth import get_current_user
 from app.schemas.auth_schemas import (
     LoginRequest, Token, UserCreate, PasswordChange,
     PasswordResetRequest, PasswordReset, RefreshToken, EmailChange,
-    VerifyEmail, ResendVerification, UserResponse, RegistrationResponse
+    VerifyEmail, ResendVerification, UserResponse, RegistrationResponse,
+    GoogleAuthRequest, GoogleAuthCallback, AccountLinkRequest
 )
 from app.services.user_service import (
     create_user, authenticate_user, authenticate_user_by_username_or_email,
@@ -26,6 +28,8 @@ from app.log.logging import logger
 from app.core.email import send_email
 from app.core.config import settings
 from app.services.email_service import EmailService
+from app.services.oauth_service import GoogleOAuthService
+from app.core.config import settings
 
 
 router = APIRouter(tags=["authentication"])
@@ -1077,3 +1081,212 @@ async def verify_email_templates(
         "message": "Template verification completed",
         "results": results
     }
+
+
+# Google OAuth Endpoints
+
+@router.get(
+    "/oauth/google/login",
+    response_model=Dict[str, str],
+    responses={
+        200: {"description": "Google login URL generated"},
+        500: {"description": "Failed to generate login URL"}
+    }
+)
+async def google_login(
+    redirect_uri: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, str]:
+    """
+    Generate Google OAuth login URL.
+    
+    Args:
+        redirect_uri: Optional custom redirect URI
+        db: Database session
+        
+    Returns:
+        Dict with login URL
+    """
+    try:
+        oauth_service = GoogleOAuthService(db)
+        auth_url = await oauth_service.get_authorization_url(redirect_uri)
+        
+        logger.info(
+            "Generated Google OAuth URL",
+            event_type="oauth_url_generated",
+            redirect_uri=redirect_uri or settings.GOOGLE_REDIRECT_URI
+        )
+        
+        return {"auth_url": auth_url}
+    
+    except Exception as e:
+        logger.error(
+            "Failed to generate Google OAuth URL",
+            event_type="oauth_url_error",
+            error=str(e),
+            error_type=type(e).__name__
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating Google login URL: {str(e)}"
+        )
+
+@router.post(
+    "/oauth/google/callback",
+    response_model=Token,
+    responses={
+        200: {"description": "Successfully authenticated with Google"},
+        400: {"description": "Invalid OAuth callback"}
+    }
+)
+async def google_callback(
+    callback: GoogleAuthCallback,
+    db: AsyncSession = Depends(get_db)
+) -> Token:
+    """
+    Process Google OAuth callback and generate JWT token.
+    
+    Args:
+        callback: Callback data with authorization code
+        db: Database session
+        
+    Returns:
+        JWT token same as regular login
+    """
+    try:
+        oauth_service = GoogleOAuthService(db)
+        user, access_token = await oauth_service.login_with_google(callback.code)
+        
+        logger.info(
+            "Google OAuth login successful",
+            event_type="oauth_login_success",
+            user_id=user.id,
+            username=user.username,
+            email=user.email
+        )
+        
+        return Token(access_token=access_token, token_type="bearer")
+        
+    except HTTPException as http_ex:
+        # Re-raise HTTP exceptions
+        raise http_ex
+    except Exception as e:
+        logger.error(
+            "Google OAuth callback error",
+            event_type="oauth_callback_error",
+            error=str(e),
+            error_type=type(e).__name__
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error processing Google callback: {str(e)}"
+        )
+
+@router.post(
+    "/link/google",
+    response_model=Dict[str, str],
+    responses={
+        200: {"description": "Google account linked successfully"},
+        401: {"description": "Not authenticated or invalid password"},
+        400: {"description": "Invalid OAuth callback"}
+    }
+)
+async def link_google_account(
+    link_request: AccountLinkRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, str]:
+    """
+    Link Google account to existing user.
+    
+    Args:
+        link_request: Link request with Google auth code and password
+        current_user: Current authenticated user
+        db: Database session
+        
+    Returns:
+        Success message
+    """
+    try:
+        # Verify password
+        if not verify_password(link_request.password, current_user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid password"
+            )
+            
+        oauth_service = GoogleOAuthService(db)
+        
+        # Exchange code for tokens
+        tokens = await oauth_service.exchange_code_for_tokens(link_request.code)
+        
+        # Get user profile
+        profile = await oauth_service.get_user_profile(tokens['access_token'])
+        
+        # Link account
+        await oauth_service.link_google_account(current_user, profile)
+        
+        return {"message": "Google account linked successfully"}
+        
+    except HTTPException as http_ex:
+        # Re-raise HTTP exceptions
+        raise http_ex
+    except Exception as e:
+        logger.error(
+            "Google account linking error",
+            event_type="oauth_link_error",
+            user_id=current_user.id,
+            username=current_user.username,
+            error=str(e),
+            error_type=type(e).__name__
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error linking Google account: {str(e)}"
+        )
+
+@router.post(
+    "/unlink/google",
+    response_model=Dict[str, str],
+    responses={
+        200: {"description": "Google account unlinked successfully"},
+        400: {"description": "Cannot unlink account without password"},
+        401: {"description": "Not authenticated"}
+    }
+)
+async def unlink_google_account(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, str]:
+    """
+    Unlink Google account from user.
+    
+    Args:
+        current_user: Current authenticated user
+        db: Database session
+        
+    Returns:
+        Success message
+    """
+    try:
+        oauth_service = GoogleOAuthService(db)
+        await oauth_service.unlink_google_account(current_user)
+        
+        return {"message": "Google account unlinked successfully"}
+        
+    except HTTPException as http_ex:
+        # Re-raise HTTP exceptions
+        raise http_ex
+    except Exception as e:
+        logger.error(
+            "Google account unlinking error",
+            event_type="oauth_unlink_error",
+            user_id=current_user.id,
+            username=current_user.username,
+            error=str(e),
+            error_type=type(e).__name__
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error unlinking Google account: {str(e)}"
+        )

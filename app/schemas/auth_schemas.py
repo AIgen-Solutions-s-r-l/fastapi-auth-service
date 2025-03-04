@@ -3,6 +3,37 @@
 from typing import Optional
 from pydantic import BaseModel, EmailStr, ConfigDict, Field, model_validator, field_validator
 
+class GoogleAuthRequest(BaseModel):
+    """Request to initiate Google OAuth flow."""
+    redirect_uri: Optional[str] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class GoogleAuthCallback(BaseModel):
+    """Callback from Google OAuth."""
+    code: str
+    state: Optional[str] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class OAuthProfile(BaseModel):
+    """OAuth provider user profile."""
+    provider: str
+    provider_user_id: str
+    email: EmailStr
+    name: Optional[str] = None
+    picture: Optional[str] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class AccountLinkRequest(BaseModel):
+    """Request to link OAuth account to existing user."""
+    provider: str
+    code: str
+    password: str
+    
+    model_config = ConfigDict(from_attributes=True)
+
 
 class LoginRequest(BaseModel):
     """Pydantic model for login request."""

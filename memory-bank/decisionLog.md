@@ -2,6 +2,29 @@
 
 This document tracks key architectural and design decisions made during the development of the auth_service project.
 
+## March 4, 2025 - Google OAuth 2.0 Integration with JWT Token System
+
+**Context:** Users have requested the ability to sign in with Google alongside the existing email/password authentication. However, the auth service is part of a microservices architecture where all services use our JWT tokens for authentication.
+
+**Decision:** Implement Google OAuth 2.0 authentication while maintaining the existing JWT token system for microservice communication. Google OAuth will be used only for initial user authentication, after which our standard JWT tokens will be generated and used.
+
+**Rationale:**
+- Using Google OAuth 2.0 provides a convenient and secure authentication option for users who prefer not to create another username/password
+- Maintaining our existing JWT token system ensures no changes are needed in other microservices
+- This hybrid approach leverages the security of OAuth for authentication while preserving our internal authorization mechanisms
+- The approach minimizes changes across the microservice ecosystem while adding new authentication capabilities
+- We can leverage the email verification that Google already provides, reducing the need for our own verification process
+
+**Implementation:**
+- Create a comprehensive implementation plan in google_oauth_integration_plan.md
+- Update the User model to add OAuth-related fields (google_id, auth_type)
+- Create a new OAuth service to handle Google authentication
+- Add new endpoints for OAuth flow and account linking
+- Ensure that after successful OAuth authentication, standard JWT tokens are generated
+- Support account linking for users who might use both password and OAuth authentication
+
+**Expected Results:** Users will be able to authenticate using either Google OAuth 2.0 or the traditional email/password method. The authentication method will be transparent to other microservices, as they will continue to receive and validate the same JWT token format regardless of how the user authenticated.
+
 ## March 3, 2025 - Remove SMTP Email Configuration in Favor of SendGrid
 
 **Context:** The application has both SMTP email configuration (MAIL_USERNAME, MAIL_PASSWORD, etc.) and SendGrid configuration in the .env file, but only the SendGrid implementation is being used for sending emails. This creates unnecessary configuration complexity.

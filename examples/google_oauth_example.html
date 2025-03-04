@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google OAuth Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        button {
+            background-color: #4285F4;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 0;
+        }
+        button:hover {
+            background-color: #357AE8;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .response {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Google OAuth Integration Example</h1>
+    
+    <h2>Sign in with Google</h2>
+    <button id="signInButton">Sign in with Google</button>
+    
+    <div class="response">
+        <h3>Response:</h3>
+        <pre id="responseData">Click the button above to start the OAuth flow</pre>
+    </div>
+    
+    <h2>How It Works</h2>
+    <ol>
+        <li><strong>Initiate OAuth Flow:</strong> When the user clicks "Sign in with Google", the frontend calls the <code>/auth/oauth/google/login</code> endpoint.</li>
+        <li><strong>Redirect to Google:</strong> The backend returns a Google authorization URL, and the frontend redirects the user to that URL.</li>
+        <li><strong>Google Authentication:</strong> The user authenticates with Google and grants permissions.</li>
+        <li><strong>Callback Processing:</strong> Google redirects back to your application with an authorization code.</li>
+        <li><strong>Token Exchange:</strong> Your frontend sends this code to the <code>/auth/oauth/google/callback</code> endpoint.</li>
+        <li><strong>JWT Generation:</strong> The backend exchanges the code for Google tokens, retrieves the user profile, finds or creates the user, and returns a JWT token.</li>
+        <li><strong>Complete Authentication:</strong> Your frontend stores the JWT token and uses it for subsequent API calls just like with regular email/password authentication.</li>
+    </ol>
+    
+    <h2>API Endpoints</h2>
+    <h3>1. Get Google Login URL</h3>
+    <pre>
+GET /auth/oauth/google/login
+Response: { "auth_url": "https://accounts.google.com/o/oauth2/auth?..." }
+    </pre>
+    
+    <h3>2. Process Google Callback</h3>
+    <pre>
+POST /auth/oauth/google/callback
+Body: { "code": "4/0AeaYSHDGS...", "state": "optional-state-parameter" }
+Response: { "access_token": "eyJhbGciOiJ...", "token_type": "bearer" }
+    </pre>
+    
+    <h3>3. Link Google Account (for existing users)</h3>
+    <pre>
+POST /auth/link/google
+Body: { "code": "4/0AeaYSHDGS...", "provider": "google", "password": "current-password" }
+Response: { "message": "Google account linked successfully" }
+    </pre>
+    
+    <h3>4. Unlink Google Account</h3>
+    <pre>
+POST /auth/unlink/google
+Response: { "message": "Google account unlinked successfully" }
+    </pre>
+    
+    <h2>JavaScript Implementation Example</h2>
+    <pre>
+// 1. Get the Google login URL
+async function getGoogleLoginUrl() {
+    const response = await fetch('http://localhost:8000/auth/oauth/google/login');
+    const data = await response.json();
+    return data.auth_url;
+}
+
+// 2. Redirect user to Google
+async function signInWithGoogle() {
+    const url = await getGoogleLoginUrl();
+    window.location.href = url;
+}
+
+// 3. Handle the callback from Google (on your callback page)
+async function handleGoogleCallback(code) {
+    const response = await fetch('http://localhost:8000/auth/oauth/google/callback', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code })
+    });
+    
+    const data = await response.json();
+    // Store JWT token and redirect to the app
+    localStorage.setItem('token', data.access_token);
+    window.location.href = '/dashboard';
+}
+
+// Call this when your callback page loads
+function processCallback() {
+    // Get code from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    
+    if (code) {
+        handleGoogleCallback(code);
+    }
+}
+    </pre>
+    
+    <script>
+        // Simulated example - in a real app, you would use the actual backend URL
+        document.getElementById('signInButton').addEventListener('click', async () => {
+            try {
+                // In a real app, this would call your backend
+                const responseData = {
+                    auth_url: 'https://accounts.google.com/o/oauth2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&scope=openid%20email%20profile&response_type=code&access_type=offline&prompt=consent'
+                };
+                
+                document.getElementById('responseData').textContent = JSON.stringify(responseData, null, 2);
+                
+                // In a real app, you would redirect to the auth_url:
+                // window.location.href = responseData.auth_url;
+                
+                // For demo purposes only
+                alert('In a real application, the user would be redirected to Google\'s login page now.');
+            } catch (error) {
+                document.getElementById('responseData').textContent = 'Error: ' + error.message;
+            }
+        });
+    </script>
+</body>
+</html>

@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
     STRIPE_API_VERSION: str = os.getenv("STRIPE_API_VERSION", "2023-10-16")
     
+    # Google OAuth settings
+    GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
+    GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+    OAUTH_SCOPES: str = os.getenv("OAUTH_SCOPES", "openid email profile")
+    
 settings = Settings()
 
 
@@ -156,6 +162,58 @@ def validate_stripe_config() -> Tuple[bool, Dict[str, Any]]:
             warning,
             event_type="config_warning",
             setting="STRIPE_WEBHOOK_SECRET"
+        )
+        warnings.append(warning)
+    
+    return valid, {
+        "valid": valid,
+        "issues": issues,
+        "warnings": warnings
+    }
+
+
+def validate_oauth_config() -> Tuple[bool, Dict[str, Any]]:
+    """
+    Validate OAuth configuration and log warnings for missing or invalid settings.
+    
+    Returns:
+        Tuple[bool, Dict[str, Any]]:
+            - Boolean indicating if configuration is valid
+            - Dictionary with validation details
+    """
+    valid = True
+    issues = []
+    warnings = []
+    
+    # Check Google Client ID
+    if not settings.GOOGLE_CLIENT_ID:
+        issue = "Google Client ID not configured (GOOGLE_CLIENT_ID)"
+        logger.error(
+            issue,
+            event_type="config_error",
+            setting="GOOGLE_CLIENT_ID"
+        )
+        issues.append(issue)
+        valid = False
+    
+    # Check Google Client Secret
+    if not settings.GOOGLE_CLIENT_SECRET:
+        issue = "Google Client Secret not configured (GOOGLE_CLIENT_SECRET)"
+        logger.error(
+            issue,
+            event_type="config_error",
+            setting="GOOGLE_CLIENT_SECRET"
+        )
+        issues.append(issue)
+        valid = False
+    
+    # Check Google Redirect URI (warning only)
+    if not settings.GOOGLE_REDIRECT_URI:
+        warning = "Google Redirect URI not configured (GOOGLE_REDIRECT_URI)"
+        logger.warning(
+            warning,
+            event_type="config_warning",
+            setting="GOOGLE_REDIRECT_URI"
         )
         warnings.append(warning)
     
