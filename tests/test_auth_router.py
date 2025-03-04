@@ -13,7 +13,7 @@ async def client(async_client: AsyncClient):
 async def test_login(client: AsyncClient, test_user):
     # Test login with correct credentials
     response = await client.post("/auth/login", json={
-        "username": test_user["username"],
+        "email": test_user["email"],
         "password": test_user["password"]
     })
     assert response.status_code == 200, f"Login failed with status {response.status_code}"
@@ -23,16 +23,16 @@ async def test_login(client: AsyncClient, test_user):
 
 async def test_get_user_details(client: AsyncClient, test_user):
     headers = {"Authorization": f"Bearer {test_user['token']}"}
-    response = await client.get(f"/auth/users/{test_user['username']}", headers=headers)
+    response = await client.get(f"/auth/users/by-email/{test_user['email']}", headers=headers)
     assert response.status_code == 200, f"Expected 200 but got {response.status_code}"
     data = response.json()
-    assert data.get("username") == test_user["username"], "Username in response does not match"
+    assert data.get("email") == test_user["email"], "Email in response does not match"
 
 
 async def test_change_password(client: AsyncClient, test_user):
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     new_password = "NewTestPassword456!"
-    response = await client.put(f"/auth/users/{test_user['username']}/password",
+    response = await client.put("/auth/users/change-password",
                           json={"current_password": test_user["password"], "new_password": new_password},
                           headers=headers)
     assert response.status_code == 200, f"Password change failed with status {response.status_code}"
@@ -41,7 +41,7 @@ async def test_change_password(client: AsyncClient, test_user):
     
     # Verify that the user can login with the new password
     login_response = await client.post("/auth/login", json={
-        "username": test_user["username"],
+        "email": test_user["email"],
         "password": new_password
     })
     assert login_response.status_code == 200, "Failed to login with new password"
@@ -75,7 +75,7 @@ async def test_get_current_user_profile(client: AsyncClient, test_user):
     response = await client.get("/auth/me", headers=headers)
     assert response.status_code == 200, f"Get profile failed with status {response.status_code}"
     data = response.json()
-    assert data.get("username") == test_user["username"], "Profile username does not match"
+    assert data.get("email") == test_user["email"], "Profile email does not match"
 
 
 @pytest.mark.skip(reason="Reset password endpoint requires a valid reset token to be generated")
@@ -91,10 +91,10 @@ async def test_reset_password(client: AsyncClient):
 async def test_change_email_success(client: AsyncClient, test_user):
     """Test successful email change."""
     headers = {"Authorization": f"Bearer {test_user['token']}"}
-    new_email = f"new_{test_user['username']}@example.com"
+    new_email = f"new_email_{uuid.uuid4().hex[:8]}@example.com"
     
     response = await client.put(
-        f"/auth/users/{test_user['username']}/email",
+        "/auth/users/change-email",
         json={
             "new_email": new_email,
             "current_password": test_user["password"]
@@ -122,7 +122,7 @@ async def test_change_email_unauthorized(client: AsyncClient, test_user):
     """Test unauthorized email change attempt."""
     # Try without authentication
     response = await client.put(
-        f"/auth/users/{test_user['username']}/email",
+        "/auth/users/change-email",
         json={
             "new_email": "new@example.com",
             "current_password": test_user["password"]
@@ -131,31 +131,29 @@ async def test_change_email_unauthorized(client: AsyncClient, test_user):
     assert response.status_code == 401, "Should require authentication"
     
     # Create another user and try to change their email
-    other_username = f"other_{uuid.uuid4().hex[:8]}"
-    other_email = f"{other_username}@example.com"
+    other_email = f"other_{uuid.uuid4().hex[:8]}@example.com"
     await client.post("/auth/register", json={
-        "username": other_username,
         "email": other_email,
         "password": "TestPassword123!"
     })
     
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     response = await client.put(
-        f"/auth/users/{other_username}/email",
+        "/auth/users/change-email",
         json={
             "new_email": "new@example.com",
             "current_password": test_user["password"]
         },
         headers=headers
     )
-    assert response.status_code == 403, "Should not allow changing other user's email"
+    assert response.status_code == 401, "Should not allow changing other user's email"
 
 
 async def test_change_email_invalid_password(client: AsyncClient, test_user):
     """Test email change with invalid password."""
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     response = await client.put(
-        f"/auth/users/{test_user['username']}/email",
+        "/auth/users/change-email",
         json={
             "new_email": "new@example.com",
             "current_password": "WrongPassword123!"
@@ -168,10 +166,8 @@ async def test_change_email_invalid_password(client: AsyncClient, test_user):
 async def test_change_email_already_exists(client: AsyncClient, test_user):
     """Test email change to an already registered email."""
     # Create another user first
-    other_username = f"other_{uuid.uuid4().hex[:8]}"
-    other_email = f"{other_username}@example.com"
+    other_email = f"other_{uuid.uuid4().hex[:8]}@example.com"
     await client.post("/auth/register", json={
-        "username": other_username,
         "email": other_email,
         "password": "TestPassword123!"
     })
@@ -179,7 +175,7 @@ async def test_change_email_already_exists(client: AsyncClient, test_user):
     # Try to change email to the other user's email
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     response = await client.put(
-        f"/auth/users/{test_user['username']}/email",
+        "/auth/users/change-email",
         json={
             "new_email": other_email,
             "current_password": test_user["password"]
@@ -193,7 +189,7 @@ async def test_change_email_invalid_format(client: AsyncClient, test_user):
     """Test email change with invalid email format."""
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     response = await client.put(
-        f"/auth/users/{test_user['username']}/email",
+        "/auth/users/change-email",
         json={
             "new_email": "invalid-email-format",
             "current_password": test_user["password"]
