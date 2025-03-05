@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from jose import jwt
 from datetime import datetime, timedelta, timezone
+from fastapi import HTTPException
 
 # Directly patch specific functions rather than relying on API calls
 pytestmark = pytest.mark.asyncio
@@ -158,16 +159,28 @@ async def test_get_current_user_profile_admin_user_not_found(mock_logger, mock_g
     # Mock get_user_by_email to return admin user when admin email is passed
     mock_get_by_email.side_effect = lambda db, email: admin_user if email == admin_email else None
     
-    # Create mock DB and token
+    # Create mock DB that returns None for execute
     db = MagicMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = None
+    db.execute = AsyncMock(return_value=mock_result)
+    
     token = "valid.token.here"
     
     # Call function with non-existent user ID
-    with pytest.raises(Exception):
+    with pytest.raises(HTTPException) as exc_info:
         await get_current_user_profile(456, token, db)
     
-    # Verify logger was called
-    mock_logger.error.assert_called_once()
+    # Verify exception is 404 Not Found
+    assert exc_info.value.status_code == 404
+    
+    # Verify logger was called with correct event type
+    mock_logger.error.assert_called_once_with(
+        "Admin lookup failed - user not found",
+        event_type="profile_retrieval_error",
+        user_id=456,
+        admin_email=admin_email
+    )
 
 # Target lines 811-858: Get user email by ID
 @patch("app.log.logging.logger")  # Patch the directly imported module
