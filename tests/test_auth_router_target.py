@@ -62,7 +62,7 @@ async def test_change_email_comprehensive(client: AsyncClient, test_user):
     
     # Test email change with empty email
     response = await client.put(
-        f"/auth/users/{test_user['username']}/email",
+        "/auth/users/change-email",
         json={
             "new_email": "",  # Empty email
             "current_password": test_user["password"]
@@ -73,7 +73,7 @@ async def test_change_email_comprehensive(client: AsyncClient, test_user):
     
     # Test email change with no json
     response = await client.put(
-        f"/auth/users/{test_user['username']}/email",
+        "/auth/users/change-email",
         content=b"not json",
         headers=headers
     )
@@ -99,7 +99,7 @@ async def test_change_password_edges(client: AsyncClient, test_user):
     
     # Test with empty current password
     response = await client.put(
-        f"/auth/users/{test_user['username']}/password",
+        "/auth/users/change-password",
         json={"current_password": "", "new_password": "NewPassword123!"},
         headers=headers
     )
@@ -107,7 +107,7 @@ async def test_change_password_edges(client: AsyncClient, test_user):
     
     # Test with empty new password
     response = await client.put(
-        f"/auth/users/{test_user['username']}/password",
+        "/auth/users/change-password",
         json={"current_password": test_user["password"], "new_password": ""},
         headers=headers
     )
@@ -119,7 +119,7 @@ async def test_remove_user_empty_password(client: AsyncClient, test_user):
     
     # Test with empty password
     response = await client.delete(
-        f"/auth/users/{test_user['username']}",
+        "/auth/users/delete-account",
         params={"password": ""},
         headers=headers
     )
@@ -133,7 +133,6 @@ async def test_multiple_registrations(client: AsyncClient):
     password1 = "TestPassword123!"
     
     response1 = await client.post("/auth/register", json={
-        "username": username1,
         "email": email1,
         "password": password1
     })
@@ -141,7 +140,7 @@ async def test_multiple_registrations(client: AsyncClient):
     
     # Login to get token
     login_response = await client.post("/auth/login", json={
-        "username": username1,
+        "email": email1,
         "password": password1
     })
     assert login_response.status_code == 200
@@ -150,7 +149,6 @@ async def test_multiple_registrations(client: AsyncClient):
     
     # Try to create another user with same username
     response2 = await client.post("/auth/register", json={
-        "username": username1,  # Same username
         "email": f"different_{uuid.uuid4().hex[:8]}@example.com",
         "password": "TestPassword123!"
     })
@@ -158,7 +156,6 @@ async def test_multiple_registrations(client: AsyncClient):
     
     # Try to create another user with same email
     response3 = await client.post("/auth/register", json={
-        "username": f"different_{uuid.uuid4().hex[:8]}",
         "email": email1,  # Same email
         "password": "TestPassword123!"
     })
@@ -166,7 +163,7 @@ async def test_multiple_registrations(client: AsyncClient):
     
     # Cleanup
     headers = {"Authorization": f"Bearer {token1}"}
-    await client.delete(f"/auth/users/{username1}", params={"password": password1}, headers=headers)
+    await client.delete("/auth/users/delete-account", params={"password": password1}, headers=headers)
 
 # Test logout with various token issues
 async def test_logout_edge_cases(client: AsyncClient, test_user):
@@ -188,7 +185,7 @@ async def test_user_profile_flow(client: AsyncClient, test_user):
     assert response1.status_code == 200
     
     # Get user profile by username
-    response2 = await client.get(f"/auth/users/{test_user['username']}", headers=headers)
+    response2 = await client.get(f"/auth/users/by-email/{test_user['email']}", headers=headers)
     assert response2.status_code == 200
     
     # Try to access with missing token

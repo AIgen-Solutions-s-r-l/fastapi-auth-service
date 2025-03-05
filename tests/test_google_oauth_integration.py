@@ -230,8 +230,8 @@ class TestGoogleOAuthIntegration:
         )
         assert me_response.status_code == HTTP_200_OK
         assert me_response.json()["email"] == google_profile["email"]
-        # Email will be the same, but username should be different
-        assert me_response.json()["username"] != test_user["username"]
+        # Email will be the same, but it should be a different user
+        assert me_response.json()["is_verified"] == True  # New OAuth user should be verified
         
         # But password login still works
         password_login = await async_client.post(

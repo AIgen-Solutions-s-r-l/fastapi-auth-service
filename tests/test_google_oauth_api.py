@@ -121,7 +121,6 @@ class TestGoogleOAuthEndpoints:
         # Create a User object from the test_user dictionary
         user_obj = type('User', (), {
             'id': 1,
-            'username': test_user['username'],
             'email': test_user['email'],
             'is_verified': True,
             'is_admin': False
