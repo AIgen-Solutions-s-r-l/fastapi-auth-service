@@ -24,6 +24,16 @@
 - Updated auth_schemas.py to remove username fields
 - Modified user_service.py to use email as primary identifier
 - Updated auth_router.py endpoints to use email instead of username
+- Updated all email templates to remove username references:
+  - registration_confirmation.html
+  - welcome.html
+  - password_change_confirmation.html
+  - password_change_request.html
+  - one_time_credit_purchase.html
+  - plan_upgrade.html
+- Updated OAuth integration:
+  - Removed username references from Google OAuth logging
+  - Updated template test data to remove username fields
 - Updated test suite:
   - Modified test_auth_router.py for email-only auth
   - Updated test_auth_router_coverage.py
@@ -47,7 +57,7 @@
 - [x] Auth schemas updated
 - [x] User service updated
 - [x] Auth router endpoints updated
-- [ ] Tests updated
-- [ ] OAuth integration verified
+- [x] Tests updated
+- [x] OAuth integration verified
 - [ ] Documentation updated
-- [ ] Email templates checked and updated if needed
+- [x] Email templates checked and updated

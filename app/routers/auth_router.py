@@ -89,14 +89,13 @@ async def login(
                 "application/json": {
                     "example": {
                         "message": "User registered successfully",
-                        "username": "john_doe",
                         "email": "john@example.com",
                         "verification_sent": True
                     }
                 }
             }
         },
-        409: {"description": "Username or email already exists"}
+        409: {"description": "Email already exists"}
     }
 )
 async def register_user(
@@ -451,7 +450,7 @@ async def change_email(
         logger.error(
             "Email change failed - invalid token",
             event_type="email_change_error",
-            username=username,
+            email=token_subject,
             error_type="JWTError",
             error_details=str(e)
         )
@@ -466,7 +465,7 @@ async def change_email(
         logger.error(
             "Email change failed",
             event_type="email_change_error",
-            username=username,
+            email=token_subject,
             error_type=type(e).__name__,
             error_details=str(e)
         )
@@ -990,7 +989,6 @@ async def verify_email_templates(
     results["registration_confirmation"] = email_service.verify_template(
         "registration_confirmation",
         {
-            "username": "test_user",
             "verification_link": "https://example.com/verify?token=test_token",
             "hours_valid": 24
         }
@@ -1000,7 +998,6 @@ async def verify_email_templates(
     results["welcome"] = email_service.verify_template(
         "welcome",
         {
-            "username": "test_user",
             "login_link": "https://example.com/login"
         }
     )
@@ -1009,7 +1006,6 @@ async def verify_email_templates(
     results["password_change_request"] = email_service.verify_template(
         "password_change_request",
         {
-            "username": "test_user",
             "reset_link": "https://example.com/reset?token=test_token",
             "hours_valid": 24
         }
@@ -1019,7 +1015,6 @@ async def verify_email_templates(
     results["password_change_confirmation"] = email_service.verify_template(
         "password_change_confirmation",
         {
-            "username": "test_user",
             "login_link": "https://example.com/login",
             "ip_address": "127.0.0.1",
             "time": "2025-02-26 11:30:00 UTC"
@@ -1030,7 +1025,6 @@ async def verify_email_templates(
     results["one_time_credit_purchase"] = email_service.verify_template(
         "one_time_credit_purchase",
         {
-            "username": "test_user",
             "amount": 50.0,
             "credits": 100.0,
             "purchase_date": "2025-02-26 11:30:00",
@@ -1042,7 +1036,6 @@ async def verify_email_templates(
     results["plan_upgrade"] = email_service.verify_template(
         "plan_upgrade",
         {
-            "username": "test_user",
             "old_plan": "Basic",
             "new_plan": "Premium",
             "additional_credits": 200.0,
@@ -1136,7 +1129,6 @@ async def google_callback(
             "Google OAuth login successful",
             event_type="oauth_login_success",
             user_id=user.id,
-            username=user.username,
             email=user.email
         )
         
@@ -1211,7 +1203,7 @@ async def link_google_account(
             "Google account linking error",
             event_type="oauth_link_error",
             user_id=current_user.id,
-            username=current_user.username,
+            email=current_user.email,
             error=str(e),
             error_type=type(e).__name__
         )
@@ -1257,7 +1249,7 @@ async def unlink_google_account(
             "Google account unlinking error",
             event_type="oauth_unlink_error",
             user_id=current_user.id,
-            username=current_user.username,
+            email=current_user.email,
             error=str(e),
             error_type=type(e).__name__
         )

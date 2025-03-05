@@ -201,10 +201,7 @@ class GoogleOAuthService:
             return user
             
         # Create new user from Google profile
-        username = self._generate_username_from_email(profile.get('email'))
-        
         new_user = User(
-            username=username,
             email=profile.get('email'),
             google_id=profile.get('sub'),
             auth_type='google',
@@ -219,29 +216,10 @@ class GoogleOAuthService:
         logger.info(
             "Created new user from Google OAuth",
             event_type="oauth_user_created",
-            username=username,
             email=profile.get('email')
         )
         
         return new_user
-    
-    def _generate_username_from_email(self, email: str) -> str:
-        """
-        Generate a username from an email address.
-        
-        Args:
-            email: Email address
-            
-        Returns:
-            str: Generated username
-        """
-        # Simple implementation - use everything before the @
-        username_base = email.split('@')[0]
-        
-        # Add random digits for uniqueness
-        random_digits = ''.join([str(random.randint(0, 9)) for _ in range(4)])
-        
-        return f"{username_base}_{random_digits}"
     
     async def link_google_account(self, user: User, profile: Dict[str, Any]) -> User:
         """
@@ -268,7 +246,7 @@ class GoogleOAuthService:
             "Linked Google account to existing user",
             event_type="oauth_account_linked",
             user_id=user.id,
-            username=user.username,
+            email=user.email,
             google_id=profile.get('sub')
         )
         
@@ -304,7 +282,7 @@ class GoogleOAuthService:
             "Unlinked Google account from user",
             event_type="oauth_account_unlinked",
             user_id=user.id,
-            username=user.username
+            email=user.email
         )
         
         return user
@@ -351,7 +329,6 @@ class GoogleOAuthService:
             "Google OAuth login successful",
             event_type="oauth_login_success",
             user_id=user.id,
-            username=user.username,
             email=user.email
         )
         
