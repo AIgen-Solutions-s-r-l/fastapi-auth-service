@@ -115,7 +115,7 @@ class UserService:
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username or password"
+                detail="Invalid email or password"
             )
 
         # Check if new email is already in use

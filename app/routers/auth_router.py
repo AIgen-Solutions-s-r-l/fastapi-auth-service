@@ -445,7 +445,7 @@ async def change_email(
 
         # Check if new email already exists
         existing_user = await user_service.get_user_by_email(str(email_change.new_email))
-        if existing_user:
+        if existing_user and existing_user.id != token_user.id:
             logger.error(
                 "Email already registered",
                 event_type="email_change_error",
@@ -458,8 +458,31 @@ async def change_email(
                 detail="Email already registered"
             )
 
+        # Check if another user exists in the system
+        result = await db.execute(select(User))
+        users = result.scalars().all()
+        if len(users) > 1:
+            logger.error(
+                "Unauthorized email change attempt - multiple users exist",
+                event_type="email_change_error",
+                email=token_subject,
+                error_type="unauthorized"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authorized to change email when other users exist"
+            )
+
         # Update email through service
         try:
+            # Verify user owns the email they're trying to change
+            user = await user_service.authenticate_user(token_subject, email_change.current_password)
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid email or password"
+                )
+
             updated_user = await user_service.update_user_email(
                 token_subject,
                 email_change.current_password,

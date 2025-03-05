@@ -25,7 +25,7 @@ async def get_current_user(
 ) -> User:
     """
     Get the current authenticated user from the JWT token.
-    Supports both email and username in the 'sub' claim for backward compatibility.
+    Uses email in the 'sub' claim for authentication.
 
     Args:
         token: JWT token
@@ -52,13 +52,9 @@ async def get_current_user(
 
     user_service = UserService(db)
     
-    # Try to find user by email first (new tokens)
+    # Find user by email
     user = await user_service.get_user_by_email(subject)
     
-    # If not found, try to find by username (old tokens)
-    if user is None:
-        user = await user_service.get_user_by_username(subject)
-        
     if user is None:
         raise credentials_exception
         
