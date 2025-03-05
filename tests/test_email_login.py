@@ -17,11 +17,9 @@ async def test_login_with_email(async_client: AsyncClient, test_app: FastAPI, db
     # Create a test user
     email = "test_email_login@example.com"
     password = "testpassword"
-    username = "test_email_login_user"
     
     # Create user directly in the database
     user = User(
-        username=username,
         email=email,
         hashed_password=get_password_hash(password),
         is_verified=True
@@ -48,7 +46,6 @@ async def test_login_with_email(async_client: AsyncClient, test_app: FastAPI, db
     assert response.status_code == 200
     user_data = response.json()
     assert user_data["email"] == email
-    assert user_data["username"] == username
 
 
 async def test_login_with_invalid_email(async_client: AsyncClient, test_app: FastAPI):
@@ -69,11 +66,9 @@ async def test_login_with_wrong_password(
     # Create a test user
     email = "test_wrong_password@example.com"
     password = "testpassword"
-    username = "test_wrong_password_user"
     
     # Create user directly in the database
     user = User(
-        username=username,
         email=email,
         hashed_password=get_password_hash(password),
         is_verified=True
@@ -91,21 +86,18 @@ async def test_login_with_wrong_password(
     assert "detail" in response.json()
 
 
-async def test_backward_compatibility(
+async def test_email_authentication(
     async_client: AsyncClient, test_app: FastAPI, db_session: AsyncSession
 ):
     """
-    Test that the authenticate_user_by_username_or_email function provides
-    backward compatibility.
+    Test that the authenticate_user function works with email.
     """
     # Create a test user
-    email = "test_backward_compat@example.com"
+    email = "test_auth@example.com"
     password = "testpassword"
-    username = "test_backward_compat_user"
     
     # Create user directly in the database
     user = User(
-        username=username,
         email=email,
         hashed_password=get_password_hash(password),
         is_verified=True
@@ -113,19 +105,12 @@ async def test_backward_compatibility(
     db_session.add(user)
     await db_session.commit()
     
-    # Use the UserService directly to test the compatibility function
+    # Use the UserService directly to test authentication
     service = UserService(db_session)
     
     # Should be able to authenticate with email
-    authenticated_user = await service.authenticate_user_by_username_or_email(
+    authenticated_user = await service.authenticate_user(
         email, password
     )
     assert authenticated_user is not None
     assert authenticated_user.email == email
-    
-    # Should also be able to authenticate with username (backward compatibility)
-    authenticated_user = await service.authenticate_user_by_username_or_email(
-        username, password
-    )
-    assert authenticated_user is not None
-    assert authenticated_user.username == username

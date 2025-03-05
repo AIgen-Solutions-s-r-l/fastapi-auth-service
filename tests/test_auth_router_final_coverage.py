@@ -18,13 +18,13 @@ async def client(async_client: AsyncClient):
 # No need to redefine test_user - it's imported from conftest.py
 
 # Test user not found explicitly raising UserNotFoundError
-@patch("app.routers.auth_router.get_user_by_username")
+@patch("app.routers.auth_router.get_user_by_email")
 async def test_get_user_details_raises_error(mock_get_user, client: AsyncClient, test_user):
     # Mock to raise UserNotFoundError with required identifier parameter
-    mock_get_user.side_effect = UserNotFoundError("nonexistent_user")
+    mock_get_user.side_effect = UserNotFoundError("nonexistent@example.com")
     
     headers = {"Authorization": f"Bearer {test_user['token']}"}
-    response = await client.get("/auth/users/nonexistent_user", headers=headers)
+    response = await client.get("/auth/users/by-email/nonexistent@example.com", headers=headers)
     assert response.status_code == 404
 
 # Test the exception cases of change_password with a custom exception
@@ -38,7 +38,7 @@ async def test_change_password_error(mock_update, client: AsyncClient, test_user
     
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     response = await client.put(
-        f"/auth/users/{test_user['username']}/password",
+        "/auth/users/change-password",
         json={"current_password": "wrong", "new_password": "NewPassword123!"},
         headers=headers
     )
@@ -55,7 +55,7 @@ async def test_remove_user_error(mock_delete, client: AsyncClient, test_user):
     
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     response = await client.delete(
-        f"/auth/users/{test_user['username']}",
+        "/auth/users/delete-account",
         params={"password": "wrong_password"},
         headers=headers
     )
@@ -63,11 +63,11 @@ async def test_remove_user_error(mock_delete, client: AsyncClient, test_user):
 
 # Test the refresh token flow with mocked user
 @patch("app.routers.auth_router.verify_jwt_token")
-@patch("app.routers.auth_router.get_user_by_username")
+@patch("app.routers.auth_router.get_user_by_email")
 async def test_refresh_token_mock_full_flow(mock_get_user, mock_verify, client: AsyncClient):
     # Mock the token verification
     mock_verify.return_value = {
-        "sub": "test_user",
+        "sub": "test@example.com",
         "id": 123,
         "is_admin": False,
         "exp": (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()
@@ -75,7 +75,6 @@ async def test_refresh_token_mock_full_flow(mock_get_user, mock_verify, client: 
     
     # Create a mock user
     mock_user = MagicMock()
-    mock_user.username = "test_user"
     mock_user.id = 123
     mock_user.is_admin = False
     mock_user.email = "test@example.com"
@@ -97,7 +96,7 @@ async def test_refresh_token_mock_full_flow(mock_get_user, mock_verify, client: 
 async def test_change_email_complete_mock(mock_verify, mock_service, mock_token, client: AsyncClient):
     # Mock JWT verification
     mock_verify.return_value = {
-        "sub": "test_user",
+        "sub": "test@example.com",
         "id": 123,
         "is_admin": False
     }
@@ -105,33 +104,29 @@ async def test_change_email_complete_mock(mock_verify, mock_service, mock_token,
     # Mock token creation
     mock_token.return_value = "mocked_access_token"
     
-    # Create a class to simulate a User object with proper string attributes
-    class MockUser:
-        def __init__(self):
-            self.username = "test_user"
-            self.email = "updated@example.com"
-            self.id = 123
-            self.is_admin = False
-            
-        def __str__(self):
-            return f"User(username={self.username}, email={self.email})"
-    
-    # Create the mock user
-    mock_user = MockUser()
+    # Create mock users for before and after email change
+    original_user = MagicMock()
+    original_user.email = "test@example.com"
+    original_user.id = 123
+    original_user.is_admin = False
+
+    updated_user = MagicMock()
+    updated_user.email = "updated@example.com"
+    updated_user.id = 123
+    updated_user.is_admin = False
     
     # Create a mock service instance with AsyncMock for all async methods
     mock_instance = MagicMock()
     mock_service.return_value = mock_instance
     
     # Mock all async methods used in the endpoint
-    mock_instance.get_user_by_email = AsyncMock(return_value=mock_user)
-    mock_instance.get_user_by_username = AsyncMock(return_value=mock_user)
-    mock_instance.update_user_email = AsyncMock(return_value=mock_user)
+    mock_instance.get_user_by_email = AsyncMock(return_value=original_user)
+    mock_instance.update_user_email = AsyncMock(return_value=updated_user)
     mock_instance.send_verification_email = AsyncMock(return_value=True)
     
     # Test the endpoint
     response = await client.put(
-        "/auth/users/test_user/email",
+        "/auth/users/change-email",
         json={"new_email": "updated@example.com", "current_password": "Password123!"},
         headers={"Authorization": "Bearer token"}
     )
@@ -143,11 +138,11 @@ async def test_change_email_complete_mock(mock_verify, mock_service, mock_token,
 
 # Test get_current_user_profile with admin checking non-existent user
 @patch("app.routers.auth_router.verify_jwt_token")
-@patch("app.routers.auth_router.get_user_by_username")
+@patch("app.routers.auth_router.get_user_by_email")
 async def test_get_profile_admin_nonexistent_user(mock_get_user, mock_verify, client: AsyncClient):
     # Mock JWT verification for admin
     mock_verify.return_value = {
-        "sub": "admin_user",
+        "sub": "admin@example.com",
         "id": 999,
         "is_admin": True
     }
@@ -155,12 +150,11 @@ async def test_get_profile_admin_nonexistent_user(mock_get_user, mock_verify, cl
     # Create a mock admin user
     admin_user = MagicMock()
     admin_user.id = 999
-    admin_user.username = "admin_user"
     admin_user.email = "admin@example.com"
     
     # Set up mock to return admin for first call, but raise UserNotFoundError for second call
-    def side_effect(db, username):
-        if username == "admin_user":
+    def side_effect(db, email):
+        if email == "admin@example.com":
             return admin_user
         raise UserNotFoundError("Requested user not found")
     
@@ -176,27 +170,25 @@ async def test_get_profile_admin_nonexistent_user(mock_get_user, mock_verify, cl
 
 # Comprehensive test for register endpoint
 async def test_register_comprehensive(client: AsyncClient):
-    # Generate unique user data
-    username = f"comp_user_{uuid.uuid4().hex[:8]}"
-    email = f"{username}@example.com"
+    # Generate unique email
+    unique_id = uuid.uuid4().hex[:8]
+    email = f"test_{unique_id}@example.com"
     password = "StrongP@ssw0rd!"
     
     # Register the user
     response = await client.post("/auth/register", json={
-        "username": username,
         "email": email,
         "password": password
     })
     
     assert response.status_code == 201
     data = response.json()
-    assert data["username"] == username
     assert data["email"] == email
     assert "message" in data
     
     # Login to get token
     login_response = await client.post("/auth/login", json={
-        "username": username,
+        "email": email,
         "password": password
     })
     
@@ -207,17 +199,16 @@ async def test_register_comprehensive(client: AsyncClient):
     # Cleanup - delete the user
     headers = {"Authorization": f"Bearer {login_data['access_token']}"}
     await client.delete(
-        f"/auth/users/{username}",
+        "/auth/users/delete-account",
         params={"password": password},
         headers=headers
     )
 
 # Test handling of profile retrieval by user ID
-@patch("app.routers.auth_router.get_user_by_username")
+@patch("app.routers.auth_router.get_user_by_email")
 async def test_get_user_profile_by_id_mocked(mock_get_user, client: AsyncClient, test_user):
-    # Create a mock user for the get_user_by_username call
+    # Create a mock user for the get_user_by_email call
     mock_user = MagicMock()
-    mock_user.username = "user123"
     mock_user.email = "user123@example.com"
     mock_user.is_verified = True
     
@@ -226,9 +217,9 @@ async def test_get_user_profile_by_id_mocked(mock_get_user, client: AsyncClient,
     
     # Test the endpoint with authentication
     headers = {"Authorization": f"Bearer {test_user['token']}"}
-    response = await client.get("/auth/users/user123", headers=headers)
+    response = await client.get("/auth/users/by-email/user123@example.com", headers=headers)
     
     assert response.status_code == 200
     data = response.json()
     assert data["email"] == "user123@example.com"
-    assert data["username"] == "user123"
+    assert data["is_verified"] == True

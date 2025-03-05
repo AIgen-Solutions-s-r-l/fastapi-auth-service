@@ -167,7 +167,7 @@ class EmailService:
             "Sending registration confirmation email with link",
             event_type="registration_confirmation_email_sending",
             user_id=user.id,
-            username=user.username,
+            email=user.email,
             verification_link=verification_link
         )
         
@@ -176,7 +176,7 @@ class EmailService:
             subject="Confirm Your Registration",
             recipients=[str(user.email)],
             context={
-                "username": user.username,
+                "email": user.email,
                 "verification_link": verification_link,
                 "hours_valid": 24  # Token validity in hours
             }
@@ -194,7 +194,7 @@ class EmailService:
             subject="Welcome to Our Service",
             recipients=[str(user.email)],
             context={
-                "username": user.username,
+                "email": user.email,
                 "login_link": f"{settings.FRONTEND_URL}/login"
             }
         )
@@ -222,7 +222,7 @@ class EmailService:
             subject="Payment Confirmation",
             recipients=[str(user.email)],
             context={
-                "username": user.username,
+                "email": user.email,
                 "plan_name": plan_name,
                 "amount": amount,
                 "credit_amount": credit_amount,
@@ -251,7 +251,7 @@ class EmailService:
             "Sending password reset email with link",
             event_type="password_reset_email_sending",
             user_id=user.id,
-            username=user.username,
+            email=user.email,
             reset_link=reset_link
         )
         
@@ -260,7 +260,7 @@ class EmailService:
             subject="Password Change Request",
             recipients=[str(user.email)],
             context={
-                "username": user.username,
+                "email": user.email,
                 "reset_link": reset_link,
                 "hours_valid": 24  # Token validity in hours
             }
@@ -278,7 +278,7 @@ class EmailService:
             subject="Password Change Confirmation",
             recipients=[str(user.email)],
             context={
-                "username": user.username,
+                "email": user.email,
                 "login_link": f"{settings.FRONTEND_URL}/login",
                 "ip_address": "Not available",  # Could be passed in from the request
                 "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -304,7 +304,7 @@ class EmailService:
             subject="Credit Purchase Confirmation",
             recipients=[str(user.email)],
             context={
-                "username": user.username,
+                "email": user.email,
                 "amount": amount,
                 "credits": credits,
                 "purchase_date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
@@ -335,7 +335,7 @@ class EmailService:
             subject="Plan Upgrade Confirmation",
             recipients=[str(user.email)],
             context={
-                "username": user.username,
+                "email": user.email,
                 "old_plan": old_plan_name,
                 "new_plan": new_plan_name,
                 "additional_credits": additional_credits,

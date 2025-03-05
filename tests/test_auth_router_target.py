@@ -14,7 +14,7 @@ async def client(async_client: AsyncClient):
 # Test login with malformed credentials
 async def test_login_malformed(client: AsyncClient):
     response = await client.post("/auth/login", json={
-        "username": "",  # Empty username
+        "email": "",  # Empty email
         "password": "password"
     })
     assert response.status_code in [401, 422], "Should handle malformed credentials"
@@ -28,7 +28,6 @@ async def test_login_bad_json(client: AsyncClient):
 async def test_register_validation(client: AsyncClient):
     # Test with invalid email format
     response = await client.post("/auth/register", json={
-        "username": "newuser",
         "email": "not_an_email",  # Invalid email
         "password": "Password123!"
     })
@@ -36,7 +35,6 @@ async def test_register_validation(client: AsyncClient):
     
     # Test with short password
     response = await client.post("/auth/register", json={
-        "username": "newuser", 
         "email": "valid@example.com",
         "password": "short"  # Too short password
     })
@@ -62,7 +60,7 @@ async def test_change_email_comprehensive(client: AsyncClient, test_user):
     
     # Test email change with empty email
     response = await client.put(
-        f"/auth/users/{test_user['username']}/email",
+        "/auth/users/change-email",
         json={
             "new_email": "",  # Empty email
             "current_password": test_user["password"]
@@ -73,7 +71,7 @@ async def test_change_email_comprehensive(client: AsyncClient, test_user):
     
     # Test email change with no json
     response = await client.put(
-        f"/auth/users/{test_user['username']}/email",
+        "/auth/users/change-email",
         content=b"not json",
         headers=headers
     )
@@ -83,9 +81,9 @@ async def test_change_email_comprehensive(client: AsyncClient, test_user):
 async def test_get_user_details_edges(client: AsyncClient, test_user):
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     
-    # Test with username containing special chars
-    response = await client.get("/auth/users/user%20with%20spaces", headers=headers)
-    assert response.status_code in [404, 422], "Should handle special chars in username"
+    # Test with email containing special chars
+    response = await client.get("/auth/users/by-email/user%20with%20spaces%40example.com", headers=headers)
+    assert response.status_code in [404, 422], "Should handle special chars in email"
 
 # Test get user profile by non-existent ID
 async def test_get_user_profile_nonexistent(client: AsyncClient):
@@ -99,7 +97,7 @@ async def test_change_password_edges(client: AsyncClient, test_user):
     
     # Test with empty current password
     response = await client.put(
-        f"/auth/users/{test_user['username']}/password",
+        "/auth/users/change-password",
         json={"current_password": "", "new_password": "NewPassword123!"},
         headers=headers
     )
@@ -107,7 +105,7 @@ async def test_change_password_edges(client: AsyncClient, test_user):
     
     # Test with empty new password
     response = await client.put(
-        f"/auth/users/{test_user['username']}/password",
+        "/auth/users/change-password",
         json={"current_password": test_user["password"], "new_password": ""},
         headers=headers
     )
@@ -119,7 +117,7 @@ async def test_remove_user_empty_password(client: AsyncClient, test_user):
     
     # Test with empty password
     response = await client.delete(
-        f"/auth/users/{test_user['username']}",
+        "/auth/users/delete-account",
         params={"password": ""},
         headers=headers
     )
@@ -127,13 +125,11 @@ async def test_remove_user_empty_password(client: AsyncClient, test_user):
 
 # Test creating multiple users to check registration edge cases
 async def test_multiple_registrations(client: AsyncClient):
-    # Create first user
-    username1 = f"multi_user1_{uuid.uuid4().hex[:8]}"
-    email1 = f"{username1}@example.com"
+    # Create first user with random email
+    email1 = f"test_{uuid.uuid4().hex[:8]}@example.com"
     password1 = "TestPassword123!"
     
     response1 = await client.post("/auth/register", json={
-        "username": username1,
         "email": email1,
         "password": password1
     })
@@ -141,32 +137,23 @@ async def test_multiple_registrations(client: AsyncClient):
     
     # Login to get token
     login_response = await client.post("/auth/login", json={
-        "username": username1,
+        "email": email1,
         "password": password1
     })
     assert login_response.status_code == 200
     login_data = login_response.json()
     token1 = login_data.get("access_token")
     
-    # Try to create another user with same username
-    response2 = await client.post("/auth/register", json={
-        "username": username1,  # Same username
-        "email": f"different_{uuid.uuid4().hex[:8]}@example.com",
-        "password": "TestPassword123!"
-    })
-    assert response2.status_code in [400, 409], "Should reject duplicate username"
-    
     # Try to create another user with same email
-    response3 = await client.post("/auth/register", json={
-        "username": f"different_{uuid.uuid4().hex[:8]}",
+    response2 = await client.post("/auth/register", json={
         "email": email1,  # Same email
         "password": "TestPassword123!"
     })
-    assert response3.status_code in [400, 409], "Should reject duplicate email"
+    assert response2.status_code in [400, 409], "Should reject duplicate email"
     
     # Cleanup
     headers = {"Authorization": f"Bearer {token1}"}
-    await client.delete(f"/auth/users/{username1}", params={"password": password1}, headers=headers)
+    await client.delete("/auth/users/delete-account", params={"password": password1}, headers=headers)
 
 # Test logout with various token issues
 async def test_logout_edge_cases(client: AsyncClient, test_user):
@@ -188,7 +175,7 @@ async def test_user_profile_flow(client: AsyncClient, test_user):
     assert response1.status_code == 200
     
     # Get user profile by username
-    response2 = await client.get(f"/auth/users/{test_user['username']}", headers=headers)
+    response2 = await client.get(f"/auth/users/by-email/{test_user['email']}", headers=headers)
     assert response2.status_code == 200
     
     # Try to access with missing token

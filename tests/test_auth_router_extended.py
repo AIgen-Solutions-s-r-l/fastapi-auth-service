@@ -22,34 +22,34 @@ async def client(async_client: AsyncClient):
 async def test_login_invalid_credentials(client: AsyncClient, test_user):
     # Test login with incorrect password
     response = await client.post("/auth/login", json={
-        "username": test_user["username"],
+        "email": test_user["email"],
         "password": "WrongPassword123!"
     })
     assert response.status_code == 401, "Expected 401 Unauthorized"
     
-    # Test login with non-existent username
+    # Test login with non-existent email
     response = await client.post("/auth/login", json={
-        "username": "nonexistent_user",
+        "email": "nonexistent@example.com",
         "password": "TestPassword123!"
     })
     assert response.status_code == 401, "Expected 401 Unauthorized"
 
 # Test user retrieval for non-existent user
-# Patch the get_user_by_username function to raise UserNotFoundError for non-existent users
-@patch("app.routers.auth_router.get_user_by_username")
+# Patch the get_user_by_email function to raise UserNotFoundError for non-existent users
+@patch("app.routers.auth_router.get_user_by_email")
 async def test_get_nonexistent_user(mock_get_user, client: AsyncClient, test_user):
-    # Make the get_user_by_username function raise UserNotFoundError
+    # Make the get_user_by_email function raise UserNotFoundError
     mock_get_user.side_effect = UserNotFoundError("User not found")
     
     headers = {"Authorization": f"Bearer {test_user['token']}"}
-    response = await client.get("/auth/users/nonexistent_user", headers=headers)
+    response = await client.get("/auth/users/by-email/nonexistent@example.com", headers=headers)
     assert response.status_code == 404, "Expected 404 Not Found"
 
 # Test failed password change
 async def test_change_password_wrong_current(client: AsyncClient, test_user):
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     response = await client.put(
-        f"/auth/users/{test_user['username']}/password",
+        "/auth/users/change-password",
         json={"current_password": "WrongPassword123!", "new_password": "NewPassword456!"},
         headers=headers
     )
@@ -59,7 +59,7 @@ async def test_change_password_wrong_current(client: AsyncClient, test_user):
 async def test_delete_user_wrong_password(client: AsyncClient, test_user):
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     response = await client.delete(
-        f"/auth/users/{test_user['username']}",
+        "/auth/users/delete-account",
         params={"password": "WrongPassword123!"},
         headers=headers
     )
@@ -69,7 +69,7 @@ async def test_delete_user_wrong_password(client: AsyncClient, test_user):
 async def test_logout_invalid_token(client: AsyncClient):
     # Create an expired token
     expired_token = create_access_token(
-        data={"sub": "testuser", "exp": datetime.now(timezone.utc) - timedelta(hours=1)},
+        data={"sub": "test@example.com", "exp": datetime.now(timezone.utc) - timedelta(hours=1)},
         expires_delta=timedelta(minutes=-60)  # Negative delta for expired token
     )
     
@@ -97,13 +97,13 @@ async def test_get_current_user_profile_invalid_token(client: AsyncClient):
 
 # Test get current user profile with admin user checking another user
 @patch("app.routers.auth_router.verify_jwt_token")
-@patch("app.routers.auth_router.get_user_by_username")
+@patch("app.routers.auth_router.get_user_by_email")
 async def test_get_current_user_profile_admin_access(
     mock_get_user, mock_verify_token, client: AsyncClient, test_user
 ):
     # Mock JWT verification to return admin payload
     mock_verify_token.return_value = {
-        "sub": "admin_user",
+        "sub": "admin@example.com",
         "id": 999,
         "is_admin": True
     }
@@ -111,20 +111,18 @@ async def test_get_current_user_profile_admin_access(
     # Mock the user retrieval functions
     admin_user = MagicMock()
     admin_user.id = 999
-    admin_user.username = "admin_user"
     admin_user.email = "admin@example.com"
     admin_user.is_admin = True
     
     target_user = MagicMock()
     target_user.id = 123
-    target_user.username = "target_user"
     target_user.email = "target@example.com"
     
-    # Setup side effects for get_user_by_username calls
-    def get_user_side_effect(db, username):
-        if username == "admin_user":
+    # Setup side effects for get_user_by_email calls
+    def get_user_side_effect(db, email):
+        if email == "admin@example.com":
             return admin_user
-        elif username == "123":
+        elif email == "target@example.com":
             return target_user
         else:
             raise UserNotFoundError("User not found")
@@ -138,7 +136,7 @@ async def test_get_current_user_profile_admin_access(
     # Verify expected behavior
     assert response.status_code == 200, "Admin should be able to view other profiles"
     data = response.json()
-    assert data["username"] == "target_user", "Should return the target user's username"
+    assert data["email"] == "target@example.com", "Should return the target user's email"
 
 # Test get email by user ID
 async def test_get_email_by_user_id(client: AsyncClient, test_user):

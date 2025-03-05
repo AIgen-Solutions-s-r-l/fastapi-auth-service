@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 pytestmark = pytest.mark.asyncio
 
 # Target lines 47-65: Login function failure paths
-@patch("app.routers.auth_router.authenticate_user_by_username_or_email")
+@patch("app.routers.auth_router.authenticate_user")
 @patch("app.routers.auth_router.logger")
 async def test_login_with_none_user(mock_logger, mock_auth):
     from app.routers.auth_router import login
@@ -30,7 +30,7 @@ async def test_login_with_none_user(mock_logger, mock_auth):
     mock_logger.warning.assert_called_once()
 
 # Target lines 152-153: Get user details with None user
-@patch("app.routers.auth_router.get_user_by_username")
+@patch("app.routers.auth_router.get_user_by_email")
 @patch("app.routers.auth_router.logger")
 async def test_get_user_details_none_user(mock_logger, mock_get_user):
     from app.routers.auth_router import get_user_details
@@ -44,7 +44,7 @@ async def test_get_user_details_none_user(mock_logger, mock_get_user):
     
     # This should raise exception for null user
     with pytest.raises(Exception):
-        await get_user_details("nonexistent_user", db)
+        await get_user_details("nonexistent@example.com", db)
     
     # Verify logger was called for error
     mock_logger.error.assert_called_once()
@@ -59,7 +59,7 @@ async def test_change_email_unauthorized(mock_logger, mock_service, mock_verify)
     
     # Mock JWT verification to return non-admin payload for a different user
     mock_verify.return_value = {
-        "sub": "different_user",
+        "sub": "different@example.com",
         "id": 123,
         "is_admin": False
     }
@@ -71,9 +71,9 @@ async def test_change_email_unauthorized(mock_logger, mock_service, mock_verify)
     # Create test data
     email_change = EmailChange(current_password="password", new_email="new@example.com")
     
-    # Call function with a username that doesn't match the token
+    # Call function with email change request
     with pytest.raises(Exception):
-        await change_email("testuser", email_change, db, token)
+        await change_email(email_change, db, token)
     
     # Verify logger was called
     mock_logger.error.assert_called_once()
@@ -98,12 +98,12 @@ async def test_change_password_errors(mock_logger, mock_update):
     
     # Call function with error
     with pytest.raises(Exception):
-        await change_password("testuser", passwords, db, token)
+        await change_password(passwords, db, token)
     
     # Reset mock for next test
     mock_update.side_effect = InvalidCredentialsError()
     with pytest.raises(Exception):
-        await change_password("testuser", passwords, db, token)
+        await change_password(passwords, db, token)
     
     # Verify logger was called
     assert mock_logger.error.call_count >= 1
@@ -123,22 +123,21 @@ async def test_delete_user_errors(mock_logger, mock_delete):
     
     # Call function with error
     with pytest.raises(Exception):
-        await remove_user("testuser", "password", db, token)
+        await remove_user("password", db, token)
     
     # Reset mock for next test
     mock_delete.side_effect = InvalidCredentialsError()
     with pytest.raises(Exception):
-        await remove_user("testuser", "password", db, token)
+        await remove_user("password", db, token)
     
     # Verify logger was called
     assert mock_logger.error.call_count >= 1
 
 # Target line 490: Get current user profile - admin user requesting another user not found
 @patch("app.routers.auth_router.verify_jwt_token")
-@patch("app.routers.auth_router.get_user_by_username")
 @patch("app.routers.auth_router.get_user_by_email")
 @patch("app.routers.auth_router.logger")
-async def test_get_current_user_profile_admin_user_not_found(mock_logger, mock_get_by_email, mock_get_by_username, mock_verify):
+async def test_get_current_user_profile_admin_user_not_found(mock_logger, mock_get_by_email, mock_verify):
     from app.routers.auth_router import get_current_user_profile
     from app.core.exceptions import UserNotFoundError
     
@@ -153,14 +152,11 @@ async def test_get_current_user_profile_admin_user_not_found(mock_logger, mock_g
     # Setup admin user object
     admin_user = MagicMock()
     admin_user.id = 999
-    admin_user.username = "admin_user"
     admin_user.email = admin_email
+    admin_user.is_admin = True
     
     # Mock get_user_by_email to return admin user when admin email is passed
     mock_get_by_email.side_effect = lambda db, email: admin_user if email == admin_email else None
-    
-    # Mock get_user_by_username to always return None for this test
-    mock_get_by_username.return_value = None
     
     # Create mock DB and token
     db = MagicMock()
