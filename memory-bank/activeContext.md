@@ -13,9 +13,9 @@
   - Simplified token refresh to use email only
 
 ## Next Steps
-1. Update tests to reflect email-only authentication
-2. Update OAuth integration to ensure it works with email-only system
-3. Update documentation to reflect the removal of username field
+1. Update OAuth integration to ensure it works with email-only system
+2. Update documentation to reflect the removal of username field
+3. Review and update email templates
 4. Run full test suite to verify all changes
 
 ## Recent Changes
@@ -24,6 +24,12 @@
 - Updated auth_schemas.py to remove username fields
 - Modified user_service.py to use email as primary identifier
 - Updated auth_router.py endpoints to use email instead of username
+- Updated test suite:
+  - Modified test_auth_router.py for email-only auth
+  - Updated test_auth_router_coverage.py
+  - Updated test_auth_router_extended.py
+  - Updated test_email_login.py
+  - Updated test fixtures in conftest.py
 
 ## Open Questions
 - Do we need to update any email templates that might reference username?

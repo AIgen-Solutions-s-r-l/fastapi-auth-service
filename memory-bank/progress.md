@@ -19,24 +19,18 @@
   - Token refresh
 
 ## Next Actions
-1. Update test suite:
-   - Modify test fixtures to use email-only authentication
-   - Update all test cases that use username
-   - Add new test cases for email-specific functionality
-2. Verify OAuth integration:
+1. Verify OAuth integration:
    - Test Google sign-in flow
    - Ensure OAuth profile linking works with email-only system
-3. Review and update documentation:
+2. Review and update documentation:
    - API documentation
    - Integration guides
    - Email templates
-4. Run comprehensive testing:
-   - Unit tests
+3. Run comprehensive testing:
    - Integration tests
    - Manual verification of all endpoints
 
 ## Pending Tasks
-- [ ] Update test suite
 - [ ] Verify OAuth functionality
 - [ ] Update documentation
 - [ ] Review email templates
@@ -50,3 +44,9 @@
 - [x] Modify auth router endpoints
 - [x] Update user service
 - [x] Update token handling
+- [x] Update test suite:
+  - [x] Updated test_auth_router.py to use email-only auth
+  - [x] Updated test_auth_router_coverage.py to remove username references
+  - [x] Updated test_auth_router_extended.py for email-only system
+  - [x] Updated test_email_login.py to remove username functionality
+  - [x] Updated test fixtures in conftest.py
