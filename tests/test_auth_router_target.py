@@ -14,7 +14,7 @@ async def client(async_client: AsyncClient):
 # Test login with malformed credentials
 async def test_login_malformed(client: AsyncClient):
     response = await client.post("/auth/login", json={
-        "username": "",  # Empty username
+        "email": "",  # Empty email
         "password": "password"
     })
     assert response.status_code in [401, 422], "Should handle malformed credentials"
@@ -28,7 +28,6 @@ async def test_login_bad_json(client: AsyncClient):
 async def test_register_validation(client: AsyncClient):
     # Test with invalid email format
     response = await client.post("/auth/register", json={
-        "username": "newuser",
         "email": "not_an_email",  # Invalid email
         "password": "Password123!"
     })
@@ -36,7 +35,6 @@ async def test_register_validation(client: AsyncClient):
     
     # Test with short password
     response = await client.post("/auth/register", json={
-        "username": "newuser", 
         "email": "valid@example.com",
         "password": "short"  # Too short password
     })
@@ -83,9 +81,9 @@ async def test_change_email_comprehensive(client: AsyncClient, test_user):
 async def test_get_user_details_edges(client: AsyncClient, test_user):
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     
-    # Test with username containing special chars
-    response = await client.get("/auth/users/user%20with%20spaces", headers=headers)
-    assert response.status_code in [404, 422], "Should handle special chars in username"
+    # Test with email containing special chars
+    response = await client.get("/auth/users/by-email/user%20with%20spaces%40example.com", headers=headers)
+    assert response.status_code in [404, 422], "Should handle special chars in email"
 
 # Test get user profile by non-existent ID
 async def test_get_user_profile_nonexistent(client: AsyncClient):
@@ -152,7 +150,7 @@ async def test_multiple_registrations(client: AsyncClient):
         "email": f"different_{uuid.uuid4().hex[:8]}@example.com",
         "password": "TestPassword123!"
     })
-    assert response2.status_code in [400, 409], "Should reject duplicate username"
+    assert response2.status_code in [400, 409], "Should reject registration"
     
     # Try to create another user with same email
     response3 = await client.post("/auth/register", json={
