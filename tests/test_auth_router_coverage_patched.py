@@ -157,30 +157,43 @@ async def test_get_current_user_profile_admin_user_not_found(mock_logger, mock_g
     admin_user.is_admin = True
     
     # Mock get_user_by_email to return admin user when admin email is passed
-    mock_get_by_email.side_effect = lambda db, email: admin_user if email == admin_email else None
+    async def get_user_side_effect(db, email):
+        return admin_user if email == admin_email else None
+    mock_get_by_email.side_effect = get_user_side_effect
     
-    # Create mock DB that returns None for execute
-    db = MagicMock()
-    mock_result = MagicMock()
+    # Create mock DB session
+    db = AsyncMock()
+    
+    # Create a properly configured mock result
+    mock_result = MagicMock()  # Use MagicMock instead of AsyncMock for synchronous returns
     mock_result.scalar_one_or_none.return_value = None
-    db.execute = AsyncMock(return_value=mock_result)
+    mock_result.scalars.return_value = mock_result
+
+    # Set up the execute method to return our mock result
+    async def mock_execute(*args, **kwargs):
+        # Log before returning None to match the router's behavior
+        mock_logger.error.assert_not_called()  # Verify no error logged yet
+        return mock_result
+
+    db.execute = AsyncMock(side_effect=mock_execute)
     
     token = "valid.token.here"
     
-    # Call function with non-existent user ID
-    with pytest.raises(HTTPException) as exc_info:
+    # Call function with non-existent user ID and verify error logging
+    try:
         await get_current_user_profile(456, token, db)
-    
-    # Verify exception is 404 Not Found
-    assert exc_info.value.status_code == 404
-    
-    # Verify logger was called with correct event type
-    mock_logger.error.assert_called_once_with(
-        "Admin lookup failed - user not found",
-        event_type="profile_retrieval_error",
-        user_id=456,
-        admin_email=admin_email
-    )
+        pytest.fail("Expected HTTPException was not raised")
+    except HTTPException as exc:
+        # Verify exception is 404 Not Found
+        assert exc.status_code == 404
+        
+        # Verify logger was called with correct event type
+        mock_logger.error.assert_called_once_with(
+            "Admin lookup failed - user not found",
+            event_type="profile_retrieval_error",
+            user_id=456,
+            admin_email=admin_email
+        )
 
 # Target lines 811-858: Get user email by ID
 @patch("app.log.logging.logger")  # Patch the directly imported module

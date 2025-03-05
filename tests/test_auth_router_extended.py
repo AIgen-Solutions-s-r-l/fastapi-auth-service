@@ -1,14 +1,20 @@
 import uuid
 import pytest
-from unittest.mock import patch, MagicMock
+import sqlalchemy
+from contextlib import asynccontextmanager
+from unittest.mock import patch, MagicMock, AsyncMock
 from httpx import AsyncClient
 from jose import jwt, JWTError
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import HTTPException
+from sqlalchemy.sql import select
 
 from app.core.exceptions import UserNotFoundError, InvalidCredentialsError
 from app.core.security import create_access_token
 from app.models.user import User
+from app.core.database import get_db
+from app.main import app
 
 pytestmark = pytest.mark.asyncio
 
@@ -98,9 +104,20 @@ async def test_get_current_user_profile_invalid_token(client: AsyncClient):
 # Test get current user profile with admin user checking another user
 @patch("app.routers.auth_router.verify_jwt_token")
 @patch("app.routers.auth_router.get_user_by_email")
+@patch("app.routers.auth_router.get_db")
 async def test_get_current_user_profile_admin_access(
-    mock_get_user, mock_verify_token, client: AsyncClient, test_user
+    mock_get_db, mock_get_user, mock_verify_token, client: AsyncClient, test_user
 ):
+    # Create admin token
+    admin_token = create_access_token(
+        data={
+            "sub": "admin@example.com",
+            "id": 999,
+            "is_admin": True,
+            "exp": datetime.now(timezone.utc).timestamp() + 3600
+        }
+    )
+    
     # Mock JWT verification to return admin payload
     mock_verify_token.return_value = {
         "sub": "admin@example.com",
@@ -117,20 +134,113 @@ async def test_get_current_user_profile_admin_access(
     target_user = MagicMock()
     target_user.id = 123
     target_user.email = "target@example.com"
+    target_user.is_verified = True
+    
+    # Setup mock database session
+    mock_db_session = AsyncMock()
+    
+    # Create mock results for different queries
+    admin_result = MagicMock()
+    admin_result.scalar_one_or_none.return_value = admin_user
+    admin_result.scalars = MagicMock(return_value=admin_result)
+    
+    target_result = MagicMock()
+    target_result.scalar_one_or_none.return_value = target_user
+    target_result.scalars = MagicMock(return_value=target_result)
+    
+    # Setup the database session with async context manager
+    async def mock_execute(query, **kwargs):
+        print("\nDEBUG: Database query execution")
+        print(f"Query type: {type(query)}")
+        print(f"Query: {query}")
+        print(f"Kwargs: {kwargs}")
+        
+        # For debugging
+        if hasattr(query, 'compile'):
+            dialect = query.compile().dialect
+            print(f"Compiled SQL: {str(query.compile(dialect=dialect))}")
+        
+        # Match the query for user lookup
+        if isinstance(query, sqlalchemy.sql.Select):
+            print("Found SELECT query")
+            if hasattr(query, 'froms') and any('users' in str(t) for t in query.froms):
+                print("Found users table in query")
+                if query._where_criteria:
+                    print(f"Where criteria: {query._where_criteria}")
+                    # Look for user ID in where clause
+                    for criterion in query._where_criteria:
+                        if 'users.id' in str(criterion):
+                            print("Found user ID criterion")
+                            # Extract the user ID from bind parameters
+                            if 'id_1' in kwargs.get('parameters', {}):
+                                user_id = kwargs['parameters']['id_1']
+                                print(f"Found user_id: {user_id}")
+                                if user_id == target_user.id:
+                                    print("Returning target user result")
+                                    return target_result
+                                elif user_id == admin_user.id:
+                                    print("Returning admin user result")
+                                    return admin_result
+        
+        print("No match found, returning empty result")
+        empty_result = MagicMock()
+        empty_result.scalar_one_or_none.return_value = None
+        empty_result.scalars = MagicMock(return_value=empty_result)
+        return empty_result
+
+    # Attach the execute mock to the session
+    mock_db_session.execute = AsyncMock(side_effect=mock_execute)
+    
+    # Create an async context manager for the database session
+    @asynccontextmanager
+    async def mock_db_context():
+        try:
+            print("\nDEBUG: Entering mock DB context")
+            yield mock_db_session
+        finally:
+            print("DEBUG: Exiting mock DB context")
+    
+    try:
+        # Override the database dependency at the app level
+        async def override_get_db():
+            print("\nDEBUG: get_db dependency called")
+            async with mock_db_context() as session:
+                print("DEBUG: yielding database session")
+                yield session
+
+        # Store original dependency and override
+        original_get_db = app.dependency_overrides.get(get_db)
+        app.dependency_overrides[get_db] = override_get_db
+        
+        # Make the request as admin viewing another user's profile
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        response = await client.get("/auth/me?user_id=123", headers=headers)
+        
+        # Verify expected behavior
+        assert response.status_code == 200, "Admin should be able to view other profiles"
+        data = response.json()
+        assert data["email"] == "target@example.com", "Should return the target user's email"
+        
+    finally:
+        # Restore original dependency
+        if original_get_db is not None:
+            app.dependency_overrides[get_db] = original_get_db
+        else:
+            del app.dependency_overrides[get_db]
     
     # Setup side effects for get_user_by_email calls
-    def get_user_side_effect(db, email):
+    async def get_user_side_effect(db, email):
         if email == "admin@example.com":
             return admin_user
         elif email == "target@example.com":
             return target_user
         else:
             raise UserNotFoundError("User not found")
-    
+
     mock_get_user.side_effect = get_user_side_effect
     
     # Make the request as admin viewing another user's profile
-    headers = {"Authorization": f"Bearer {test_user['token']}"}
+    headers = {"Authorization": f"Bearer {admin_token}"}
     response = await client.get("/auth/me?user_id=123", headers=headers)
     
     # Verify expected behavior
