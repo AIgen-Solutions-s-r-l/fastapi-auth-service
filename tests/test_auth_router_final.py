@@ -26,7 +26,7 @@ async def test_login_exception_handling(mock_auth, client: AsyncClient):
     mock_auth.side_effect = Exception("Database connection error")
     
     response = await client.post("/auth/login", json={
-        "username": "testuser",
+        "email": "testuser@example.com",
         "password": "password"
     })
     assert response.status_code == 401, "Should handle general exceptions and return 401"
@@ -35,10 +35,9 @@ async def test_login_exception_handling(mock_auth, client: AsyncClient):
 @patch("app.routers.auth_router.create_user")
 async def test_register_user_already_exists(mock_create_user, client: AsyncClient):
     # Mock create_user to raise UserAlreadyExistsError
-    mock_create_user.side_effect = UserAlreadyExistsError("Username already exists")
+    mock_create_user.side_effect = UserAlreadyExistsError("Email already exists")
     
     response = await client.post("/auth/register", json={
-        "username": "existing_user",
         "email": "existing@example.com",
         "password": "Password123!"
     })
@@ -88,12 +87,12 @@ async def test_get_email_by_user_id_exception(mock_execute, client: AsyncClient)
 
 # Test refresh_token function (lines 406-430)
 @patch("app.routers.auth_router.verify_jwt_token")
-@patch("app.routers.auth_router.get_user_by_username")
+@patch("app.routers.auth_router.get_user_by_email")
 async def test_refresh_token_user_not_found(mock_get_user, mock_verify_token, client: AsyncClient):
     # Mock verify_jwt_token to return a valid payload
-    mock_verify_token.return_value = {"sub": "testuser", "id": 123}
+    mock_verify_token.return_value = {"sub": "testuser@example.com", "id": 123}
     
-    # Mock get_user_by_username to return None (user not found)
+    # Mock get_user_by_email to return None (user not found)
     mock_get_user.return_value = None
     
     response = await client.post("/auth/refresh", json={"token": "valid.looking.token"})
@@ -105,30 +104,29 @@ async def test_refresh_token_user_not_found(mock_get_user, mock_verify_token, cl
 
 # Test get_current_user_profile function (lines 479, 484, 490)
 @patch("app.routers.auth_router.verify_jwt_token")
-@patch("app.routers.auth_router.get_user_by_username")
+@patch("app.routers.auth_router.get_user_by_email")
 async def test_get_current_user_profile_user_not_found(mock_get_user, mock_verify_token, client: AsyncClient):
     # Mock verify_jwt_token to return a valid payload
-    mock_verify_token.return_value = {"sub": "testuser", "id": 123}
+    mock_verify_token.return_value = {"sub": "testuser@example.com", "id": 123}
     
-    # Mock get_user_by_username to return None (user not found)
+    # Mock get_user_by_email to return None (user not found)
     mock_get_user.return_value = None
     
     response = await client.get("/auth/me", headers={"Authorization": "Bearer valid.looking.token"})
     assert response.status_code == 404, "Should return 404 when user no longer exists"
 
 @patch("app.routers.auth_router.verify_jwt_token")
-@patch("app.routers.auth_router.get_user_by_username")
+@patch("app.routers.auth_router.get_user_by_email")
 async def test_get_current_user_profile_non_admin_access_other(mock_get_user, mock_verify_token, client: AsyncClient):
     # Mock verify_jwt_token to return a non-admin payload
-    mock_verify_token.return_value = {"sub": "regularuser", "id": 123, "is_admin": False}
+    mock_verify_token.return_value = {"sub": "regular@example.com", "id": 123, "is_admin": False}
     
     # Create a mock user
     mock_user = MagicMock()
     mock_user.id = 123
-    mock_user.username = "regularuser"
     mock_user.email = "regular@example.com"
     
-    # Mock get_user_by_username to return the user
+    # Mock get_user_by_email to return the user
     mock_get_user.return_value = mock_user
     
     response = await client.get("/auth/me?user_id=456", headers={"Authorization": "Bearer valid.looking.token"})
@@ -151,14 +149,14 @@ async def test_change_email_server_error(mock_user_service, client: AsyncClient,
     # Mock the JWT verification to pass auth checks
     with patch("app.routers.auth_router.verify_jwt_token") as mock_verify:
         mock_verify.return_value = {
-            "sub": test_user["username"],
+            "sub": test_user["email"],
             "id": 1,
             "is_admin": False
         }
         
         headers = {"Authorization": f"Bearer {test_user['token']}"}
         response = await client.put(
-            f"/auth/users/{test_user['username']}/email",
+            "/auth/users/change-email",
             json={
                 "new_email": "new@example.com",
                 "current_password": test_user["password"]

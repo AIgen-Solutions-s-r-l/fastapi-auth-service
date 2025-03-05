@@ -125,9 +125,8 @@ async def test_remove_user_empty_password(client: AsyncClient, test_user):
 
 # Test creating multiple users to check registration edge cases
 async def test_multiple_registrations(client: AsyncClient):
-    # Create first user
-    username1 = f"multi_user1_{uuid.uuid4().hex[:8]}"
-    email1 = f"{username1}@example.com"
+    # Create first user with random email
+    email1 = f"test_{uuid.uuid4().hex[:8]}@example.com"
     password1 = "TestPassword123!"
     
     response1 = await client.post("/auth/register", json={
@@ -145,19 +144,12 @@ async def test_multiple_registrations(client: AsyncClient):
     login_data = login_response.json()
     token1 = login_data.get("access_token")
     
-    # Try to create another user with same username
-    response2 = await client.post("/auth/register", json={
-        "email": f"different_{uuid.uuid4().hex[:8]}@example.com",
-        "password": "TestPassword123!"
-    })
-    assert response2.status_code in [400, 409], "Should reject registration"
-    
     # Try to create another user with same email
-    response3 = await client.post("/auth/register", json={
+    response2 = await client.post("/auth/register", json={
         "email": email1,  # Same email
         "password": "TestPassword123!"
     })
-    assert response3.status_code in [400, 409], "Should reject duplicate email"
+    assert response2.status_code in [400, 409], "Should reject duplicate email"
     
     # Cleanup
     headers = {"Authorization": f"Bearer {token1}"}
