@@ -403,13 +403,81 @@ async def change_email(
                 detail="User not found"
             )
 
+        # Verify current password first
+        try:
+            if not verify_password(email_change.current_password, str(token_user.hashed_password)):
+                logger.error(
+                    "Invalid password for email change",
+                    event_type="email_change_error",
+                    email=token_subject,
+                    error_type="invalid_password"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid password"
+                )
+        except (TypeError, AttributeError) as e:
+            logger.error(
+                "Password verification error",
+                event_type="email_change_error",
+                email=token_subject,
+                error_type=type(e).__name__,
+                error_details=str(e)
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid password format"
+            )
+
+        # Only allow users to change their own email
+        if token_user.email != token_subject:
+            logger.error(
+                "Unauthorized email change attempt",
+                event_type="email_change_error",
+                email=token_subject,
+                attempted_email=token_user.email,
+                error_type="unauthorized"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authorized to change this email"
+            )
+
+        # Check if new email already exists
+        existing_user = await user_service.get_user_by_email(str(email_change.new_email))
+        if existing_user:
+            logger.error(
+                "Email already registered",
+                event_type="email_change_error",
+                email=token_subject,
+                new_email=str(email_change.new_email),
+                error_type="email_exists"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+
         # Update email through service
-        user_service = UserService(db)
-        updated_user = await user_service.update_user_email(
-            token_subject,
-            email_change.current_password,
-            str(email_change.new_email)
-        )
+        try:
+            updated_user = await user_service.update_user_email(
+                token_subject,
+                email_change.current_password,
+                str(email_change.new_email)
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to update email",
+                event_type="email_change_error",
+                email=token_subject,
+                new_email=str(email_change.new_email),
+                error_type=type(e).__name__,
+                error_details=str(e)
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update email"
+            )
 
         # Send verification email for new email address
         verification_sent = await user_service.send_verification_email(updated_user, background_tasks)
@@ -450,7 +518,6 @@ async def change_email(
         logger.error(
             "Email change failed - invalid token",
             event_type="email_change_error",
-            email=token_subject,
             error_type="JWTError",
             error_details=str(e)
         )
@@ -823,9 +890,24 @@ async def get_current_user_profile(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Not authorized to view other users' profiles"
                 )
-            user = await get_user_by_email(db, str(user_id))
-            if not user:
-                raise UserNotFoundError("Requested user not found")
+            # Get user by ID for admin lookup
+            result = await db.execute(select(User).where(User.id == user_id))
+            target_user = result.scalar_one_or_none()
+            
+            if not target_user:
+                logger.error(
+                    "Admin lookup failed - user not found",
+                    event_type="profile_retrieval_error",
+                    user_id=user_id,
+                    admin_email=user.email
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"User with ID {user_id} not found"
+                )
+            
+            # Update user reference to target user for response
+            user = target_user
         
         logger.info("User profile retrieved", event_type="profile_retrieved", email=user.email)
         

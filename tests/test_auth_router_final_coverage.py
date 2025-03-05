@@ -104,26 +104,24 @@ async def test_change_email_complete_mock(mock_verify, mock_service, mock_token,
     # Mock token creation
     mock_token.return_value = "mocked_access_token"
     
-    # Create a class to simulate a User object with proper string attributes
-    class MockUser:
-        def __init__(self):
-            self.email = "test@example.com"
-            self.id = 123
-            self.is_admin = False
-            
-        def __str__(self):
-            return f"User(email={self.email})"
-    
-    # Create the mock user
-    mock_user = MockUser()
+    # Create mock users for before and after email change
+    original_user = MagicMock()
+    original_user.email = "test@example.com"
+    original_user.id = 123
+    original_user.is_admin = False
+
+    updated_user = MagicMock()
+    updated_user.email = "updated@example.com"
+    updated_user.id = 123
+    updated_user.is_admin = False
     
     # Create a mock service instance with AsyncMock for all async methods
     mock_instance = MagicMock()
     mock_service.return_value = mock_instance
     
     # Mock all async methods used in the endpoint
-    mock_instance.get_user_by_email = AsyncMock(return_value=mock_user)
-    mock_instance.update_user_email = AsyncMock(return_value=mock_user)
+    mock_instance.get_user_by_email = AsyncMock(return_value=original_user)
+    mock_instance.update_user_email = AsyncMock(return_value=updated_user)
     mock_instance.send_verification_email = AsyncMock(return_value=True)
     
     # Test the endpoint

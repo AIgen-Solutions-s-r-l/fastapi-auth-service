@@ -13,10 +13,11 @@
   - Simplified token refresh to use email only
 
 ## Next Steps
-1. Update OAuth integration to ensure it works with email-only system
-2. Update documentation to reflect the removal of username field
-3. Review and update email templates
-4. Run full test suite to verify all changes
+1. **Fix app/core/auth.py**: Remove username fallback code in get_current_user function
+2. Update OAuth integration to ensure it works with email-only system
+3. Update documentation to reflect the removal of username field
+4. Review and update email templates
+5. Run full test suite to verify all changes
 
 ## Recent Changes
 - Created and applied migration e66712ccad45_remove_username_field.py
@@ -40,6 +41,7 @@
   - Updated test_auth_router_extended.py
   - Updated test_email_login.py
   - Updated test fixtures in conftest.py
+- **Created email_only_authentication_plan.md** to document remaining changes
 
 ## Open Questions
 - Do we need to update any email templates that might reference username?
@@ -59,5 +61,13 @@
 - [x] Auth router endpoints updated
 - [x] Tests updated
 - [x] OAuth integration verified
+- [ ] **app/core/auth.py updated**
 - [ ] Documentation updated
 - [x] Email templates checked and updated
+
+## Newly Identified Issues
+1. The `app/core/auth.py` file still has references to username:
+   - Line 29: Comment mentions username in the 'sub' claim
+   - Line 60-61: Attempts to find user by username as fallback
+
+2. There's a reference to a method `get_user_by_username()` in UserService that doesn't exist in the actual implementation
