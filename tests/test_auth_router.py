@@ -197,3 +197,48 @@ async def test_change_email_invalid_format(client: AsyncClient, test_user):
         headers=headers
     )
     assert response.status_code == 422, "Should reject invalid email format"
+
+async def test_verify_email_success(client: AsyncClient, test_user):
+    """Test successful email verification."""
+    # Get verification token from test_user fixture
+    token = "test_verification_token"  # This should be a valid token from your test setup
+    
+    response = await client.get(f"/auth/verify-email?token={token}")
+    assert response.status_code == 200, f"Email verification failed with status {response.status_code}"
+    
+    data = response.json()
+    assert "message" in data, "Response missing message field"
+    assert "email verified successfully" in data["message"].lower(), "Unexpected verification message"
+    assert data["is_verified"] is True, "User not marked as verified"
+    assert "access_token" in data, "Response missing access token"
+
+async def test_verify_email_invalid_token(client: AsyncClient):
+    """Test email verification with invalid token."""
+    response = await client.get("/auth/verify-email?token=invalid_token")
+    assert response.status_code == 400, "Should reject invalid token"
+    
+    data = response.json()
+    assert "detail" in data, "Response missing error detail"
+    assert "invalid" in data["detail"].lower(), "Unexpected error message"
+
+async def test_verify_email_expired_token(client: AsyncClient):
+    """Test email verification with expired token."""
+    # Use a known expired token from your test setup
+    expired_token = "expired_verification_token"
+    
+    response = await client.get(f"/auth/verify-email?token={expired_token}")
+    assert response.status_code == 400, "Should reject expired token"
+    
+    data = response.json()
+    assert "detail" in data, "Response missing error detail"
+    assert "expired" in data["detail"].lower(), "Unexpected error message"
+    headers = {"Authorization": f"Bearer {test_user['token']}"}
+    response = await client.put(
+        "/auth/users/change-email",
+        json={
+            "new_email": "invalid-email-format",
+            "current_password": test_user["password"]
+        },
+        headers=headers
+    )
+    assert response.status_code == 422, "Should reject invalid email format"

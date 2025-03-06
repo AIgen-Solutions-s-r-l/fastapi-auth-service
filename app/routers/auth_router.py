@@ -142,7 +142,7 @@ async def register_user(
         ) from e
 
 
-@router.post(
+@router.get(
     "/verify-email",
     response_model=Dict[str, Any],
     responses={
@@ -151,7 +151,7 @@ async def register_user(
     }
 )
 async def verify_email(
-    verification: VerifyEmail,
+    token: str,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ) -> Dict[str, Any]:
@@ -217,7 +217,7 @@ async def verify_email(
         logger.error(
             "Email verification failed",
             event_type="email_verification_error",
-            token=verification.token,
+            token=token,
             error=str(http_ex.detail)
         )
         raise http_ex
@@ -226,7 +226,7 @@ async def verify_email(
         logger.error(
             "Email verification error",
             event_type="email_verification_error",
-            token=verification.token,
+            token=token,
             error_type=type(e).__name__,
             error_details=str(e)
         )
