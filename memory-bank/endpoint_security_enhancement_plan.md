@@ -1,186 +1,116 @@
 # Endpoint Security Enhancement Plan
 
-## Current Security Issues
+## Background
 
-Based on the analysis of the auth_service codebase, we've identified several security vulnerabilities:
+Two endpoints in the Authentication Service were identified as requiring additional security measures:
 
-1. **Endpoints Accessible to Unverified Users**: Multiple endpoints that should only be available to verified users are currently accessible to anyone with a JWT token, regardless of verification status.
+1. `/auth/users/{user_id}/email`
+2. `/auth/users/by-email/{email}`
 
-2. **Internal Service Routes Exposed Externally**: Credit and Stripe routes, which should only be used by other microservices, are currently exposed externally without proper service-to-service authentication.
+These endpoints expose sensitive user information and should only be accessible to internal services, not to end users or external systems.
 
-3. **Missing Authentication Mechanism**: No dedicated authentication mechanism exists for service-to-service communication, making it difficult to secure microservice interactions.
+## Current State Assessment
 
-## Authentication Levels
+### Endpoint 1: `/auth/users/{user_id}/email`
+- **Purpose**: Retrieves a user's email address by their user ID
+- **Current Security**: None (publicly accessible)
+- **Implementation**: Lines 971-1019 in auth_router.py
+- **Current Usage**: Used by internal services to fetch user email information
 
-We need to establish clear authentication levels for all endpoints:
+### Endpoint 2: `/auth/users/by-email/{email}`
+- **Purpose**: Retrieves user details when given an email address
+- **Current Security**: None (publicly accessible)
+- **Implementation**: Lines 378-407 in auth_router.py
+- **Current Usage**: Used by internal services to validate users and retrieve their status
 
-1. **Public Endpoints**: 
-   - No authentication required
-   - Examples: Login, Register, Password Reset Request
+## Security Risk Analysis
 
-2. **JWT-Authenticated Endpoints**: 
-   - Requires a valid JWT token
-   - Used for unverified users who have authenticated
-   - Examples: Verify Email, Resend Verification
+The current implementation poses several security risks:
 
-3. **Verified User Endpoints**: 
-   - Requires a valid JWT token AND verified user status
-   - Used for actions that should only be available to verified users
-   - Examples: Change Password, Delete Account, Get User Profile
+1. **Data Exposure**: Unauthorized parties could enumerate user emails
+2. **Privacy Concerns**: User email addresses can be accessed without proper authorization
+3. **Compliance Issues**: May not meet data protection regulations (GDPR, etc.)
+4. **Potential for Abuse**: Could be used to harvest email addresses for spam or phishing
 
-4. **Internal Service Endpoints**: 
-   - Only accessible to other microservices via API key
-   - Not exposed externally
-   - Examples: Credit Operations, Stripe Integrations
+## Desired State
+
+Both endpoints should be secured as internal-only, requiring proper service-to-service authentication:
+
+1. **Access Control**: Only other microservices with the correct internal API key can access these endpoints
+2. **Authentication**: Using the existing `get_internal_service` dependency
+3. **Logging**: Enhanced logging for security audit and monitoring
+4. **Documentation**: Clear documentation indicating these are internal-only endpoints
 
 ## Implementation Plan
 
-### 1. Service-to-Service Authentication
+### Phase 1: Code Changes
 
-Create a new authentication dependency for internal service communication:
+1. **Modify Endpoint Signatures**:
+   - Add the `get_internal_service` dependency to both endpoints
+   - Update function parameters to include `service_id`
 
-```python
-async def get_internal_service(
-    api_key: str = Header(..., description="API key for service-to-service communication"),
-    db: AsyncSession = Depends(get_db)
-) -> str:
-    """
-    Authenticate internal service based on API key.
-    
-    Returns the service name if valid, raises exception if invalid.
-    """
-    if api_key != settings.INTERNAL_API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid API key for internal service access"
-        )
-    
-    # Could also implement service-specific keys and permissions
-    return "internal_service"
-```
+2. **Update OpenAPI Documentation**:
+   - Add 403 response code to response documentation
+   - Update endpoint descriptions to indicate internal-only status
 
-Update `app/core/config.py` to include the API key configuration:
+3. **Enhance Logging**:
+   - Update log messages to include service identification
+   - Use consistent event types for internal endpoint access
 
-```python
-# Service-to-service authentication
-INTERNAL_API_KEY: str = os.getenv("INTERNAL_API_KEY", "")
-```
+### Phase 2: Testing
 
-### 2. Endpoint Classification and Updates
+1. **Unit Tests**:
+   - Test both endpoints with and without valid API keys
+   - Verify correct status codes (403 for unauthorized, 200 for authorized)
 
-#### Auth Router Endpoints
+2. **Integration Tests**:
+   - Test impact on other services that consume these endpoints
+   - Ensure they're updated to include the API key
 
-| Endpoint | Current Auth | Required Auth | Action |
-|----------|--------------|--------------|--------|
-| `/auth/login` | None | None (Public) | No change |
-| `/auth/register` | None | None (Public) | No change |
-| `/auth/verify-email` | None | None (Public) | No change (needed for email verification) |
-| `/auth/resend-verification` | None | None (Public) | No change (needed for users who didn't receive email) |
-| `/auth/users/by-email/{email}` | None | `get_current_active_user` | Add verification requirement |
-| `/auth/users/change-email` | `oauth2_scheme` | `get_current_active_user` | Update to verified-only |
-| `/auth/users/change-password` | `oauth2_scheme` | `get_current_active_user` | Update to verified-only |
-| `/auth/users/delete-account` | `oauth2_scheme` | `get_current_active_user` | Update to verified-only |
-| `/auth/logout` | `oauth2_scheme` | `get_current_user` | No change (can be used by unverified) |
-| `/auth/password-reset-request` | None | None (Public) | No change |
-| `/auth/reset-password` | None | None (Public) | No change |
-| `/auth/refresh` | None | None (Public) | No change |
-| `/auth/me` | `oauth2_scheme` | `get_current_user` | No change (can be used by unverified) |
-| `/auth/users/{user_id}/email` | None | `get_internal_service` | Make internal-only |
-| `/auth/test-email` | None | `get_internal_service` | Make internal-only |
-| `/auth/verify-email-templates` | None | `get_internal_service` | Make internal-only |
-| `/auth/oauth/google/login` | None | None (Public) | No change |
-| `/auth/oauth/google/callback` | None | None (Public) | No change |
-| `/auth/link/google` | `get_current_user` | `get_current_active_user` | Update to verified-only |
-| `/auth/unlink/google` | `get_current_user` | `get_current_active_user` | Update to verified-only |
+### Phase 3: Documentation & Communication
 
-#### Credit Router Endpoints
+1. **Update API Documentation**:
+   - Document the internal-only status of these endpoints
+   - Provide examples of proper usage with API key
 
-All endpoints in the credit router should be internal-only, as these should only be accessed by other services, not directly by users:
+2. **Developer Communication**:
+   - Inform other teams about the security changes
+   - Provide migration path for any consumers of these endpoints
 
-| Endpoint | Current Auth | Required Auth | Action |
-|----------|--------------|--------------|--------|
-| `/credits/balance` | `get_current_active_user` | `get_internal_service` | Make internal-only |
-| `/credits/use` | `get_current_active_user` | `get_internal_service` | Make internal-only |
-| `/credits/add` | `get_current_active_user` | `get_internal_service` | Make internal-only |
-| `/credits/transactions` | `get_current_active_user` | `get_internal_service` | Make internal-only |
-| `/credits/stripe/add` | `get_current_active_user` | `get_internal_service` | Make internal-only |
+## Timeline
 
-#### Stripe Webhook Endpoints
+1. **Development**: 1 day
+   - Modify code
+   - Add tests
 
-These endpoints should also be internal-only:
+2. **Testing**: 1 day
+   - Verify all tests pass
+   - Manual testing in development environment
 
-| Endpoint | Current Auth | Required Auth | Action |
-|----------|--------------|--------------|--------|
-| `/webhook/stripe` | None | `get_internal_service` | Make internal-only |
+3. **Deployment**: 1 day
+   - Deploy to staging
+   - Verify in staging environment
+   - Deploy to production
 
-### 3. Implementation Steps
+## Success Criteria
 
-1. Create a new authentication dependency in `app/core/auth.py` for service-to-service authentication:
-   - Implement `get_internal_service()` function
-   - Update config to include API key settings
+1. **Security**: Both endpoints reject requests without valid API key
+2. **Functionality**: Both endpoints work correctly with valid API key
+3. **Logging**: All access attempts are properly logged
+4. **Documentation**: API documentation clearly indicates internal-only status
 
-2. Update Auth Router endpoints:
-   - Apply `get_current_active_user` to endpoints that should require verification
-   - Apply `get_internal_service` to endpoints that should be internal-only
+## Rollback Plan
 
-3. Update Credit Router:
-   - Modify all endpoints to use `get_internal_service` instead of `get_current_active_user`
-   - Update route documentation to reflect internal usage
+If issues arise during deployment:
 
-4. Update Stripe Webhook Router:
-   - Add `get_internal_service` dependency to webhook endpoint
-   - Update documentation to reflect internal usage
+1. Revert code changes to previous version
+2. Notify affected teams
+3. Investigate and address issues before retrying
 
-5. Update Tests:
-   - Modify tests to include appropriate API keys for internal endpoints
-   - Update user authentication in tests to handle verification requirements
+## Required Artifacts
 
-### 4. Backward Compatibility Considerations
+The following documents have been created to support this enhancement:
 
-To ensure a smooth transition for other services that depend on these endpoints:
-
-1. Consider a transition period where both authentication methods are accepted:
-   ```python
-   async def get_service_or_user(
-       request: Request,
-       api_key: str = Header(None),
-       current_user: Optional[User] = Depends(get_current_active_user_optional)
-   ):
-       """Allow either service auth or user auth during transition."""
-       if api_key and api_key == settings.INTERNAL_API_KEY:
-           return "internal_service"
-       if current_user:
-           return current_user
-       raise HTTPException(status_code=403, detail="Either API key or user authentication required")
-   ```
-
-2. Add detailed documentation for other teams to understand the new API key requirement.
-
-3. Coordinate deployment with other services to ensure they start sending the API key.
-
-## Monitoring and Enforcement
-
-Add additional monitoring to track unauthorized access attempts:
-
-1. Enhance logging for failed authentication attempts with api_key failures
-2. Create alerts for unusual access patterns
-3. Implement rate limiting for failed authentication attempts
-
-## Example Implementation
-
-Here's an example implementation for an internal service route:
-
-```python
-@router.get("/balance", response_model=CreditBalanceResponse)
-async def get_credit_balance(
-    user_id: int,
-    service: str = Depends(get_internal_service),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Get user's credit balance.
-    
-    This is an internal endpoint for service-to-service communication.
-    """
-    credit_service = CreditService(db)
-    return await credit_service.get_balance(user_id)
+1. [Implementation Plan](endpoint_security_implementation_plan.md) - Detailed implementation steps
+2. [Code Changes](endpoint_security_code_changes.md) - Specific code modifications needed
+3. [Security Documentation](endpoint_security_documentation.md) - Documentation of the security model

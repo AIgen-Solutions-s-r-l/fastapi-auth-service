@@ -1,193 +1,131 @@
-# Endpoint Security Documentation
+# Authentication Service Endpoint Security Documentation
 
-## Security Classification System
+## Security Classifications
 
-The auth_service employs a multi-layered security approach to protect endpoints based on their requirements:
+The Authentication Service endpoints follow a classification system to determine access requirements:
 
-1. **Public Endpoints**: Open access to anyone, no authentication required
-2. **Authenticated Endpoints**: Require valid JWT token (authentication)
-3. **Verified User Endpoints**: Require valid JWT token AND email verification
-4. **Internal Service Endpoints**: Require API key authentication, not accessible externally
+### 1. Public Endpoints
 
-## Security Enforcement Mechanisms
+- **No authentication required**
+- Examples: `/login`, `/register`, `/password-reset-request`
+- Accessible by anyone, including anonymous users
+- Used for initial user interactions that don't require authentication
 
-### Authentication Types
+### 2. User-Authenticated Endpoints
 
-```mermaid
-graph TD
-    A[Request] --> B{Authentication<br>Required?}
-    B -->|No| C[Public Access]
-    B -->|Yes| D{Auth Type?}
-    D -->|JWT Token| E[User Authentication]
-    D -->|API Key| F[Internal Service Authentication]
-    E --> G{Email<br>Verified?}
-    G -->|No| H[Authenticated User]
-    G -->|Yes| I[Verified User]
-    F --> J[Internal Service]
+- **JWT token required** (via Bearer authentication)
+- Examples: `/me`, `/users/change-password`, `/users/change-email`
+- Accessible only by authenticated users
+- Protected by the `get_current_user` dependency
+
+### 3. Internal-Only Endpoints
+
+- **API key required** (via header)
+- Examples: `/users/{user_id}/email`, `/users/by-email/{email}`
+- Accessible only by other microservices using the INTERNAL_API_KEY
+- Protected by the `get_internal_service` dependency
+- Not meant for direct user access
+
+### 4. Hybrid Endpoints (Service or User)
+
+- **Either API key or JWT token required**
+- Protected by the `get_service_or_user` dependency
+- Allows flexible access during transition periods
+
+## Internal Endpoints
+
+Internal endpoints are designed for service-to-service communication only and should never be exposed directly to users or external systems.
+
+### Recently Secured Endpoints
+
+The following endpoints have been secured as internal-only:
+
+1. `GET /auth/users/{user_id}/email`
+   - Purpose: Retrieve a user's email address by user ID
+   - Primary consumers: Other microservices that need to access user email
+
+2. `GET /auth/users/by-email/{email}`
+   - Purpose: Retrieve user details by email address
+   - Primary consumers: Other microservices that need to validate users
+
+### Authentication Mechanism
+
+Internal endpoints use API key authentication:
+
+1. The calling service must include the `api-key` header with the correct INTERNAL_API_KEY value
+2. The `get_internal_service` dependency validates this key
+3. If valid, the endpoint executes; if invalid, a 403 Forbidden response is returned
+
+```python
+# Example of securing an endpoint as internal-only
+@router.get("/some-internal-endpoint")
+async def internal_endpoint(
+    service_id: str = Depends(get_internal_service),
+    # other dependencies...
+):
+    # Endpoint implementation
 ```
 
-### Security Dependencies
+### Security Considerations
 
-- `get_current_user`: Validates JWT token, confirms user exists (authentication only)
-- `get_current_active_user`: Validates JWT token, confirms user exists AND email is verified
-- `get_internal_service`: Validates API key for internal service access
+1. **API Key Management**
+   - The INTERNAL_API_KEY should be rotated periodically
+   - Each environment (dev, staging, prod) should use a different key
+   - Never log or expose the key
 
-## Endpoint Security Classification
+2. **Network Security**
+   - Internal endpoints should be protected at the network level when possible
+   - Consider using a service mesh or API gateway for additional protection
 
-### Public Endpoints (No Auth Required)
+3. **Logging and Monitoring**
+   - All access to internal endpoints is logged with the service identifier
+   - Regular audits should be performed to ensure proper usage
 
-```mermaid
-graph LR
-    A[Public Endpoints] --> B[/auth/login]
-    A --> C[/auth/register]
-    A --> D[/auth/verify-email]
-    A --> E[/auth/resend-verification]
-    A --> F[/auth/password-reset-request]
-    A --> G[/auth/reset-password]
-    A --> H[/auth/users/{user_id}/email]
-    A --> I[/auth/users/by-email/{email}]
-    A --> J[/auth/oauth/google/login]
-    A --> K[/auth/oauth/google/callback]
-    A --> L[/auth/test-email]
-    A --> M[/auth/verify-email-templates]
-```
+## Service-to-Service Authentication Flow
 
-### Authenticated Endpoints (JWT Token Required)
+When one service needs to call an internal endpoint on the Auth Service:
 
-```mermaid
-graph LR
-    A[Authenticated Endpoints] --> B[/auth/refresh]
-```
+1. The calling service includes the INTERNAL_API_KEY in the request header:
+   ```
+   api-key: <INTERNAL_API_KEY value>
+   ```
 
-### Verified User Endpoints (JWT Token + Email Verification Required)
+2. The Auth Service validates the API key via the `get_internal_service` dependency
 
-```mermaid
-graph LR
-    A[Verified User Endpoints] --> B[/auth/me]
-    A --> C[/auth/logout]
-    A --> D[/auth/users/change-password]
-    A --> E[/auth/users/change-email]
-    A --> F[/auth/users/delete-account]
-    A --> G[/auth/link/google]
-    A --> H[/auth/unlink/google]
-```
+3. If valid, the endpoint processes the request and returns the response
+   If invalid, the endpoint returns a 403 Forbidden response
 
-### Internal Service Endpoints (API Key Required)
+## Testing Internal Endpoints
 
-```mermaid
-graph LR
-    A[Internal Service Endpoints] --> B[/credits/balance]
-    A --> C[/credits/add]
-    A --> D[/credits/use]
-    A --> E[/credits/transactions]
-    A --> F[/stripe/webhook]
-    A --> G[/stripe/create-checkout-session]
-    A --> H[/stripe/setup-intent]
-    A --> I[/stripe/payment-methods]
-    A --> J[/stripe/create-subscription]
-```
+When testing internal endpoints:
 
-## Authentication Flow
+1. **Manually (using curl):**
+   ```bash
+   curl -X GET "http://localhost:8000/auth/users/123/email" \
+     -H "api-key: your-internal-api-key"
+   ```
 
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant A as Auth Service
-    participant D as Database
-    
-    C->>A: Request to protected endpoint
-    alt Public Endpoint
-        A->>C: Process request (no auth check)
-    else Internal Service Endpoint
-        A->>A: Check API key from header
-        alt Valid API key
-            A->>C: Process request
-        else Invalid API key
-            A->>C: 401 Unauthorized
-        end
-    else User Endpoint
-        A->>A: Extract JWT from Auth header
-        A->>A: Decode & verify JWT signature
-        A->>D: Fetch user record
-        alt User exists & token valid
-            A->>A: Check if endpoint requires verification
-            alt Verification Required
-                A->>A: Check if user.is_verified == true
-                alt User Verified
-                    A->>C: Process request
-                else User Not Verified
-                    A->>C: 403 Forbidden (Email not verified)
-                end
-            else No Verification Required
-                A->>C: Process request
-            end
-        else Invalid token or user not found
-            A->>C: 401 Unauthorized
-        end
-    end
-```
+2. **Automated Tests:**
+   ```python
+   # Example pytest test for an internal endpoint
+   def test_internal_endpoint_with_valid_api_key(client):
+       headers = {"api-key": settings.INTERNAL_API_KEY}
+       response = client.get("/auth/users/123/email", headers=headers)
+       assert response.status_code == 200
+       
+   def test_internal_endpoint_without_api_key(client):
+       response = client.get("/auth/users/123/email")
+       assert response.status_code == 403
+   ```
 
-## Authorization Implementation Details
+## Security Best Practices
 
-### JWT Authentication Flow
+1. **Always use the correct dependency** for the endpoint's security classification
+2. **Document security requirements** in endpoint docstrings and responses
+3. **Include appropriate error responses** (401, 403) in the OpenAPI documentation
+4. **Use consistent logging** with service identification for audit trails
+5. **Regularly review endpoint security** to ensure proper protection
 
-```mermaid
-flowchart TD
-    A[Request with JWT] --> B[Extract Bearer token from<br>Authorization header]
-    B --> C{Token present?}
-    C -->|No| D[401 Unauthorized]
-    C -->|Yes| E[Decode JWT]
-    E --> F{Token valid?}
-    F -->|No| G[401 Unauthorized]
-    F -->|Yes| H[Extract user_id from payload]
-    H --> I[Query database for user]
-    I --> J{User exists?}
-    J -->|No| K[401 Unauthorized]
-    J -->|Yes| L[Return User model]
-```
+## Conclusion
 
-### Email Verification Check
-
-```mermaid
-flowchart TD
-    A[get_current_active_user] --> B[get_current_user]
-    B --> C[JWT Validation]
-    C --> D[Return User]
-    D --> E{User.is_verified?}
-    E -->|Yes| F[Return Verified User]
-    E -->|No| G[403 Forbidden:<br>Email not verified]
-```
-
-### Internal Service Authentication Flow
-
-```mermaid
-flowchart TD
-    A[Request to internal endpoint] --> B[Extract API key from<br>X-API-Key header]
-    B --> C{API key present?}
-    C -->|No| D[401 Unauthorized]
-    C -->|Yes| E{API key == configured key?}
-    E -->|No| F[401 Unauthorized]
-    E -->|Yes| G[Allow access to<br>internal endpoint]
-```
-
-## Updated Security Implementation
-
-### Endpoint Protection Changes
-
-1. **Modified `/link/google` endpoint**:
-   - Changed dependency from `get_current_user` to `get_current_active_user`
-   - Added 403 error response documentation
-   - Now requires email verification
-
-2. **Modified `/unlink/google` endpoint**:
-   - Changed dependency from `get_current_user` to `get_current_active_user`
-   - Added 403 error response documentation
-   - Now requires email verification
-
-3. **Confirmed Credit Router Protection**:
-   - All endpoints secured with `get_internal_service` dependency
-   - Only accessible through internal service calls with valid API key
-
-4. **Confirmed Stripe Webhook Router Protection**:
-   - All endpoints secured with `get_internal_service` dependency
-   - Only accessible through internal service calls with valid API key
+Proper endpoint security classification ensures that sensitive operations are appropriately protected. By securing internal endpoints with API key authentication, we maintain the principle of least privilege and ensure that only authorized services can access sensitive user information.
