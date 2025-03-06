@@ -1,89 +1,138 @@
-# Auth Service - Product Context
+# Product Context
 
-## Project Overview
+## Authentication Service
 
-**auth_service** is a production-ready FastAPI-based authentication service designed to handle user authentication and management. It uses PostgreSQL for storing user data and provides secure JWT-based authentication with comprehensive logging and monitoring capabilities.
+The Authentication Service is a microservice responsible for user authentication, account management, and credit management for the application ecosystem.
 
-## Project Vision
+## Security Architecture
 
-To provide a robust, secure, and scalable authentication service that can be easily integrated into various applications, offering comprehensive user management, credit system functionality, and email integration.
+### Authentication & Authorization Model
 
-## Key Goals
+The auth_service implements a multi-layered security approach:
 
-1. Provide secure user authentication and management
-2. Implement a reliable credit system for user transactions
-3. Ensure comprehensive logging and monitoring
-4. Support email integration for notifications and password resets
-5. Maintain high performance and scalability
-6. Follow best practices for security and data protection
+1. **Security Classification Levels**:
+   - **Public**: No authentication required
+   - **Authenticated**: Requires valid JWT token
+   - **Verified User**: Requires valid JWT token AND email verification
+   - **Internal Service**: Requires valid API key, not externally accessible
 
-## Technical Constraints
+2. **Security Enforcement Mechanisms**:
+   - **JWT Authentication**: Used for user-facing endpoints
+   - **API Key Authentication**: Used for internal service communication
+   - **Email Verification**: Required for sensitive operations
 
-1. Python 3.11 or higher required
-2. PostgreSQL database dependency
-3. Poetry for dependency management
-4. Environment-based configuration through .env files
+3. **Dependency Injection**:
+   - `get_current_user`: Validates JWT token, confirms user exists
+   - `get_current_active_user`: Validates JWT token, confirms user exists AND email is verified
+   - `get_internal_service`: Validates API key for internal service access
 
-## Core Features
+### Endpoint Security Classification
 
-1. **User Authentication**
-   - Secure user registration and login
-   - JWT-based authentication with configurable expiration
-   - Password reset functionality with email integration
-   - bcrypt password hashing
+#### Public Endpoints
+- Login, registration, email verification, password reset
+- Google OAuth login and callback
+- User lookup endpoints for interservice communication
 
-2. **Credit System**
-   - Secure credit balance management
-   - Transaction history tracking
-   - Credit addition and usage operations
-   - Atomic transactions for data consistency
-   - Detailed audit logging
-   - Protection against negative balances
-   - Transaction reference tracking
+#### Authenticated Endpoints
+- Token refresh
 
-3. **Advanced Logging**
-   - Structured JSON logging
-   - Logstash integration for centralized logging
-   - Detailed error tracking with stack traces
-   - Environment-specific logging configurations
-   - TCP-based log shipping
+#### Verified User Endpoints
+- Profile management (view, update)
+- Password change
+- Email change
+- Account deletion
+- Google account linking/unlinking
 
-4. **Email Integration**
-   - SMTP support with SSL/TLS
-   - Customizable email templates
-   - Password reset email functionality
-   - Configurable email settings
+#### Internal Service Endpoints
+- Credit management (balance, add, use, transactions)
+- Stripe integration (webhooks, checkout, payment methods)
 
-5. **Database**
-   - Async PostgreSQL support with SQLAlchemy
-   - Database migrations using Alembic
-   - Connection pooling
-   - Test database configuration
+### Security Boundaries
 
-6. **Security**
-   - CORS middleware with configurable origins
-   - Request validation
-   - Structured error handling
-   - Environment-based configurations
+```
+┌────────────────────────────────────────────────────────────────┐
+│                       External Access                           │
+└───────────────────────────────┬────────────────────────────────┘
+                                │
+                                ▼
+┌────────────────────────────────────────────────────────────────┐
+│                     Public Endpoints (No Auth)                  │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │              Authenticated Endpoints (JWT)               │   │
+│  │                                                          │   │
+│  │  ┌──────────────────────────────────────────────────┐   │   │
+│  │  │        Verified User Endpoints (JWT + Email)      │   │   │
+│  │  │                                                   │   │   │
+│  │  └──────────────────────────────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────┘
 
-## Project Structure
+┌────────────────────────────────────────────────────────────────┐
+│              Internal Service Endpoints (API Key)               │
+│                                                                 │
+│    - Credit endpoints (balance, add, use, transactions)         │
+│    - Stripe endpoints (webhooks, checkout, payment)             │
+└────────────────────────────────────────────────────────────────┘
+```
 
-The project follows a modular structure with clear separation of concerns:
+## Key Components
 
-- **Core Components**: JWT handling, configuration, database connections, email service
-- **Models**: SQLAlchemy models for users, credits, and transactions
-- **Routers**: API endpoints for authentication and credit operations
-- **Services**: Business logic for user management and credit operations
-- **Schemas**: Pydantic models for request/response validation
-- **Templates**: Email templates for various notifications
+### Core Components
+- **auth.py**: JWT token generation, validation, security dependencies
+- **config.py**: Environment-specific configurations
+- **database.py**: Async database connections
+- **security.py**: Password hashing, verification
 
-## Memory Bank Files
+### Auth Router
+- Registration, login, profile management
+- Password and email operations
+- Google OAuth integration
+- Token refresh and logout
 
-This Memory Bank contains the following core files:
+### Credit Router (Internal Only)
+- Credit balance management
+- Adding and using credits
+- Transaction history
+- Balance queries
 
-1. **productContext.md** (this file): Project overview, vision, goals, and constraints
-2. **activeContext.md**: Current session state and goals
-3. **progress.md**: Work completed and next steps
-4. **decisionLog.md**: Key architectural decisions and their rationale
+### Stripe Router (Internal Only)
+- Webhook handling
+- Checkout sessions
+- Payment method management
+- Subscription creation
 
-Additional files may be created as needed to document specific aspects of the project.
+## Data Models
+
+### User Model
+- Authentication credentials
+- Profile information
+- Verification status
+- OAuth credentials
+
+### Credit Models
+- UserCredit: Balance information
+- CreditTransaction: Transaction history
+- TransactionType: Transaction categorization
+
+## Security Considerations
+
+1. **JWT Security**:
+   - Short expiration time (60 minutes)
+   - Refresh token flow
+   - Secure signature algorithm (HS256)
+
+2. **Password Security**:
+   - bcrypt hashing with salt
+   - Minimum password requirements
+   - Password reset flow
+
+3. **API Key Security**:
+   - Long, random keys
+   - Environment-based configuration
+   - Header-based transmission
+
+4. **Email Verification**:
+   - Required for sensitive operations
+   - Secure verification tokens
+   - Expiration for verification links

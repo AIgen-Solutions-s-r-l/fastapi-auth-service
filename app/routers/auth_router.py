@@ -11,7 +11,7 @@ from app.models.user import EmailVerificationToken
 from app.core.database import get_db
 from app.core.exceptions import UserAlreadyExistsError, UserNotFoundError, InvalidCredentialsError
 from app.core.security import create_access_token, verify_jwt_token, verify_password
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, get_current_active_user
 from app.schemas.auth_schemas import (
     LoginRequest, Token, UserCreate, PasswordChange,
     PasswordResetRequest, PasswordReset, RefreshToken, EmailChange,
@@ -431,19 +431,19 @@ async def change_email(
     email_change: EmailChange,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    token: str = Depends(oauth2_scheme)
+    current_user: User = Depends(get_current_active_user)
 ) -> Dict[str, Any]:
     """
     Change user's email address and send verification.
 
-    Requires authentication and current password verification.
+    Requires authentication, verification, and current password verification.
     The new email must not be already registered by another user.
 
     Args:
         email_change: Current email, new email and current password
         background_tasks: FastAPI background tasks
         db: Database session
-        token: JWT token for authentication
+        current_user: Authenticated and verified user
 
     Returns:
         Dict containing success message and updated user info
@@ -452,33 +452,16 @@ async def change_email(
         HTTPException: If authentication fails, email is taken, or user not found
     """
     try:
-        # Verify JWT token and check if user is authorized
-        payload = verify_jwt_token(token)
-        token_subject = payload.get("sub")
-        
-        # Get user from token
+        # Initialize user service
         user_service = UserService(db)
-        token_user = await user_service.get_user_by_email(token_subject)
-            
-        if not token_user:
-            logger.error(
-                "User not found for token",
-                event_type="email_change_error",
-                email=token_subject,
-                error_type="user_not_found"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
 
         # Verify current password first
         try:
-            if not verify_password(email_change.current_password, str(token_user.hashed_password)):
+            if not verify_password(email_change.current_password, str(current_user.hashed_password)):
                 logger.error(
                     "Invalid password for email change",
                     event_type="email_change_error",
-                    email=token_subject,
+                    email=current_user.email,
                     error_type="invalid_password"
                 )
                 raise HTTPException(
@@ -489,7 +472,7 @@ async def change_email(
             logger.error(
                 "Password verification error",
                 event_type="email_change_error",
-                email=token_subject,
+                email=current_user.email,
                 error_type=type(e).__name__,
                 error_details=str(e)
             )
@@ -498,27 +481,13 @@ async def change_email(
                 detail="Invalid password format"
             )
 
-        # Only allow users to change their own email
-        if token_user.email != token_subject:
-            logger.error(
-                "Unauthorized email change attempt",
-                event_type="email_change_error",
-                email=token_subject,
-                attempted_email=token_user.email,
-                error_type="unauthorized"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Not authorized to change this email"
-            )
-
         # Check if new email already exists
         existing_user = await user_service.get_user_by_email(str(email_change.new_email))
-        if existing_user and existing_user.id != token_user.id:
+        if existing_user and existing_user.id != current_user.id:
             logger.error(
                 "Email already registered",
                 event_type="email_change_error",
-                email=token_subject,
+                email=current_user.email,
                 new_email=str(email_change.new_email),
                 error_type="email_exists"
             )
@@ -534,7 +503,7 @@ async def change_email(
             logger.error(
                 "Unauthorized email change attempt - multiple users exist",
                 event_type="email_change_error",
-                email=token_subject,
+                email=current_user.email,
                 error_type="unauthorized"
             )
             raise HTTPException(
@@ -544,16 +513,8 @@ async def change_email(
 
         # Update email through service
         try:
-            # Verify user owns the email they're trying to change
-            user = await user_service.authenticate_user(token_subject, email_change.current_password)
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid email or password"
-                )
-
             updated_user = await user_service.update_user_email(
-                token_subject,
+                current_user.email,
                 email_change.current_password,
                 str(email_change.new_email)
             )
@@ -561,7 +522,7 @@ async def change_email(
             logger.error(
                 "Failed to update email",
                 event_type="email_change_error",
-                email=token_subject,
+                email=current_user.email,
                 new_email=str(email_change.new_email),
                 error_type=type(e).__name__,
                 error_details=str(e)
@@ -592,7 +553,7 @@ async def change_email(
         logger.info(
             "Email changed successfully",
             event_type="email_changed",
-            old_email=token_subject,
+            old_email=current_user.email,
             new_email=str(email_change.new_email),
             verification_sent=verification_sent
         )
@@ -624,7 +585,7 @@ async def change_email(
         logger.error(
             "Email change failed",
             event_type="email_change_error",
-            email=token_subject,
+            email=current_user.email,
             error_type=type(e).__name__,
             error_details=str(e)
         )
@@ -645,18 +606,14 @@ async def change_password(
         passwords: PasswordChange,
         background_tasks: BackgroundTasks,
         db: AsyncSession = Depends(get_db),
-        token: str = Depends(oauth2_scheme)
+        current_user: User = Depends(get_current_active_user)
 ) -> Dict[str, str]:
     """
     Change user password and send confirmation email.
 
-    Requires authentication and verification of current password.
+    Requires authentication, verification, and validation of current password.
     """
     try:
-        # Get user email from token
-        payload = verify_jwt_token(token)
-        email = payload.get("sub")
-        
         # Explicitly check for empty new password
         if not passwords.new_password or len(passwords.new_password) < 8:
             raise HTTPException(
@@ -667,7 +624,7 @@ async def change_password(
         # Update password
         user_service = UserService(db)
         success = await user_service.update_user_password(
-            email,
+            current_user.email,
             passwords.current_password,
             passwords.new_password
         )
@@ -678,13 +635,10 @@ async def change_password(
                 detail="Failed to update password"
             )
             
-        # Get user for email notification
-        user = await user_service.get_user_by_email(email)
-        if user:
-            # Send confirmation email
-            await user_service.send_password_change_confirmation(user, background_tasks)
+        # Send confirmation email
+        await user_service.send_password_change_confirmation(current_user, background_tasks)
         
-        logger.info("Password changed", event_type="password_changed", email=email)
+        logger.info("Password changed", event_type="password_changed", email=current_user.email)
         return {"message": "Password updated successfully"}
         
     except (UserNotFoundError, InvalidCredentialsError) as e:
@@ -722,29 +676,19 @@ async def change_password(
 async def remove_user(
         password: str,
         db: AsyncSession = Depends(get_db),
-        token: str = Depends(oauth2_scheme)
+        current_user: User = Depends(get_current_active_user)
 ) -> Dict[str, str]:
     """
     Delete user account.
 
-    Requires authentication and password verification.
+    Requires authentication, verification, and password verification.
     """
     try:
-        # Get user email from token
-        payload = verify_jwt_token(token)
-        email = payload.get("sub")
-        
-        await delete_user(db, email, password)
-        logger.info("User deleted", event_type="user_deleted", email=email)
+        await delete_user(db, current_user.email, password)
+        logger.info("User deleted", event_type="user_deleted", email=current_user.email)
         return {"message": "User deleted successfully"}
     except (UserNotFoundError, InvalidCredentialsError) as e:
-        # Get user email from token for logging
-        try:
-            payload = verify_jwt_token(token)
-            email = payload.get("sub")
-            logger.error("User deletion failed", event_type="user_deletion_error", email=email, error_type=type(e).__name__)
-        except:
-            logger.error("User deletion failed", event_type="user_deletion_error", error_type=type(e).__name__)
+        logger.error("User deletion failed", event_type="user_deletion_error", email=current_user.email, error_type=type(e).__name__)
         
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -775,26 +719,24 @@ async def remove_user(
         401: {"description": "Invalid or expired token"}
     }
 )
-async def logout(token: str = Depends(oauth2_scheme)) -> Dict[str, str]:
+async def logout(current_user: User = Depends(get_current_active_user)) -> Dict[str, str]:
     """
     Logout endpoint that validates the JWT token.
     
     Note: In a JWT-based system, the token remains valid until expiration.
     The client should handle token removal from their storage.
+    
+    Requires authentication and verification.
     """
     try:
-        # Verify token and get payload
-        payload = verify_jwt_token(token)
-        subject = payload.get("sub")
-        
-        logger.info("User logged out", event_type="user_logout", email=subject)
+        logger.info("User logged out", event_type="user_logout", email=current_user.email)
         
         return {"message": "Successfully logged out"}
-    except jwt.JWTError as e:
-        logger.error("Logout failed - invalid token", event_type="logout_error", error_type="jwt_error", error_details=str(e))
+    except Exception as e:
+        logger.error("Logout failed", event_type="logout_error", email=current_user.email, error_type=type(e).__name__, error_details=str(e))
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error during logout"
         ) from e
 
 
@@ -950,40 +892,27 @@ async def refresh_token(
 )
 async def get_current_user_profile(
     user_id: int | None = None,
-    token: str = Depends(oauth2_scheme),
+    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ) -> UserResponse:
     """
     Retrieve the profile of the authenticated user.
     For non-admin users, any provided user_id is ignored.
     Admin users can retrieve other users' profiles by providing a valid user_id.
+    
+    Requires authentication and verification.
     """
     try:
-        # Verify token and get payload
-        payload = verify_jwt_token(token)
-        
-        # Use provided user_id or get from token
-        target_user_id = user_id if user_id is not None else payload.get("id")
-        
-        # Get email from token
-        email = payload.get("sub")
-        
-        # Get user by email
-        user = await get_user_by_email(db, email)
-            
-        if not user:
-            logger.error("User not found", event_type="user_lookup_error", email=email)
-            raise UserNotFoundError("User not found")
-            
         # If requesting another user's profile, verify admin status
-        if user_id is not None and user_id != user.id:
-            if not payload.get("is_admin", False):
+        if user_id is not None and user_id != current_user.id:
+            if not current_user.is_admin:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Not authorized to view other users' profiles"
                 )
+                
             # Get user by ID for admin lookup
-            result = await db.execute(select(User).where(User.id == target_user_id))
+            result = await db.execute(select(User).where(User.id == user_id))
             target_user = result.scalar_one_or_none()
             
             if not target_user:
@@ -991,36 +920,53 @@ async def get_current_user_profile(
                     "Admin lookup failed - user not found",
                     event_type="profile_retrieval_error",
                     user_id=user_id,
-                    admin_email=user.email
+                    admin_email=current_user.email
                 )
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"User with ID {user_id} not found"
                 )
             
-            # Update user reference to target user for response
-            user = target_user
+            logger.info(
+                "Admin retrieved user profile",
+                event_type="admin_profile_retrieved",
+                admin_email=current_user.email,
+                target_user_id=user_id
+            )
+            
+            return UserResponse(
+                email=target_user.email,
+                is_verified=target_user.is_verified
+            )
         
-        logger.info("User profile retrieved", event_type="profile_retrieved", email=user.email)
-        
-        return UserResponse(
-            email=user.email,
-            is_verified=user.is_verified
+        # Regular case - return current user profile
+        logger.info(
+            "User profile retrieved",
+            event_type="profile_retrieved",
+            email=current_user.email
         )
         
-    except jwt.JWTError as e:
-        logger.error("Profile retrieval failed - token error", event_type="profile_retrieval_error", error_type="JWTError", error_details=str(e))
+        return UserResponse(
+            email=current_user.email,
+            is_verified=current_user.is_verified
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+        
+    except Exception as e:
+        logger.error(
+            "Profile retrieval failed",
+            event_type="profile_retrieval_error",
+            email=current_user.email if current_user else "unknown",
+            error_type=type(e).__name__,
+            error_details=str(e)
+        )
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error retrieving user profile"
         ) from e
-    except UserNotFoundError as e:
-        logger.error("Profile retrieval failed - user not found", event_type="profile_retrieval_error", error_type="UserNotFoundError", error_details=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        ) from e
-
 
 @router.get("/users/{user_id}/email",
     response_model=Dict[str, str],
@@ -1329,12 +1275,13 @@ async def google_callback(
     responses={
         200: {"description": "Google account linked successfully"},
         401: {"description": "Not authenticated or invalid password"},
-        400: {"description": "Invalid OAuth callback"}
+        400: {"description": "Invalid OAuth callback"},
+        403: {"description": "Email not verified"}
     }
 )
 async def link_google_account(
     link_request: AccountLinkRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ) -> Dict[str, str]:
     """
@@ -1392,11 +1339,12 @@ async def link_google_account(
     responses={
         200: {"description": "Google account unlinked successfully"},
         400: {"description": "Cannot unlink account without password"},
-        401: {"description": "Not authenticated"}
+        401: {"description": "Not authenticated"},
+        403: {"description": "Email not verified"}
     }
 )
 async def unlink_google_account(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ) -> Dict[str, str]:
     """

@@ -4,11 +4,11 @@ from decimal import Decimal
 from datetime import datetime, UTC
 from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.auth import get_current_active_user
+from app.core.auth import get_internal_service
 from app.models.user import User
 from app.schemas.credit_schemas import (
     TransactionResponse,
@@ -30,38 +30,46 @@ from app.log.logging import logger
 
 router = APIRouter(prefix="/credits", tags=["credits"])
 
-
 @router.get("/balance", response_model=CreditBalanceResponse)
 async def get_credit_balance(
-    current_user: User = Depends(get_current_active_user),
+    user_id: int,
+    _: str = Depends(get_internal_service),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get current user's credit balance.
+    Get user's credit balance.
+    
+    This endpoint is restricted to internal service access only.
     
     Args:
-        current_user: Current authenticated user
+        user_id: ID of the user to get balance for
+        _: Internal service identifier (from API key auth)
         db: Database session
         
     Returns:
         CreditBalanceResponse: Current balance and last update time
     """
     credit_service = CreditService(db)
-    return await credit_service.get_balance(current_user.id)
+    return await credit_service.get_balance(user_id)
+
 
 
 @router.post("/use", response_model=TransactionResponse)
 async def use_credits(
     request: CreditsUseRequest,
-    current_user: User = Depends(get_current_active_user),
+    user_id: int,
+    _: str = Depends(get_internal_service),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Use credits from user's balance.
     
+    This endpoint is restricted to internal service access only.
+    
     Args:
         request: Credits use request
-        current_user: Current authenticated user
+        user_id: ID of the user to use credits for
+        _: Internal service identifier (from API key auth)
         db: Database session
         
     Returns:
@@ -73,7 +81,7 @@ async def use_credits(
     try:
         credit_service = CreditService(db)
         return await credit_service.use_credits(
-            user_id=current_user.id,
+            user_id=user_id,
             amount=request.amount,
             reference_id=request.reference_id,
             description=request.description
@@ -88,17 +96,21 @@ async def use_credits(
 @router.post("/add", response_model=TransactionResponse)
 async def add_credits(
     request: CreditsAddRequest,
+    user_id: int,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_active_user),
+    _: str = Depends(get_internal_service),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Add credits to user's balance.
     
+    This endpoint is restricted to internal service access only.
+    
     Args:
         request: Credits add request
+        user_id: ID of the user to add credits for
         background_tasks: FastAPI background tasks
-        current_user: Current authenticated user
+        _: Internal service identifier (from API key auth)
         db: Database session
         
     Returns:
@@ -106,7 +118,7 @@ async def add_credits(
     """
     credit_service = CreditService(db)
     return await credit_service.add_credits(
-        user_id=current_user.id,
+        user_id=user_id,
         amount=request.amount,
         reference_id=request.reference_id,
         description=request.description
@@ -115,18 +127,22 @@ async def add_credits(
 
 @router.get("/transactions", response_model=TransactionHistoryResponse)
 async def get_transaction_history(
+    user_id: int,
     skip: int = 0,
     limit: int = 50,
-    current_user: User = Depends(get_current_active_user),
+    _: str = Depends(get_internal_service),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Get user's transaction history.
     
+    This endpoint is restricted to internal service access only.
+    
     Args:
+        user_id: ID of the user to get transaction history for
         skip: Number of records to skip
         limit: Maximum number of records to return
-        current_user: Current authenticated user
+        _: Internal service identifier (from API key auth)
         db: Database session
         
     Returns:
@@ -134,7 +150,7 @@ async def get_transaction_history(
     """
     credit_service = CreditService(db)
     return await credit_service.get_transaction_history(
-        user_id=current_user.id,
+        user_id=user_id,
         skip=skip,
         limit=limit
     )
@@ -143,15 +159,18 @@ async def get_transaction_history(
 @router.post("/stripe/add", response_model=StripeTransactionResponse)
 async def add_credits_from_stripe(
     request: StripeTransactionRequest,
+    user_id: int,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_active_user),
+    _: str = Depends(get_internal_service),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Add credits based on a Stripe transaction.
     
+    This endpoint is restricted to internal service access only.
+    
     This endpoint receives a request with either:
-    - A transaction ID 
+    - A transaction ID
     - An email address
     
     It then:
@@ -161,8 +180,9 @@ async def add_credits_from_stripe(
     
     Args:
         request: Stripe transaction request
+        user_id: ID of the user to add credits for
         background_tasks: FastAPI background tasks
-        current_user: Current authenticated user
+        _: Internal service identifier (from API key auth)
         db: Database session
         
     Returns:
@@ -178,7 +198,7 @@ async def add_credits_from_stripe(
         stripe_service = StripeService()
         
         # Get user
-        user = await user_service.get_user_by_id(current_user.id)
+        user = await user_service.get_user_by_id(user_id)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -409,7 +429,7 @@ async def add_credits_from_stripe(
     except Exception as e:
         logger.error(f"Error processing Stripe transaction: {str(e)}",
                    event_type="stripe_processing_error",
-                   user_id=current_user.id,
+                   user_id=user_id,
                    error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

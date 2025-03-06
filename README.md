@@ -55,7 +55,18 @@
    - Configurable expiration time
    - Timezone-aware token expiration
 
-3. **Database Security**
+3. **Endpoint Security Classification**
+   - **Public Endpoints**: Open access, no authentication required
+   - **Authenticated Endpoints**: Require valid JWT token
+   - **Verified User Endpoints**: Require valid JWT token AND email verification
+   - **Internal Service Endpoints**: Require API key authentication, not externally accessible
+
+4. **Security Dependencies**
+   - `get_current_user`: Validates JWT token, confirms user exists
+   - `get_current_active_user`: Validates JWT token, confirms user exists AND email is verified
+   - `get_internal_service`: Validates API key for internal service access
+
+5. **Database Security**
    - Async PostgreSQL connections
    - Prepared statements for SQL injection prevention
    - Transaction management for data integrity
@@ -88,6 +99,43 @@ For protected endpoints, include the JWT token in the Authorization header:
 ```http
 Authorization: Bearer <your-jwt-token>
 ```
+
+### Endpoint Security Classification
+
+| Endpoint                         | Method | Security Level      | Authentication Requirement                 |
+|----------------------------------|--------|---------------------|-------------------------------------------|
+| **Auth Endpoints**               |        |                     |                                           |
+| `/auth/login`                    | POST   | Public              | None                                      |
+| `/auth/register`                 | POST   | Public              | None                                      |
+| `/auth/verify-email`             | GET    | Public              | None                                      |
+| `/auth/resend-verification`      | POST   | Public              | None                                      |
+| `/auth/password-reset-request`   | POST   | Public              | None                                      |
+| `/auth/reset-password`           | POST   | Public              | None                                      |
+| `/auth/users/{user_id}/email`    | GET    | Public              | None (for interservice communication)     |
+| `/auth/users/by-email/{email}`   | GET    | Public              | None (for interservice communication)     |
+| `/auth/oauth/google/login`       | GET    | Public              | None                                      |
+| `/auth/oauth/google/callback`    | GET    | Public              | None                                      |
+| `/auth/test-email`               | GET    | Public              | None (development only)                   |
+| `/auth/verify-email-templates`   | GET    | Public              | None (development only)                   |
+| `/auth/refresh`                  | POST   | Authenticated       | Valid JWT token                           |
+| `/auth/me`                       | GET    | Verified User       | Valid JWT token + Email verification      |
+| `/auth/logout`                   | POST   | Verified User       | Valid JWT token + Email verification      |
+| `/auth/users/change-password`    | PUT    | Verified User       | Valid JWT token + Email verification      |
+| `/auth/users/change-email`       | PUT    | Verified User       | Valid JWT token + Email verification      |
+| `/auth/users/delete-account`     | DELETE | Verified User       | Valid JWT token + Email verification      |
+| `/auth/link/google`              | POST   | Verified User       | Valid JWT token + Email verification      |
+| `/auth/unlink/google`            | POST   | Verified User       | Valid JWT token + Email verification      |
+| **Credit Endpoints**             |        |                     |                                           |
+| `/credits/balance`               | GET    | Internal Service    | Valid API key                             |
+| `/credits/add`                   | POST   | Internal Service    | Valid API key                             |
+| `/credits/use`                   | POST   | Internal Service    | Valid API key                             |
+| `/credits/transactions`          | GET    | Internal Service    | Valid API key                             |
+| **Stripe Endpoints**             |        |                     |                                           |
+| `/stripe/webhook`                | POST   | Internal Service    | Valid API key                             |
+| `/stripe/create-checkout-session`| POST   | Internal Service    | Valid API key                             |
+| `/stripe/setup-intent`           | POST   | Internal Service    | Valid API key                             |
+| `/stripe/payment-methods`        | GET    | Internal Service    | Valid API key                             |
+| `/stripe/create-subscription`    | POST   | Internal Service    | Valid API key                             |
 
 ### Rate Limiting
 

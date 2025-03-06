@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi_sqlalchemy import DBSessionMiddleware
 
-from app.core.config import settings, validate_email_config, validate_stripe_config
+from app.core.config import settings, validate_email_config, validate_stripe_config, validate_internal_api_key
 from app.core.exceptions import AuthException
 from app.core.error_handlers import validation_exception_handler, auth_exception_handler, http_exception_handler, generic_exception_handler
 from app.log.logging import logger, InterceptHandler
@@ -58,6 +58,23 @@ async def lifespan(app: FastAPI):
             event_type="startup_info",
             component="stripe",
             warnings=stripe_validation_details.get("warnings", [])
+        )
+    
+    # Validate internal API key configuration
+    internal_api_key_valid, api_key_validation_details = validate_internal_api_key()
+    if not internal_api_key_valid:
+        logger.warning(
+            "Internal API key configuration is invalid or incomplete",
+            event_type="startup_warning",
+            component="internal_service_auth",
+            issues=api_key_validation_details["issues"]
+        )
+    else:
+        logger.info(
+            "Internal API key configuration validated successfully",
+            event_type="startup_info",
+            component="internal_service_auth",
+            warnings=api_key_validation_details.get("warnings", [])
         )
     
     yield

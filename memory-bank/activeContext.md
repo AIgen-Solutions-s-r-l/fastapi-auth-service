@@ -1,73 +1,44 @@
-# Active Context - Username Removal Implementation
+# Active Context: Endpoint Security Enhancement
 
-## Current Status
-- Completed migration to remove username field
-- Updated auth_router.py to use email instead of username:
-  - Changed login endpoint to use email only
-  - Updated registration endpoint
-  - Modified user details endpoint to use email
-  - Updated password change endpoint
-  - Updated email change endpoint
-  - Updated user deletion endpoint
-  - Removed username from all logging
-  - Simplified token refresh to use email only
+## Current Task
+We are enhancing the security of the auth_service endpoints to ensure that:
+1. Auth endpoints are properly restricted to verified users where appropriate
+2. Credit and Stripe routes are properly secured for internal access only
+
+## Implementation Status
+
+### Security Models Implemented
+- **Public Endpoints**: Open access, no authentication required
+- **Authenticated Endpoints**: Require valid JWT token
+- **Verified User Endpoints**: Require valid JWT token AND email verification
+- **Internal Service Endpoints**: Require API key authentication, not externally accessible
+
+### Implementation Changes
+- Modified `/link/google` endpoint to require email verification
+- Modified `/unlink/google` endpoint to require email verification
+- Confirmed Credit Router endpoints already properly secured for internal access
+- Confirmed Stripe Webhook Router endpoints already properly secured for internal access
+
+### Documentation Created
+- Comprehensive endpoint security documentation with Mermaid diagrams
+- Updated README.md with endpoint security classification table
+- Detailed implementation plan in memory-bank
+- Updated decision log with rationale
+
+## Key Files Modified
+- `app/routers/auth_router.py`: Updated Google OAuth endpoints to require verification
+- `README.md`: Added comprehensive endpoint security documentation
+- Memory bank documentation files
+
+## Testing Requirements
+- Verify that unverified users cannot access the `/link/google` endpoint
+- Verify that unverified users cannot access the `/unlink/google` endpoint
+- Verify that external requests to credit endpoints are rejected
+- Verify that external requests to stripe endpoints are rejected
 
 ## Next Steps
-1. **Fix app/core/auth.py**: Remove username fallback code in get_current_user function
-2. Update OAuth integration to ensure it works with email-only system
-3. Update documentation to reflect the removal of username field
-4. Review and update email templates
-5. Run full test suite to verify all changes
-
-## Recent Changes
-- Created and applied migration e66712ccad45_remove_username_field.py
-- Removed username field from User model
-- Updated auth_schemas.py to remove username fields
-- Modified user_service.py to use email as primary identifier
-- Updated auth_router.py endpoints to use email instead of username
-- Updated all email templates to remove username references:
-  - registration_confirmation.html
-  - welcome.html
-  - password_change_confirmation.html
-  - password_change_request.html
-  - one_time_credit_purchase.html
-  - plan_upgrade.html
-- Updated OAuth integration:
-  - Removed username references from Google OAuth logging
-  - Updated template test data to remove username fields
-- Updated test suite:
-  - Modified test_auth_router.py for email-only auth
-  - Updated test_auth_router_coverage.py
-  - Updated test_auth_router_extended.py
-  - Updated test_email_login.py
-  - Updated test fixtures in conftest.py
-- **Created email_only_authentication_plan.md** to document remaining changes
-
-## Open Questions
-- Do we need to update any email templates that might reference username?
-- Should we update the API documentation to reflect these changes?
-- Are there any frontend components that need to be updated?
-
-## Current Goals
-1. Complete the removal of username field from all parts of the system
-2. Ensure all authentication flows work properly with email-only system
-3. Maintain security and functionality while simplifying the authentication system
-
-## Implementation Progress
-- [x] Database migration created and applied
-- [x] User model updated
-- [x] Auth schemas updated
-- [x] User service updated
-- [x] Auth router endpoints updated
-- [x] Tests updated
-- [x] OAuth integration verified
-- [ ] **app/core/auth.py updated**
-- [ ] Documentation updated
-- [x] Email templates checked and updated
-
-## Newly Identified Issues
-1. The `app/core/auth.py` file still has references to username:
-   - Line 29: Comment mentions username in the 'sub' claim
-   - Line 60-61: Attempts to find user by username as fallback
-
-2. There's a reference to a method `get_user_by_username()` in UserService that doesn't exist in the actual implementation
+- Implement testing for the security enhancements
+- Consider additional security improvements:
+  - Role-based access control for admin functionalities
+  - Rate limiting for authentication endpoints
+  - CSRF protection for sensitive operations
