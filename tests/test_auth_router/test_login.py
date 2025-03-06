@@ -120,10 +120,11 @@ async def test_login_unverified_user(client, db, test_user_data):
         }
     )
     
-    # The current implementation allows unverified users to log in
-    assert response.status_code == status.HTTP_200_OK
+    # The updated implementation should not allow unverified users to log in
+    assert response.status_code == status.HTTP_403_FORBIDDEN
     data = response.json()
-    assert "access_token" in data
+    assert "detail" in data
+    assert "Email not verified" in data["detail"]["message"]
 
 async def test_login_empty_password(client):
     """Test login with empty password."""

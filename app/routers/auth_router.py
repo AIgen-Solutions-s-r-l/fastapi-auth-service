@@ -57,6 +57,14 @@ async def login(
         if not user:
             logger.warning("Authentication failed", event_type="login_failed", email=email, reason="invalid_credentials")
             raise InvalidCredentialsError()
+            
+        # Check if user's email is verified
+        if not user.is_verified:
+            logger.warning("Login attempt by unverified user", event_type="login_failed", email=email, reason="unverified_user")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Email not verified. Please check your email for verification instructions."
+            )
 
         # Calculate expiration time using timezone-aware datetime
         expires_delta = timedelta(minutes=60)
@@ -74,6 +82,9 @@ async def login(
         )
         logger.info("User login successful", event_type="login_success", email=user.email)
         return Token(access_token=access_token, token_type="bearer")
+    except HTTPException as http_ex:
+        # Re-raise HTTP exceptions
+        raise http_ex
     except Exception as e:
         logger.error("Login error", event_type="login_error", email=credentials.email, error_type=type(e).__name__, error_details=str(e))
         raise InvalidCredentialsError() from e

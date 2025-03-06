@@ -1,132 +1,24 @@
 # Decision Log
 
-## 2025-03-06: Endpoint Security Enhancement
+## 2025-03-06: Authentication Refactoring - JWT Tokens Only After Email Verification
 
-### Context
-We identified security issues with the authentication service:
-1. Some auth endpoints that should be available only to verified users weren't properly restricted
-2. There was a need to confirm that credit and stripe routes are properly secured for internal access only
+**Context:**
+- Currently, the authentication system issues JWT tokens to users during login regardless of whether their email has been verified.
+- This creates a security issue as unverified users can access the system.
 
-### Decision
-1. Modified the `/link/google` and `/unlink/google` endpoints to use `get_current_active_user` dependency instead of `get_current_user`
-2. Added appropriate 403 responses to the documentation for these endpoints
-3. Confirmed that credit router and stripe webhook router were already properly secured for internal access only through the `get_internal_service` dependency
+**Decision:**
+- Modify the login endpoint to check if a user's email is verified before issuing a JWT token.
+- Return a 403 Forbidden response with a clear message if a user attempts to log in without verifying their email.
+- Update tests to reflect this new behavior.
 
-### Rationale
-- Using `get_current_active_user` ensures that only verified users can access these endpoints
-- The `get_current_active_user` dependency checks for both authentication and email verification
-- Credit and stripe endpoints were already properly secured using API key authentication through the `get_internal_service` dependency
+**Alternatives Considered:**
+- Allow login but restrict access to certain endpoints: This would be more complex to implement and maintain.
+- Use a different token type for unverified users: This would add unnecessary complexity to the authentication system.
 
-### Implementation
-- Updated the dependency injection in both Google account link/unlink endpoints
-- Updated API documentation to reflect possible 403 responses
-- Created detailed documentation in `endpoint_security_implementation_plan.md`
+**Consequences:**
+- Improved security as only verified users can access the system.
+- Slightly more complex onboarding flow for users.
+- Frontend applications will need to handle the new error response.
 
-## 2025-03-06: Test Suite Enhancement
-
-### Context
-After implementing the endpoint security enhancements, we needed to ensure proper test coverage for both verified and unverified user scenarios.
-
-### Decision
-1. Created a new `unverified_user` fixture in test suite
-2. Added comprehensive tests for unverified user access attempts
-3. Updated existing tests to explicitly test verified user scenarios
-4. Enhanced test documentation and error messages
-
-### Rationale
-- The `unverified_user` fixture allows testing of unverified user scenarios without modifying the existing `test_user` fixture
-- Explicit tests for both verified and unverified users ensure security measures are working correctly
-- Clear test descriptions and error messages make debugging easier
-- Comprehensive test coverage helps prevent security regressions
-
-### Implementation
-1. Test Suite Structure:
-   - Added new `unverified_user` fixture that creates a user without email verification
-   - Updated test names to clearly indicate which user type they're testing
-   - Added proper HTTP status code imports for clearer assertions
-
-2. New Test Cases Added:
-   - Unverified user attempting to link Google account
-   - Unverified user attempting to unlink Google account
-   - Unverified user attempting to change password
-   - Unverified user attempting to change email
-   - Unverified user attempting to access profile
-   - Unverified user attempting to logout
-
-3. Test Improvements:
-   - Enhanced error messages to be more descriptive
-   - Added proper status code constants
-   - Improved test documentation
-   - Added explicit verification of error messages
-
-### Impact
-- Better test coverage for security features
-- Clearer test failure messages
-- More maintainable test suite
-- Better documentation of security requirements through tests
-
-## 2025-03-06: Auth Router Test Implementation
-
-### Context
-We needed to create comprehensive tests for the auth_router.py file to ensure all functionality works as expected and to catch any regressions.
-
-### Decision
-1. Created a structured test suite following the auth_router_test_plan.md
-2. Implemented tests for login, registration, verification, and error cases
-3. Adapted tests to match the actual behavior of the implementation
-4. Fixed compatibility issues between tests and implementation
-
-### Rationale
-- A comprehensive test suite ensures the authentication system works correctly
-- Tests that match the actual implementation behavior are more valuable than tests that expect different behavior
-- Structured tests make it easier to understand and maintain the codebase
-- Good test coverage helps prevent regressions when making changes
-
-### Implementation
-1. Created test files:
-   - test_login.py for login-related tests
-   - test_registration.py for registration-related tests
-   - test_verification.py for email verification tests
-   - test_error_cases.py for error handling tests
-
-2. Implemented fixtures in conftest.py:
-   - Database session
-   - Test client
-   - Test user creation
-   - Token generation
-   - Mock email service
-
-3. Adapted tests to match implementation:
-   - Updated test_login_unverified_user to expect 200 status (current implementation allows unverified users to log in)
-   - Updated test_login_empty_password to expect 401 status (current implementation treats empty password as invalid credentials)
-   - Updated test_login_case_insensitive_email to expect 401 status (current implementation is case-sensitive for email)
-   - Updated test_register_duplicate_email to check for the correct error message structure
-
-### Impact
-- 50 passing tests (49 passed, 1 skipped)
-- Better understanding of the current implementation behavior
-- Solid foundation for future development
-- Easier identification of potential issues
-
-## 2025-03-06: GitHub Actions Test Fix
-
-### Context
-Tests were failing in GitHub Actions with the error: `ModuleNotFoundError: No module named 'app'`. This was happening because the Python path was not set up correctly in the GitHub Actions environment.
-
-### Decision
-1. Added an empty `__init__.py` file in the root directory to make the project a package
-2. Created a root-level `conftest.py` file to help with Python path setup
-
-### Rationale
-- Adding an `__init__.py` file makes the project a proper Python package, allowing imports to work correctly
-- The root-level `conftest.py` file ensures that the project root is added to the Python path
-- This approach is simpler than modifying the GitHub Actions workflow or creating a complex setup.py file
-
-### Implementation
-1. Created an empty `__init__.py` file in the root directory with a comment explaining its purpose
-2. Created a root-level `conftest.py` file that adds the project root to the Python path using `sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))`
-
-### Impact
-- Tests should now run successfully in GitHub Actions
-- The solution is minimal and doesn't require changes to the existing code structure
-- The approach follows Python best practices for package organization
+**Implementation Plan:**
+- See detailed plan in [auth_verification_refactor_plan.md](auth_verification_refactor_plan.md)
