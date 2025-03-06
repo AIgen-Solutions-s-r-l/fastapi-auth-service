@@ -198,11 +198,33 @@ async def test_change_email_invalid_format(client: AsyncClient, test_user):
     )
     assert response.status_code == 422, "Should reject invalid email format"
 
-async def test_verify_email_success(client: AsyncClient, test_user):
+async def test_verify_email_success(client: AsyncClient, test_user, db_session):
     """Test successful email verification."""
-    # Get verification token from test_user fixture
-    token = "test_verification_token"  # This should be a valid token from your test setup
+    from app.models.user import User, EmailVerificationToken
+    from datetime import datetime, UTC, timedelta
+    from sqlalchemy import select
     
+    # Get user from database
+    result = await db_session.execute(
+        select(User).where(User.email == test_user["email"])
+    )
+    user = result.scalar_one_or_none()
+    assert user is not None, "Test user not found in database"
+    
+    # Create verification token directly
+    token = "test_verification_token"
+    verification_token = EmailVerificationToken(
+        token=token,
+        user_id=user.id,
+        expires_at=datetime.now(UTC) + timedelta(hours=24),
+        used=False
+    )
+    
+    # Add token to database
+    db_session.add(verification_token)
+    await db_session.commit()
+    
+    # Verify the email
     response = await client.get(f"/auth/verify-email?token={token}")
     assert response.status_code == 200, f"Email verification failed with status {response.status_code}"
     
@@ -214,24 +236,50 @@ async def test_verify_email_success(client: AsyncClient, test_user):
 
 async def test_verify_email_invalid_token(client: AsyncClient):
     """Test email verification with invalid token."""
-    response = await client.get("/auth/verify-email?token=invalid_token")
+    # Use a random UUID as an invalid token
+    invalid_token = str(uuid.uuid4())
+    
+    response = await client.get(f"/auth/verify-email?token={invalid_token}")
     assert response.status_code == 400, "Should reject invalid token"
     
     data = response.json()
     assert "detail" in data, "Response missing error detail"
-    assert "invalid" in data["detail"].lower(), "Unexpected error message"
+    assert "message" in data["detail"], "Response detail missing message"
+    assert "invalid" in data["detail"]["message"].lower(), "Unexpected error message"
 
-async def test_verify_email_expired_token(client: AsyncClient):
+async def test_verify_email_expired_token(client: AsyncClient, test_user, db_session):
     """Test email verification with expired token."""
-    # Use a known expired token from your test setup
-    expired_token = "expired_verification_token"
+    from datetime import datetime, timedelta, UTC
+    from app.models.user import User, EmailVerificationToken
+    from sqlalchemy import select
     
-    response = await client.get(f"/auth/verify-email?token={expired_token}")
+    # Get user from database
+    result = await db_session.execute(
+        select(User).where(User.email == test_user["email"])
+    )
+    user = result.scalar_one_or_none()
+    assert user is not None, "Test user not found in database"
+    
+    # Create an expired token
+    token = "expired_verification_token"
+    expired_token = EmailVerificationToken(
+        token=token,
+        user_id=user.id,
+        expires_at=datetime.now(UTC) - timedelta(hours=1),  # Set to 1 hour ago
+        used=False
+    )
+    
+    # Add expired token to database
+    db_session.add(expired_token)
+    await db_session.commit()
+    
+    response = await client.get(f"/auth/verify-email?token={token}")
     assert response.status_code == 400, "Should reject expired token"
     
     data = response.json()
     assert "detail" in data, "Response missing error detail"
-    assert "expired" in data["detail"].lower(), "Unexpected error message"
+    assert "message" in data["detail"], "Response detail missing message"
+    assert "expired" in data["detail"]["message"].lower(), "Unexpected error message"
     headers = {"Authorization": f"Bearer {test_user['token']}"}
     response = await client.put(
         "/auth/users/change-email",
