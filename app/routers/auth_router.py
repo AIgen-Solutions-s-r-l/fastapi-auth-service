@@ -1,12 +1,13 @@
 """Router module for authentication-related endpoints including login, registration, and password management."""
 
-from datetime import timedelta, datetime, timezone
+from datetime import timedelta, datetime, timezone, UTC
 from typing import Dict, Any, Optional
 from jose import jwt, JWTError
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.models.user import EmailVerificationToken
 from app.core.database import get_db
 from app.core.exceptions import UserAlreadyExistsError, UserNotFoundError, InvalidCredentialsError
 from app.core.security import create_access_token, verify_jwt_token, verify_password
@@ -159,7 +160,7 @@ async def verify_email(
     Verify user's email using the token sent via email.
     
     Args:
-        verification: Contains the verification token
+        token: The verification token from query parameter
         background_tasks: FastAPI background tasks
         db: Database session
         
@@ -170,19 +171,76 @@ async def verify_email(
         HTTPException: If token is invalid or expired
     """
     try:
-        user_service = UserService(db)
-        success, user = await user_service.verify_email(verification.token)
+        # Find the token record first
+        result = await db.execute(
+            select(EmailVerificationToken)
+            .where(EmailVerificationToken.token == token)
+            .where(EmailVerificationToken.used == False)  # noqa: E712
+        )
+        token_record = result.scalar_one_or_none()
         
-        if not success or not user:
+        if not token_record:
+            logger.warning(
+                "Invalid verification token attempt",
+                event_type="email_verification_error",
+                token=token,
+                error="invalid_token"
+            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired verification token"
+                detail="Invalid verification token"
             )
             
-        # Send welcome email
-        email_service = EmailService(background_tasks, db)
-        await email_service.send_welcome_email(user)
+        # Check if token is expired
+        if datetime.now(UTC) > token_record.expires_at:
+            logger.warning(
+                "Expired verification token attempt",
+                event_type="email_verification_error",
+                token=token,
+                error="expired_token"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Verification token has expired"
+            )
+            
+        # Get user and verify email
+        result = await db.execute(
+            select(User).where(User.id == token_record.user_id)
+        )
+        user = result.scalar_one_or_none()
         
+        if not user:
+            logger.error(
+                "User not found for verification token",
+                event_type="email_verification_error",
+                token=token,
+                user_id=token_record.user_id
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid verification token"
+            )
+            
+        # Update user verification status
+        user.is_verified = True
+        token_record.used = True
+        await db.commit()
+            
+        # Try to send welcome email, but don't fail verification if it fails
+        try:
+            email_service = EmailService(background_tasks, db)
+            await email_service.send_welcome_email(user)
+        except Exception as e:
+            logger.error(
+                "Failed to send welcome email",
+                event_type="welcome_email_error",
+                user_id=user.id,
+                email=user.email,
+                error=str(e)
+            )
+            # Continue with verification even if welcome email fails
+            
         logger.info(
             "Email verification successful",
             event_type="email_verified",
@@ -205,13 +263,17 @@ async def verify_email(
             expires_delta=expires_delta
         )
         
-        return {
+        response_data = {
             "message": "Email verified successfully",
             "email": str(user.email),
             "is_verified": True,
             "access_token": access_token,
-            "token_type": "bearer"
+            "token_type": "bearer",
+            "detail": {
+                "message": "Email verified successfully"
+            }
         }
+        return response_data
         
     except HTTPException as http_ex:
         logger.error(
@@ -231,8 +293,8 @@ async def verify_email(
             error_details=str(e)
         )
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error verifying email: {str(e)}"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to verify email"
         )
 
 
