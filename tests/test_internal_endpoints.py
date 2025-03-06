@@ -20,8 +20,10 @@ async def test_get_email_by_user_id_without_api_key(async_client: AsyncClient, t
     # Try to access without API key
     response = await async_client.get(f"/auth/users/{user.id}/email")
     
-    # Should be forbidden (403)
-    assert response.status_code == status.HTTP_403_FORBIDDEN
+    # Should be rejected with a validation error (422) for missing required header
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    # Verify that the error message mentions the api-key
+    assert "api-key" in response.text.lower()
     
 
 @pytest.mark.asyncio

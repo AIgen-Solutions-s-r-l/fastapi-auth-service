@@ -3,16 +3,28 @@
 import pytest
 from decimal import Decimal
 from httpx import AsyncClient
+from app.core.config import settings
 
 pytestmark = pytest.mark.asyncio
 
-async def test_final_balance_check(async_client: AsyncClient, verified_test_user):
+async def test_final_balance_check(async_client: AsyncClient, verified_test_user, db_session):
     """Test final balance after all operations."""
-    headers = {"Authorization": f"Bearer {verified_test_user['token']}"}
+    # Get user ID from the test user
+    from sqlalchemy import select
+    from app.models.user import User
+    
+    result = await db_session.execute(select(User).where(User.email == verified_test_user["email"]))
+    user = result.scalar_one_or_none()
+    user_id = user.id
+    
+    # Setup headers with API key
+    headers = {
+        "api-key": settings.INTERNAL_API_KEY
+    }
     
     # Add initial credits
     await async_client.post(
-        "/credits/add",
+        f"/credits/add?user_id={user_id}",
         headers=headers,
         json={
             "amount": str(Decimal("100.50")),
@@ -23,7 +35,7 @@ async def test_final_balance_check(async_client: AsyncClient, verified_test_user
     
     # Use some credits
     await async_client.post(
-        "/credits/use",
+        f"/credits/use?user_id={user_id}",
         headers=headers,
         json={
             "amount": str(Decimal("50.25")),
@@ -33,7 +45,7 @@ async def test_final_balance_check(async_client: AsyncClient, verified_test_user
     )
     
     # Check final balance
-    response = await async_client.get("/credits/balance", headers=headers)
+    response = await async_client.get(f"/credits/balance?user_id={user_id}", headers=headers)
     assert response.status_code == 200
     data = response.json()
     expected_balance = Decimal("50.25")  # 100.50 - 50.25
