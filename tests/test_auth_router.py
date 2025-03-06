@@ -202,32 +202,44 @@ async def test_verify_email_success(client: AsyncClient, test_user, db_session):
     """Test successful email verification."""
     from app.models.user import User, EmailVerificationToken
     from datetime import datetime, UTC, timedelta
-    from sqlalchemy import select
-    
+    from sqlalchemy import select, text
+    import secrets
+    import string
+
     # Get user from database
     result = await db_session.execute(
         select(User).where(User.email == test_user["email"])
     )
     user = result.scalar_one_or_none()
     assert user is not None, "Test user not found in database"
-    
-    # Create verification token directly
-    token = "test_verification_token"
+
+    # Delete any existing tokens for this user
+    await db_session.execute(
+        text("DELETE FROM email_verification_tokens WHERE user_id = :user_id"),
+        {"user_id": user.id}
+    )
+    await db_session.commit()
+
+    # Generate a token that matches the expected format (64 char alphanumeric)
+    alphabet = string.ascii_letters + string.digits
+    token = ''.join(secrets.choice(alphabet) for _ in range(64))
+
     verification_token = EmailVerificationToken(
         token=token,
         user_id=user.id,
         expires_at=datetime.now(UTC) + timedelta(hours=24),
         used=False
     )
-    
+
     # Add token to database
     db_session.add(verification_token)
     await db_session.commit()
-    
+    await db_session.refresh(verification_token)
+
     # Verify the email
     response = await client.get(f"/auth/verify-email?token={token}")
     assert response.status_code == 200, f"Email verification failed with status {response.status_code}"
-    
+
     data = response.json()
     assert "message" in data, "Response missing message field"
     assert "email verified successfully" in data["message"].lower(), "Unexpected verification message"
