@@ -1,35 +1,5 @@
 # Decision Log
 
-## 2025-03-06: Internal Endpoint Security Implementation
-
-### Context
-Two endpoints in the authentication service were identified as needing internal-only access restrictions:
-1. `/auth/users/{user_id}/email` - Retrieves a user's email by their ID
-2. `/auth/users/by-email/{email}` - Retrieves user details by email address
-
-These endpoints expose sensitive user information and shouldn't be publicly accessible.
-
-### Decision
-1. Modified both endpoints to require the `get_internal_service` dependency
-2. Updated logging to include service identification in all log entries
-3. Changed event types to standardize as "internal_endpoint_access" and "internal_endpoint_error"
-4. Added 403 responses to the API documentation
-5. Updated endpoint docstrings to clearly indicate internal-only status
-
-### Rationale
-- Service-to-service communication requires proper authentication
-- User email addresses and details are sensitive personal information
-- Using `get_internal_service` enforces API key authentication
-- Consistent logging enables better security auditing and monitoring
-- Clear documentation helps developers understand access restrictions
-
-### Implementation
-- Added the `get_internal_service` dependency to both endpoint function signatures
-- Added service_id parameter to all logging calls
-- Updated OpenAPI documentation with 403 responses
-- Created detailed documentation in `endpoint_security_documentation.md`
-- Created code change specifications in `endpoint_security_code_changes.md`
-
 ## 2025-03-06: Endpoint Security Enhancement
 
 ### Context
@@ -52,24 +22,45 @@ We identified security issues with the authentication service:
 - Updated API documentation to reflect possible 403 responses
 - Created detailed documentation in `endpoint_security_implementation_plan.md`
 
-## 2025-03-06: Hide Internal Endpoints from API Schema
+## 2025-03-06: Test Suite Enhancement
 
 ### Context
-Internal endpoints `/auth/users/{user_id}/email` and `/auth/users/by-email/{email}` were already secured with the `get_internal_service` dependency, but they were still visible in the public API documentation (Swagger/OpenAPI).
+After implementing the endpoint security enhancements, we needed to ensure proper test coverage for both verified and unverified user scenarios.
 
 ### Decision
-1. Added `include_in_schema=False` to both internal endpoint definitions
-2. Fixed and updated tests in `test_internal_endpoints.py` to handle proper user ID retrieval
-3. Updated test assertions to account for FastAPI's behavior with missing headers
+1. Created a new `unverified_user` fixture in test suite
+2. Added comprehensive tests for unverified user access attempts
+3. Updated existing tests to explicitly test verified user scenarios
+4. Enhanced test documentation and error messages
 
 ### Rationale
-- Endpoints used only for internal service-to-service communication should not be visible in public API documentation
-- Hiding internal endpoints from the API schema reduces the discovery surface for potential attackers
-- "Security through obscurity" is not a primary defense but provides an additional layer of protection
-- The updated tests properly validate that these endpoints remain secure and functioning correctly
+- The `unverified_user` fixture allows testing of unverified user scenarios without modifying the existing `test_user` fixture
+- Explicit tests for both verified and unverified users ensure security measures are working correctly
+- Clear test descriptions and error messages make debugging easier
+- Comprehensive test coverage helps prevent security regressions
 
 ### Implementation
-- Added `include_in_schema=False` to endpoint decorators in `auth_router.py`
-- Fixed test code to properly retrieve user IDs from the database for testing
-- Updated test assertions to account for FastAPI's validation behavior (422 status vs 403)
-- Documented changes in `endpoint_security_code_changes.md`
+1. Test Suite Structure:
+   - Added new `unverified_user` fixture that creates a user without email verification
+   - Updated test names to clearly indicate which user type they're testing
+   - Added proper HTTP status code imports for clearer assertions
+
+2. New Test Cases Added:
+   - Unverified user attempting to link Google account
+   - Unverified user attempting to unlink Google account
+   - Unverified user attempting to change password
+   - Unverified user attempting to change email
+   - Unverified user attempting to access profile
+   - Unverified user attempting to logout
+
+3. Test Improvements:
+   - Enhanced error messages to be more descriptive
+   - Added proper status code constants
+   - Improved test documentation
+   - Added explicit verification of error messages
+
+### Impact
+- Better test coverage for security features
+- Clearer test failure messages
+- More maintainable test suite
+- Better documentation of security requirements through tests
