@@ -192,7 +192,14 @@ async def verify_email(
             )
             
         # Check if token is expired
-        if datetime.now(UTC) > token_record.expires_at:
+        # Ensure both datetimes are timezone-aware for comparison
+        current_time = datetime.now(UTC)
+        expires_at = token_record.expires_at
+        if not expires_at.tzinfo:
+            # If expires_at is naive, make it aware with UTC timezone
+            expires_at = expires_at.replace(tzinfo=UTC)
+        
+        if current_time > expires_at:
             logger.warning(
                 "Expired verification token attempt",
                 event_type="email_verification_error",

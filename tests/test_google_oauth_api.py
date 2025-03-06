@@ -109,7 +109,7 @@ class TestGoogleOAuthEndpoints:
         
         # Check error response
         assert response.status_code == HTTP_500_INTERNAL_SERVER_ERROR
-        assert "Error generating Google login URL" in response.json().get("message", "")
+        assert "Error generating Google login URL" in response.json().get("detail", {}).get("message", "")
 
     @pytest.mark.asyncio
     async def test_google_callback(
@@ -155,7 +155,7 @@ class TestGoogleOAuthEndpoints:
         
         # Check error response
         assert response.status_code == HTTP_400_BAD_REQUEST
-        assert "Error processing Google callback" in response.json().get("message", "")
+        assert "Error processing Google callback" in response.json().get("detail", {}).get("message", "")
 
     @pytest.mark.asyncio
     async def test_link_google_account(
@@ -210,7 +210,7 @@ class TestGoogleOAuthEndpoints:
             
             # Check response
             assert response.status_code == HTTP_401_UNAUTHORIZED
-            assert "Invalid password" in response.json().get("message", "")
+            assert "Invalid password" in response.json().get("detail", {}).get("message", "")
 
     @pytest.mark.asyncio
     async def test_unlink_google_account(
@@ -256,4 +256,4 @@ class TestGoogleOAuthEndpoints:
         
         # Check error response
         assert response.status_code == HTTP_400_BAD_REQUEST
-        assert "Error unlinking Google account" in response.json().get("message", "")
+        assert "Error unlinking Google account" in response.json().get("detail", {}).get("message", "")

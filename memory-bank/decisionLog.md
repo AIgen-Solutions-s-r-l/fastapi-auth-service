@@ -65,3 +65,49 @@ Negative:
 2. Add comprehensive tests
 3. Update API documentation
 4. Deploy changes
+
+## 2025-03-06: Fix Timezone Comparison in Email Verification
+### Context
+- Email verification test was failing in CI with a 400 Bad Request
+- Logs showed an "invalid_token" error
+- The issue was related to comparing timezone-aware and timezone-naive datetime objects
+
+### Decision
+- Add explicit timezone handling in the verify_email endpoint
+- Ensure both datetimes (current time and token expiration time) are timezone-aware before comparison
+- Convert any naive datetime from the database to be UTC timezone-aware
+
+### Consequences
+Positive:
+- Fixed test failures in CI
+- Prevented potential timezone-related issues in production
+- More consistent datetime handling
+
+Negative:
+- None significant
+
+### Status
+- Implementation complete
+- Tests passing
+
+## 2025-03-06: Fix Google OAuth API Tests Response Structure
+### Context
+- Google OAuth API tests were failing because they were expecting error messages in an incorrect response structure
+- The tests were looking for errors in response.json().get("message", "") but the actual structure was response.json().get("detail", {}).get("message", "")
+
+### Decision
+- Update the test assertions to match the actual response structure
+- Apply the fix consistently to all similar assertions in the test file
+
+### Consequences
+Positive:
+- Fixed test failures
+- More accurate response structure validation
+- Better alignment between tests and actual implementation
+
+Negative:
+- None
+
+### Status
+- Implementation complete
+- All tests passing
