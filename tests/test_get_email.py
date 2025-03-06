@@ -15,7 +15,7 @@ def override_get_db(db_session):
 @pytest.fixture
 async def new_user(db_session):
     """Create a test user."""
-    user = await create_user(db_session, "testuser", "test@example.com", "password123")
+    user = await create_user(db_session, "test@example.com", "password123")
     await db_session.commit()
     return user
 

@@ -109,11 +109,13 @@ async def test_change_email_complete_mock(mock_verify, mock_service, mock_token,
     original_user.email = "test@example.com"
     original_user.id = 123
     original_user.is_admin = False
+    original_user.hashed_password = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKyNiGpjM/U2qNy"  # Hash for "Password123!"
 
     updated_user = MagicMock()
     updated_user.email = "updated@example.com"
     updated_user.id = 123
     updated_user.is_admin = False
+    updated_user.hashed_password = original_user.hashed_password
     
     # Create a mock service instance with AsyncMock for all async methods
     mock_instance = MagicMock()
@@ -123,15 +125,23 @@ async def test_change_email_complete_mock(mock_verify, mock_service, mock_token,
     mock_instance.get_user_by_email = AsyncMock(return_value=original_user)
     mock_instance.update_user_email = AsyncMock(return_value=updated_user)
     mock_instance.send_verification_email = AsyncMock(return_value=True)
-    
-    # Test the endpoint
-    response = await client.put(
-        "/auth/users/change-email",
-        json={"new_email": "updated@example.com", "current_password": "Password123!"},
-        headers={"Authorization": "Bearer token"}
-    )
-    
-    assert response.status_code == 200
+    mock_instance.authenticate_user = AsyncMock(return_value=original_user)
+
+    # Mock verify_password to return True for our test password
+    with patch("app.routers.auth_router.verify_password") as mock_verify_password:
+        mock_verify_password.return_value = True
+        
+        # Test the endpoint
+        response = await client.put(
+            "/auth/users/change-email",
+            json={"new_email": "updated@example.com", "current_password": "Password123!"},
+            headers={"Authorization": "Bearer token"}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["email"] == "updated@example.com"
+        assert "message" in data
     data = response.json()
     assert data["email"] == "updated@example.com"
     assert "message" in data
