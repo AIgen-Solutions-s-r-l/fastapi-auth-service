@@ -45,32 +45,105 @@
 ### Security Implementation
 
 1. **Password Security**
-   - Passwords are hashed using bcrypt
-   - Salt is automatically generated and stored with hash
-   - Constant-time comparison for password verification
+   - Passwords are hashed using bcrypt with automatic salt generation
+   - Salt is generated uniquely for each password and stored with hash
+   - Constant-time comparison for password verification prevents timing attacks
+   - Passwords never stored in plaintext or logs
 
 2. **JWT Implementation**
-   - Tokens are signed using HS256 algorithm
-   - Include user claims (ID, username, admin status)
-   - Configurable expiration time
-   - Timezone-aware token expiration
+   - Tokens are signed using HS256 algorithm with secure secret key
+   - Include essential user claims (ID, username, admin status)
+   - Configurable expiration time with automatic refresh mechanism
+   - Timezone-aware token expiration handling
+   - JWT validation checks signature, expiration, and user existence
 
-3. **Endpoint Security Classification**
-   - **Public Endpoints**: Open access, no authentication required
-   - **Authenticated Endpoints**: Require valid JWT token
+3. **Multi-Layered Endpoint Security**
+   The auth_service implements a comprehensive security classification system:
+
+   ```mermaid
+   graph TD
+       A[Request] --> B{Authentication<br>Required?}
+       B -->|No| C[Public Access]
+       B -->|Yes| D{Auth Type?}
+       D -->|JWT Token| E[User Authentication]
+       D -->|API Key| F[Internal Service Authentication]
+       E --> G{Email<br>Verified?}
+       G -->|No| H[Authenticated User]
+       G -->|Yes| I[Verified User]
+       F --> J[Internal Service]
+   ```
+
+   - **Public Endpoints**: Open access to anyone, no authentication required
+     - Examples: login, register, password reset, email verification
+     - No security credentials needed to access these endpoints
+   
+   - **Authenticated Endpoints**: Require valid JWT token (authentication)
+     - Examples: token refresh
+     - Protected by `get_current_user` dependency
+     - Checks: Bearer token present, JWT valid, user exists in database
+   
    - **Verified User Endpoints**: Require valid JWT token AND email verification
-   - **Internal Service Endpoints**: Require API key authentication, not externally accessible
+     - Examples: account management, profile editing, Google account linking
+     - Protected by `get_current_active_user` dependency
+     - Checks: All authentication checks PLUS email verification status
+     - Returns 403 Forbidden if email not verified
+   
+   - **Internal Service Endpoints**: Require API key authentication
+     - Examples: credit system endpoints, Stripe webhook handlers
+     - Protected by `get_internal_service` dependency
+     - Not accessible externally
+     - Validates API key from X-API-Key header
 
 4. **Security Dependencies**
-   - `get_current_user`: Validates JWT token, confirms user exists
+   
+   a. **JWT Authentication Flow**
+   ```mermaid
+   flowchart TD
+       A[Request with JWT] --> B[Extract Bearer token from<br>Authorization header]
+       B --> C{Token present?}
+       C -->|No| D[401 Unauthorized]
+       C -->|Yes| E[Decode JWT]
+       E --> F{Token valid?}
+       F -->|No| G[401 Unauthorized]
+       F -->|Yes| H[Extract user_id from payload]
+       H --> I[Query database for user]
+       I --> J{User exists?}
+       J -->|No| K[401 Unauthorized]
+       J -->|Yes| L[Return User model]
+   ```
+   
+   b. **Email Verification Check**
+   ```mermaid
+   flowchart TD
+       A[get_current_active_user] --> B[get_current_user]
+       B --> C[JWT Validation]
+       C --> D[Return User]
+       D --> E{User.is_verified?}
+       E -->|Yes| F[Return Verified User]
+       E -->|No| G[403 Forbidden:<br>Email not verified]
+   ```
+   
+   c. **Internal Service Authentication Flow**
+   ```mermaid
+   flowchart TD
+       A[Request to internal endpoint] --> B[Extract API key from<br>X-API-Key header]
+       B --> C{API key present?}
+       C -->|No| D[401 Unauthorized]
+       C -->|Yes| E{API key == configured key?}
+       E -->|No| F[401 Unauthorized]
+       E -->|Yes| G[Allow access to<br>internal endpoint]
+   ```
+   
+   - `get_current_user`: Validates JWT token, confirms user exists (authentication only)
    - `get_current_active_user`: Validates JWT token, confirms user exists AND email is verified
    - `get_internal_service`: Validates API key for internal service access
 
 5. **Database Security**
-   - Async PostgreSQL connections
+   - Async PostgreSQL connections with connection pooling
    - Prepared statements for SQL injection prevention
-   - Transaction management for data integrity
-   - Connection pooling for performance
+   - Transaction management with rollback capability for data integrity
+   - Connection pooling for performance optimization
+   - Database credentials stored securely in environment variables
 
 ### Error Handling
 
@@ -102,40 +175,77 @@ Authorization: Bearer <your-jwt-token>
 
 ### Endpoint Security Classification
 
-| Endpoint                         | Method | Security Level      | Authentication Requirement                 |
-|----------------------------------|--------|---------------------|-------------------------------------------|
-| **Auth Endpoints**               |        |                     |                                           |
-| `/auth/login`                    | POST   | Public              | None                                      |
-| `/auth/register`                 | POST   | Public              | None                                      |
-| `/auth/verify-email`             | GET    | Public              | None                                      |
-| `/auth/resend-verification`      | POST   | Public              | None                                      |
-| `/auth/password-reset-request`   | POST   | Public              | None                                      |
-| `/auth/reset-password`           | POST   | Public              | None                                      |
-| `/auth/users/{user_id}/email`    | GET    | Public              | None (for interservice communication)     |
-| `/auth/users/by-email/{email}`   | GET    | Public              | None (for interservice communication)     |
-| `/auth/oauth/google/login`       | GET    | Public              | None                                      |
-| `/auth/oauth/google/callback`    | GET    | Public              | None                                      |
-| `/auth/test-email`               | GET    | Public              | None (development only)                   |
-| `/auth/verify-email-templates`   | GET    | Public              | None (development only)                   |
-| `/auth/refresh`                  | POST   | Authenticated       | Valid JWT token                           |
-| `/auth/me`                       | GET    | Verified User       | Valid JWT token + Email verification      |
-| `/auth/logout`                   | POST   | Verified User       | Valid JWT token + Email verification      |
-| `/auth/users/change-password`    | PUT    | Verified User       | Valid JWT token + Email verification      |
-| `/auth/users/change-email`       | PUT    | Verified User       | Valid JWT token + Email verification      |
-| `/auth/users/delete-account`     | DELETE | Verified User       | Valid JWT token + Email verification      |
-| `/auth/link/google`              | POST   | Verified User       | Valid JWT token + Email verification      |
-| `/auth/unlink/google`            | POST   | Verified User       | Valid JWT token + Email verification      |
-| **Credit Endpoints**             |        |                     |                                           |
-| `/credits/balance`               | GET    | Internal Service    | Valid API key                             |
-| `/credits/add`                   | POST   | Internal Service    | Valid API key                             |
-| `/credits/use`                   | POST   | Internal Service    | Valid API key                             |
-| `/credits/transactions`          | GET    | Internal Service    | Valid API key                             |
-| **Stripe Endpoints**             |        |                     |                                           |
-| `/stripe/webhook`                | POST   | Internal Service    | Valid API key                             |
-| `/stripe/create-checkout-session`| POST   | Internal Service    | Valid API key                             |
-| `/stripe/setup-intent`           | POST   | Internal Service    | Valid API key                             |
-| `/stripe/payment-methods`        | GET    | Internal Service    | Valid API key                             |
-| `/stripe/create-subscription`    | POST   | Internal Service    | Valid API key                             |
+The auth_service implements a comprehensive multi-layered security model with endpoints classified into four distinct security levels:
+
+#### Security Level Definitions:
+
+- **🌐 Public**: No authentication required, open access to anyone
+- **🔑 Authenticated**: Requires valid JWT token, accessible to any authenticated user
+- **✓ Verified User**: Requires valid JWT token AND email verification
+- **🔒 Internal Service**: Requires valid API key, used for service-to-service communication
+
+#### Detailed Endpoint Classification Table
+
+| Endpoint                         | Method | Security Level      | Auth Method                | Error Codes                            | Security Implementation                   |
+|----------------------------------|--------|---------------------|----------------------------|----------------------------------------|-------------------------------------------|
+| **Auth Endpoints**               |        |                     |                            |                                        |                                           |
+| `/auth/login`                    | POST   | 🌐 Public           | None                       | 401: Invalid credentials               | No authentication check                   |
+| `/auth/register`                 | POST   | 🌐 Public           | None                       | 409: User exists                       | No authentication check                   |
+| `/auth/verify-email`             | GET    | 🌐 Public           | None                       | 400: Invalid token                     | No authentication check                   |
+| `/auth/resend-verification`      | POST   | 🌐 Public           | None                       | 404: User not found                    | No authentication check                   |
+| `/auth/password-reset-request`   | POST   | 🌐 Public           | None                       | 200: Always returns success            | No authentication check                   |
+| `/auth/reset-password`           | POST   | 🌐 Public           | None                       | 400: Invalid/expired token             | No authentication check                   |
+| `/auth/users/{user_id}/email`    | GET    | 🌐 Public           | None                       | 404: User not found                    | No authentication check                   |
+| `/auth/users/by-email/{email}`   | GET    | 🌐 Public           | None                       | 404: User not found                    | No authentication check                   |
+| `/auth/oauth/google/login`       | GET    | 🌐 Public           | None                       | 302: Redirect to Google                | No authentication check                   |
+| `/auth/oauth/google/callback`    | GET    | 🌐 Public           | None                       | 400: Invalid state/code                | No authentication check                   |
+| `/auth/test-email`               | GET    | 🌐 Public           | None                       | 500: Email sending failed              | No authentication check                   |
+| `/auth/verify-email-templates`   | GET    | 🌐 Public           | None                       | N/A                                    | No authentication check                   |
+| `/auth/refresh`                  | POST   | 🔑 Authenticated    | JWT token in body          | 401: Invalid/expired token             | get_current_user dependency              |
+| `/auth/me`                       | GET    | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/logout`                   | POST   | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/users/change-password`    | PUT    | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/users/change-email`       | PUT    | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/users/delete-account`     | DELETE | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/link/google`              | POST   | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/unlink/google`            | POST   | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| **Credit Endpoints**             |        |                     |                            |                                        |                                           |
+| `/credits/balance`               | GET    | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| `/credits/add`                   | POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| `/credits/use`                   | POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| `/credits/transactions`          | GET    | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| **Stripe Endpoints**             |        |                     |                            |                                        |                                           |
+| `/stripe/webhook`                | POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| `/stripe/create-checkout-session`| POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| `/stripe/setup-intent`           | POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| `/stripe/payment-methods`        | GET    | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| `/stripe/create-subscription`    | POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+
+#### Security Enforcement Workflow
+
+For every incoming request to a protected endpoint, the authentication flow follows this pattern:
+
+```mermaid
+flowchart TB
+    A[Incoming Request] --> B{Endpoint Security<br>Classification}
+    
+    B -->|🌐 Public| C[Process Request<br>No Auth Check]
+    
+    B -->|🔑 Authenticated| D[get_current_user]
+    D -->|Valid JWT| E[Process Request]
+    D -->|Invalid JWT| F[401 Unauthorized]
+    
+    B -->|✓ Verified User| G[get_current_active_user]
+    G -->|Valid JWT + Verified| H[Process Request]
+    G -->|Valid JWT + Unverified| I[403 Forbidden:<br>Email not verified]
+    G -->|Invalid JWT| J[401 Unauthorized]
+    
+    B -->|🔒 Internal Service| K[get_internal_service]
+    K -->|Valid API Key| L[Process Request]
+    K -->|Invalid API Key| M[401 Unauthorized]
+```
+
+This multi-layered approach ensures appropriate security checks for each endpoint category, with stricter requirements for sensitive operations.
 
 ### Rate Limiting
 
