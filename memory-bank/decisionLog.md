@@ -1,113 +1,66 @@
 # Decision Log
 
-## 2025-03-05: Remove Username Field
+## 2025-03-06: Endpoint Security Enhancement
+
 ### Context
-- System was using both username and email for user identification
-- Email was already being used as the primary identifier in most places
-- Having both fields added unnecessary complexity
+We identified security issues with the authentication service:
+1. Some auth endpoints that should be available only to verified users weren't properly restricted
+2. There was a need to confirm that credit and stripe routes are properly secured for internal access only
 
 ### Decision
-- Remove username field entirely
-- Use email as the sole identifier for users
-- Update all templates and services to use email instead of username
+1. Modified the `/link/google` and `/unlink/google` endpoints to use `get_current_active_user` dependency instead of `get_current_user`
+2. Added appropriate 403 responses to the documentation for these endpoints
+3. Confirmed that credit router and stripe webhook router were already properly secured for internal access only through the `get_internal_service` dependency
 
-### Consequences
-Positive:
-- Simplified user model
-- Clearer identification using email only
-- Reduced complexity in authentication flow
-- Better alignment with modern authentication practices
+### Rationale
+- Using `get_current_active_user` ensures that only verified users can access these endpoints
+- The `get_current_active_user` dependency checks for both authentication and email verification
+- Credit and stripe endpoints were already properly secured using API key authentication through the `get_internal_service` dependency
 
-Negative:
-- Migration needed for existing data
-- Need to update all references to username
-- Some tests need to be updated
+### Implementation
+- Updated the dependency injection in both Google account link/unlink endpoints
+- Updated API documentation to reflect possible 403 responses
+- Created detailed documentation in `endpoint_security_implementation_plan.md`
 
-### Status
-- Implementation in progress
-- Migration created
-- Email service updated
-- Templates verified
+## 2025-03-06: Test Suite Enhancement
 
-### Next Steps
-1. Run database migration
-2. Update remaining tests
-3. Verify all functionality works with email only
-
-## 2025-03-06: Change Verify Email Endpoint to GET
 ### Context
-- Current verify-email endpoint uses POST method
-- Email verification links are typically accessed via GET requests from email clients
-- POST is not ideal for links in emails as they should be clickable without requiring a form submission
+After implementing the endpoint security enhancements, we needed to ensure proper test coverage for both verified and unverified user scenarios.
 
 ### Decision
-- Change verify-email endpoint from POST to GET
-- Update related tests and documentation
-- Keep the same response format and validation logic
+1. Created a new `unverified_user` fixture in test suite
+2. Added comprehensive tests for unverified user access attempts
+3. Updated existing tests to explicitly test verified user scenarios
+4. Enhanced test documentation and error messages
 
-### Consequences
-Positive:
-- Better user experience as verification links work directly when clicked
-- More aligned with REST principles for read operations
-- Follows common industry practice for email verification
+### Rationale
+- The `unverified_user` fixture allows testing of unverified user scenarios without modifying the existing `test_user` fixture
+- Explicit tests for both verified and unverified users ensure security measures are working correctly
+- Clear test descriptions and error messages make debugging easier
+- Comprehensive test coverage helps prevent security regressions
 
-Negative:
-- Need to update any clients using the current POST endpoint
-- Token needs to be passed as a query parameter instead of in request body
-- Slightly less secure as GET parameters might be logged in server logs
+### Implementation
+1. Test Suite Structure:
+   - Added new `unverified_user` fixture that creates a user without email verification
+   - Updated test names to clearly indicate which user type they're testing
+   - Added proper HTTP status code imports for clearer assertions
 
-### Status
-- Planning implementation
-- Documentation being updated
+2. New Test Cases Added:
+   - Unverified user attempting to link Google account
+   - Unverified user attempting to unlink Google account
+   - Unverified user attempting to change password
+   - Unverified user attempting to change email
+   - Unverified user attempting to access profile
+   - Unverified user attempting to logout
 
-### Next Steps
-1. Update endpoint in auth_router.py
-2. Add comprehensive tests
-3. Update API documentation
-4. Deploy changes
+3. Test Improvements:
+   - Enhanced error messages to be more descriptive
+   - Added proper status code constants
+   - Improved test documentation
+   - Added explicit verification of error messages
 
-## 2025-03-06: Fix Timezone Comparison in Email Verification
-### Context
-- Email verification test was failing in CI with a 400 Bad Request
-- Logs showed an "invalid_token" error
-- The issue was related to comparing timezone-aware and timezone-naive datetime objects
-
-### Decision
-- Add explicit timezone handling in the verify_email endpoint
-- Ensure both datetimes (current time and token expiration time) are timezone-aware before comparison
-- Convert any naive datetime from the database to be UTC timezone-aware
-
-### Consequences
-Positive:
-- Fixed test failures in CI
-- Prevented potential timezone-related issues in production
-- More consistent datetime handling
-
-Negative:
-- None significant
-
-### Status
-- Implementation complete
-- Tests passing
-
-## 2025-03-06: Fix Google OAuth API Tests Response Structure
-### Context
-- Google OAuth API tests were failing because they were expecting error messages in an incorrect response structure
-- The tests were looking for errors in response.json().get("message", "") but the actual structure was response.json().get("detail", {}).get("message", "")
-
-### Decision
-- Update the test assertions to match the actual response structure
-- Apply the fix consistently to all similar assertions in the test file
-
-### Consequences
-Positive:
-- Fixed test failures
-- More accurate response structure validation
-- Better alignment between tests and actual implementation
-
-Negative:
-- None
-
-### Status
-- Implementation complete
-- All tests passing
+### Impact
+- Better test coverage for security features
+- Clearer test failure messages
+- More maintainable test suite
+- Better documentation of security requirements through tests

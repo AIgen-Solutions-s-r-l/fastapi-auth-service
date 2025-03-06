@@ -45,21 +45,105 @@
 ### Security Implementation
 
 1. **Password Security**
-   - Passwords are hashed using bcrypt
-   - Salt is automatically generated and stored with hash
-   - Constant-time comparison for password verification
+   - Passwords are hashed using bcrypt with automatic salt generation
+   - Salt is generated uniquely for each password and stored with hash
+   - Constant-time comparison for password verification prevents timing attacks
+   - Passwords never stored in plaintext or logs
 
 2. **JWT Implementation**
-   - Tokens are signed using HS256 algorithm
-   - Include user claims (ID, username, admin status)
-   - Configurable expiration time
-   - Timezone-aware token expiration
+   - Tokens are signed using HS256 algorithm with secure secret key
+   - Include essential user claims (ID, username, admin status)
+   - Configurable expiration time with automatic refresh mechanism
+   - Timezone-aware token expiration handling
+   - JWT validation checks signature, expiration, and user existence
 
-3. **Database Security**
-   - Async PostgreSQL connections
+3. **Multi-Layered Endpoint Security**
+   The auth_service implements a comprehensive security classification system:
+
+   ```mermaid
+   graph TD
+       A[Request] --> B{Authentication<br>Required?}
+       B -->|No| C[Public Access]
+       B -->|Yes| D{Auth Type?}
+       D -->|JWT Token| E[User Authentication]
+       D -->|API Key| F[Internal Service Authentication]
+       E --> G{Email<br>Verified?}
+       G -->|No| H[Authenticated User]
+       G -->|Yes| I[Verified User]
+       F --> J[Internal Service]
+   ```
+
+   - **Public Endpoints**: Open access to anyone, no authentication required
+     - Examples: login, register, password reset, email verification
+     - No security credentials needed to access these endpoints
+   
+   - **Authenticated Endpoints**: Require valid JWT token (authentication)
+     - Examples: token refresh
+     - Protected by `get_current_user` dependency
+     - Checks: Bearer token present, JWT valid, user exists in database
+   
+   - **Verified User Endpoints**: Require valid JWT token AND email verification
+     - Examples: account management, profile editing, Google account linking
+     - Protected by `get_current_active_user` dependency
+     - Checks: All authentication checks PLUS email verification status
+     - Returns 403 Forbidden if email not verified
+   
+   - **Internal Service Endpoints**: Require API key authentication
+     - Examples: credit system endpoints, Stripe webhook handlers
+     - Protected by `get_internal_service` dependency
+     - Not accessible externally
+     - Validates API key from X-API-Key header
+
+4. **Security Dependencies**
+   
+   a. **JWT Authentication Flow**
+   ```mermaid
+   flowchart TD
+       A[Request with JWT] --> B[Extract Bearer token from<br>Authorization header]
+       B --> C{Token present?}
+       C -->|No| D[401 Unauthorized]
+       C -->|Yes| E[Decode JWT]
+       E --> F{Token valid?}
+       F -->|No| G[401 Unauthorized]
+       F -->|Yes| H[Extract user_id from payload]
+       H --> I[Query database for user]
+       I --> J{User exists?}
+       J -->|No| K[401 Unauthorized]
+       J -->|Yes| L[Return User model]
+   ```
+   
+   b. **Email Verification Check**
+   ```mermaid
+   flowchart TD
+       A[get_current_active_user] --> B[get_current_user]
+       B --> C[JWT Validation]
+       C --> D[Return User]
+       D --> E{User.is_verified?}
+       E -->|Yes| F[Return Verified User]
+       E -->|No| G[403 Forbidden:<br>Email not verified]
+   ```
+   
+   c. **Internal Service Authentication Flow**
+   ```mermaid
+   flowchart TD
+       A[Request to internal endpoint] --> B[Extract API key from<br>X-API-Key header]
+       B --> C{API key present?}
+       C -->|No| D[401 Unauthorized]
+       C -->|Yes| E{API key == configured key?}
+       E -->|No| F[401 Unauthorized]
+       E -->|Yes| G[Allow access to<br>internal endpoint]
+   ```
+   
+   - `get_current_user`: Validates JWT token, confirms user exists (authentication only)
+   - `get_current_active_user`: Validates JWT token, confirms user exists AND email is verified
+   - `get_internal_service`: Validates API key for internal service access
+
+5. **Database Security**
+   - Async PostgreSQL connections with connection pooling
    - Prepared statements for SQL injection prevention
-   - Transaction management for data integrity
-   - Connection pooling for performance
+   - Transaction management with rollback capability for data integrity
+   - Connection pooling for performance optimization
+   - Database credentials stored securely in environment variables
 
 ### Error Handling
 
@@ -89,370 +173,86 @@ For protected endpoints, include the JWT token in the Authorization header:
 Authorization: Bearer <your-jwt-token>
 ```
 
+### Endpoint Security Classification
+
+The auth_service implements a comprehensive multi-layered security model with endpoints classified into four distinct security levels:
+
+#### Security Level Definitions:
+
+- **🌐 Public**: No authentication required, open access to anyone
+- **🔑 Authenticated**: Requires valid JWT token, accessible to any authenticated user
+- **✓ Verified User**: Requires valid JWT token AND email verification
+- **🔒 Internal Service**: Requires valid API key, used for service-to-service communication
+
+#### Detailed Endpoint Classification Table
+
+| Endpoint                         | Method | Security Level      | Auth Method                | Error Codes                            | Security Implementation                   |
+|----------------------------------|--------|---------------------|----------------------------|----------------------------------------|-------------------------------------------|
+| **Auth Endpoints**               |        |                     |                            |                                        |                                           |
+| `/auth/login`                    | POST   | 🌐 Public           | None                       | 401: Invalid credentials               | No authentication check                   |
+| `/auth/register`                 | POST   | 🌐 Public           | None                       | 409: User exists                       | No authentication check                   |
+| `/auth/verify-email`             | GET    | 🌐 Public           | None                       | 400: Invalid token                     | No authentication check                   |
+| `/auth/resend-verification`      | POST   | 🌐 Public           | None                       | 404: User not found                    | No authentication check                   |
+| `/auth/password-reset-request`   | POST   | 🌐 Public           | None                       | 200: Always returns success            | No authentication check                   |
+| `/auth/reset-password`           | POST   | 🌐 Public           | None                       | 400: Invalid/expired token             | No authentication check                   |
+| `/auth/oauth/google/login`       | GET    | 🌐 Public           | None                       | 302: Redirect to Google                | No authentication check                   |
+| `/auth/oauth/google/callback`    | GET    | 🌐 Public           | None                       | 400: Invalid state/code                | No authentication check                   |
+| `/auth/test-email`               | GET    | 🌐 Public           | None                       | 500: Email sending failed              | No authentication check                   |
+| `/auth/verify-email-templates`   | GET    | 🌐 Public           | None                       | N/A                                    | No authentication check                   |
+| `/auth/refresh`                  | POST   | 🔑 Authenticated    | JWT token in body          | 401: Invalid/expired token             | get_current_user dependency              |
+| `/auth/me`                       | GET    | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/logout`                   | POST   | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/users/change-password`    | PUT    | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/users/change-email`       | PUT    | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/users/delete-account`     | DELETE | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/link/google`              | POST   | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/unlink/google`            | POST   | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/users/{user_id}/email`    | GET    | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/users/by-email/{email}`   | GET    | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| **Credit Endpoints**             |        |                     |                            |                                        |                                           |
+| `/credits/balance`               | GET    | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| `/credits/add`                   | POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| `/credits/use`                   | POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| `/credits/transactions`          | GET    | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| **Stripe Endpoints**             |        |                     |                            |                                        |                                           |
+| `/stripe/webhook`                | POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| `/stripe/create-checkout-session`| POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| `/stripe/setup-intent`           | POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| `/stripe/payment-methods`        | GET    | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+| `/stripe/create-subscription`    | POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
+
+#### Security Enforcement Workflow
+
+For every incoming request to a protected endpoint, the authentication flow follows this pattern:
+
+```mermaid
+flowchart TB
+    A[Incoming Request] --> B{Endpoint Security<br>Classification}
+    
+    B -->|🌐 Public| C[Process Request<br>No Auth Check]
+    
+    B -->|🔑 Authenticated| D[get_current_user]
+    D -->|Valid JWT| E[Process Request]
+    D -->|Invalid JWT| F[401 Unauthorized]
+    
+    B -->|✓ Verified User| G[get_current_active_user]
+    G -->|Valid JWT + Verified| H[Process Request]
+    G -->|Valid JWT + Unverified| I[403 Forbidden:<br>Email not verified]
+    G -->|Invalid JWT| J[401 Unauthorized]
+    
+    B -->|🔒 Internal Service| K[get_internal_service]
+    K -->|Valid API Key| L[Process Request]
+    K -->|Invalid API Key| M[401 Unauthorized]
+```
+
+This multi-layered approach ensures appropriate security checks for each endpoint category, with stricter requirements for sensitive operations.
+
 ### Rate Limiting
 
 All endpoints are rate-limited to prevent abuse:
 - 100 requests per minute for authentication endpoints
 - 1000 requests per minute for other endpoints
 - Rate limits are per IP address
-
-### 1. User Registration
-
-```http
-POST /auth/register
-Content-Type: application/json
-
-{
-    "username": "johndoe",
-    "email": "johndoe@example.com",
-    "password": "securepassword"
-}
-
-Response (201 Created):
-{
-    "message": "User registered successfully",
-    "username": "johndoe",
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "token_type": "bearer"
-}
-
-Possible Status Codes:
-- 201: Successfully registered
-- 409: Username or email already exists
-- 422: Validation error (invalid email format, password too short)
-```
-
-### 2. User Login
-
-```http
-POST /auth/login
-Content-Type: application/x-www-form-urlencoded
-
-username=johndoe&password=securepassword
-
-Response (200 OK):
-{
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "token_type": "bearer"
-}
-
-Possible Status Codes:
-- 200: Successfully authenticated
-- 401: Invalid credentials
-- 422: Validation error
-```
-
-### 3. Get User Profile
-
-```http
-GET /auth/me
-Authorization: Bearer <jwt-token>
-
-Response (200 OK):
-{
-    "username": "johndoe",
-    "email": "johndoe@example.com"
-}
-
-Optional Query Parameters:
-- user_id: (Admin only) Get another user's profile
-
-Possible Status Codes:
-- 200: Profile retrieved successfully
-- 401: Not authenticated
-- 403: Not authorized (when non-admin tries to access other profiles)
-- 404: User not found
-```
-
-### 4. Password Reset Request
-
-```http
-POST /auth/password-reset-request
-Content-Type: application/json
-
-{
-    "email": "johndoe@example.com"
-}
-
-Response (200 OK):
-{
-    "message": "Password reset link sent to email if account exists"
-}
-
-Note: Always returns 200 OK to prevent email enumeration
-```
-
-### 5. Reset Password
-
-```http
-POST /auth/reset-password
-Content-Type: application/json
-
-{
-    "token": "reset-token-from-email",
-    "new_password": "newSecurePassword"
-}
-
-Response (200 OK):
-{
-    "message": "Password has been reset successfully"
-}
-
-Possible Status Codes:
-- 200: Password reset successful
-- 400: Invalid or expired reset token
-- 422: Validation error (password requirements not met)
-```
-
-### 6. Change Password
-
-```http
-PUT /auth/users/{username}/password
-Authorization: Bearer <jwt-token>
-Content-Type: application/json
-
-{
-    "current_password": "currentPassword",
-    "new_password": "newSecurePassword"
-}
-
-Response (200 OK):
-{
-    "message": "Password updated successfully"
-}
-
-Possible Status Codes:
-- 200: Password changed successfully
-- 401: Invalid current password
-- 404: User not found
-- 422: Validation error
-```
-
-### 7. Change Email
-
-```http
-PUT /auth/users/{username}/email
-Authorization: Bearer <jwt-token>
-Content-Type: application/json
-
-{
-    "new_email": "newemail@example.com",
-    "current_password": "currentPassword"
-}
-
-Response (200 OK):
-{
-    "message": "Email updated successfully",
-    "username": "username",
-    "email": "newemail@example.com"
-}
-
-Possible Status Codes:
-- 200: Email changed successfully
-- 400: Email already registered
-- 401: Invalid password or unauthorized
-- 403: Not authorized to change other users' email
-- 404: User not found
-- 422: Invalid email format
-```
-
-
-### 8. Delete Account
-
-```http
-DELETE /auth/users/{username}
-Authorization: Bearer <jwt-token>
-
-Query Parameters:
-password: Current password for verification
-
-Response (200 OK):
-{
-    "message": "User deleted successfully"
-}
-
-Possible Status Codes:
-- 200: Account deleted successfully
-- 401: Invalid password
-- 404: User not found
-```
-
-### 9. Refresh Token
-
-```http
-POST /auth/refresh
-Content-Type: application/json
-
-{
-    "token": "existing-jwt-token"
-}
-
-Response (200 OK):
-{
-    "access_token": "new-jwt-token",
-    "token_type": "bearer"
-}
-
-Possible Status Codes:
-- 200: Token refreshed successfully
-- 401: Invalid or expired token
-```
-
-### 9. Logout
-
-```http
-POST /auth/logout
-Authorization: Bearer <jwt-token>
-
-Response (200 OK):
-{
-    "message": "Successfully logged out"
-}
-
-Note: Client should handle token removal from storage
-```
-
-### 10. Get User Details
-
-```http
-GET /auth/users/{username}
-Authorization: Bearer <jwt-token>
-
-Response (200 OK):
-{
-    "username": "johndoe",
-    "email": "johndoe@example.com",
-    "id": 1,
-    "is_admin": false
-}
-
-Possible Status Codes:
-- 200: User details retrieved successfully
-- 404: User not found
-```
-
-### 11. Get Credit Balance
-
-```http
-GET /credits/balance
-Authorization: Bearer <jwt-token>
-
-Response (200 OK):
-{
-    "user_id": 1,
-    "balance": 100.50,
-    "updated_at": "2025-02-06T17:00:00Z"
-}
-
-Possible Status Codes:
-- 200: Balance retrieved successfully
-- 401: Not authenticated
-```
-
-### 13. Add Credits
-
-```http
-POST /credits/add
-Authorization: Bearer <jwt-token>
-Content-Type: application/json
-
-{
-    "amount": 50.00,
-    "reference_id": "order_123",  // Optional
-    "description": "Credit purchase"  // Optional
-}
-
-Response (200 OK):
-{
-    "id": 1,
-    "user_id": 1,
-    "amount": 50.00,
-    "transaction_type": "credit_added",
-    "reference_id": "order_123",
-    "description": "Credit purchase",
-    "created_at": "2025-02-06T17:00:00Z",
-    "new_balance": 150.50
-}
-
-Possible Status Codes:
-- 200: Credits added successfully
-- 401: Not authenticated
-- 422: Validation error (invalid amount)
-```
-
-### 13. Use Credits
-
-```http
-POST /credits/use
-Authorization: Bearer <jwt-token>
-Content-Type: application/json
-
-{
-    "amount": 25.00,
-    "reference_id": "purchase_456",  // Optional
-    "description": "Service purchase"  // Optional
-}
-
-Response (200 OK):
-{
-    "id": 2,
-    "user_id": 1,
-    "amount": 25.00,
-    "transaction_type": "credit_used",
-    "reference_id": "purchase_456",
-    "description": "Service purchase",
-    "created_at": "2025-02-06T17:05:00Z",
-    "new_balance": 125.50
-}
-
-Possible Status Codes:
-- 200: Credits used successfully
-- 400: Insufficient credits
-- 401: Not authenticated
-- 422: Validation error (invalid amount)
-```
-
-### 14. Get Transaction History
-
-```http
-GET /credits/transactions
-Authorization: Bearer <jwt-token>
-
-Query Parameters:
-- skip: Number of records to skip (default: 0)
-- limit: Maximum number of records to return (default: 50)
-
-Response (200 OK):
-{
-    "transactions": [
-        {
-            "id": 2,
-            "user_id": 1,
-            "amount": 25.00,
-            "transaction_type": "credit_used",
-            "reference_id": "purchase_456",
-            "description": "Service purchase",
-            "created_at": "2025-02-06T17:05:00Z",
-            "new_balance": 125.50
-        },
-        {
-            "id": 1,
-            "user_id": 1,
-            "amount": 50.00,
-            "transaction_type": "credit_added",
-            "reference_id": "order_123",
-            "description": "Credit purchase",
-            "created_at": "2025-02-06T17:00:00Z",
-            "new_balance": 150.50
-        }
-    ],
-    "total_count": 2
-}
-
-Possible Status Codes:
-- 200: Transaction history retrieved successfully
-- 401: Not authenticated
-```
 
 ## Key Features
 

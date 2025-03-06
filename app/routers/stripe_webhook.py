@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from app.core.database import get_db
 from app.core.config import settings
+from app.core.auth import get_internal_service
 from app.log.logging import logger
 from app.services.credit_service import CreditService
 from app.services.stripe_service import StripeService
@@ -19,10 +20,13 @@ router = APIRouter(prefix="/webhook", tags=["webhook"])
 async def stripe_webhook_handler(
     request: Request,
     background_tasks: BackgroundTasks,
+    _: str = Depends(get_internal_service),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Handle Stripe webhook events.
+    
+    This endpoint is restricted to internal service access only.
     
     This endpoint receives webhook events from Stripe and processes them based on event type.
     Supported events include:
@@ -33,6 +37,7 @@ async def stripe_webhook_handler(
     Args:
         request: FastAPI request object containing the Stripe webhook payload
         background_tasks: FastAPI background tasks for async operations
+        _: Internal service identifier (from API key auth)
         db: Database session
         
     Returns:

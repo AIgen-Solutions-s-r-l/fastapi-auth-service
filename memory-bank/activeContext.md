@@ -1,73 +1,65 @@
-# Active Context - Username Removal Implementation
+# Active Context: Endpoint Security Enhancement (COMPLETED)
 
-## Current Status
-- Completed migration to remove username field
-- Updated auth_router.py to use email instead of username:
-  - Changed login endpoint to use email only
-  - Updated registration endpoint
-  - Modified user details endpoint to use email
-  - Updated password change endpoint
-  - Updated email change endpoint
-  - Updated user deletion endpoint
-  - Removed username from all logging
-  - Simplified token refresh to use email only
+## Task Summary
+We have successfully enhanced the security of the auth_service endpoints to ensure that:
+1. Auth endpoints are properly restricted to verified users where appropriate
+2. Internal endpoints are secured with API key authentication
+3. Credit and Stripe routes are properly secured for internal access only
 
-## Next Steps
-1. **Fix app/core/auth.py**: Remove username fallback code in get_current_user function
-2. Update OAuth integration to ensure it works with email-only system
-3. Update documentation to reflect the removal of username field
-4. Review and update email templates
-5. Run full test suite to verify all changes
+## Implementation Completed
 
-## Recent Changes
-- Created and applied migration e66712ccad45_remove_username_field.py
-- Removed username field from User model
-- Updated auth_schemas.py to remove username fields
-- Modified user_service.py to use email as primary identifier
-- Updated auth_router.py endpoints to use email instead of username
-- Updated all email templates to remove username references:
-  - registration_confirmation.html
-  - welcome.html
-  - password_change_confirmation.html
-  - password_change_request.html
-  - one_time_credit_purchase.html
-  - plan_upgrade.html
-- Updated OAuth integration:
-  - Removed username references from Google OAuth logging
-  - Updated template test data to remove username fields
-- Updated test suite:
-  - Modified test_auth_router.py for email-only auth
-  - Updated test_auth_router_coverage.py
-  - Updated test_auth_router_extended.py
-  - Updated test_email_login.py
-  - Updated test fixtures in conftest.py
-- **Created email_only_authentication_plan.md** to document remaining changes
+### Security Models Implemented
+- **Public Endpoints**: Open access, no authentication required
+- **Authenticated Endpoints**: Require valid JWT token
+- **Verified User Endpoints**: Require valid JWT token AND email verification
+- **Internal Service Endpoints**: Require API key authentication, not externally accessible
 
-## Open Questions
-- Do we need to update any email templates that might reference username?
-- Should we update the API documentation to reflect these changes?
-- Are there any frontend components that need to be updated?
+### Implementation Changes
+- Secured two internal-only endpoints:
+  - `/auth/users/{user_id}/email` endpoint restricted to internal services only
+  - `/auth/users/by-email/{email}` endpoint restricted to internal services only
+- Hid internal endpoints from public API documentation (Swagger/OpenAPI):
+  - Added `include_in_schema=False` to both internal endpoint definitions
+  - Reduces discovery surface for potential attackers
+- Fixed and updated tests in `test_internal_endpoints.py` to handle proper user ID retrieval
+- Modified `/link/google` endpoint to require email verification
+- Modified `/unlink/google` endpoint to require email verification
+- Confirmed Credit Router endpoints already properly secured for internal access
+- Confirmed Stripe Webhook Router endpoints already properly secured for internal access
 
-## Current Goals
-1. Complete the removal of username field from all parts of the system
-2. Ensure all authentication flows work properly with email-only system
-3. Maintain security and functionality while simplifying the authentication system
+### Documentation Created
+- Comprehensive endpoint security documentation with Mermaid diagrams
+- Updated README.md with endpoint security classification table
+- Detailed implementation plan in memory-bank
+- Detailed code changes documentation
+- Updated decision log with rationale
 
-## Implementation Progress
-- [x] Database migration created and applied
-- [x] User model updated
-- [x] Auth schemas updated
-- [x] User service updated
-- [x] Auth router endpoints updated
-- [x] Tests updated
-- [x] OAuth integration verified
-- [ ] **app/core/auth.py updated**
-- [ ] Documentation updated
-- [x] Email templates checked and updated
+## Key Files Modified
+- `app/routers/auth_router.py`: 
+  - Updated two endpoints to require internal service authentication
+  - Updated Google OAuth endpoints to require verification
+- `README.md`: Added comprehensive endpoint security documentation
+- Memory bank documentation files
 
-## Newly Identified Issues
-1. The `app/core/auth.py` file still has references to username:
-   - Line 29: Comment mentions username in the 'sub' claim
-   - Line 60-61: Attempts to find user by username as fallback
+## Verification Performed
+- ✅ Verified that external requests to `/auth/users/{user_id}/email` are rejected without API key
+- ✅ Verified that external requests to `/auth/users/by-email/{email}` are rejected without API key
+- ✅ Verified that internal services can access these endpoints with valid API key
+- ✅ Verified that unverified users cannot access the `/link/google` endpoint
+- ✅ Verified that unverified users cannot access the `/unlink/google` endpoint
+- ✅ Verified that external requests to credit endpoints are rejected
+- ✅ Verified that external requests to stripe endpoints are rejected
 
-2. There's a reference to a method `get_user_by_username()` in UserService that doesn't exist in the actual implementation
+## Changes Committed
+- Created commits with messages: 
+  - "🔒 feat(auth): secure internal-only endpoints with API key authentication"
+  - "🔒 feat(auth): require email verification for Google account linking"
+- Pushed to branch: endpoint-security-enhancement
+- Linked to issue: #AUTH-238
+
+## Future Security Improvements
+- Consider additional security enhancements:
+  - Role-based access control for admin functionalities
+  - Rate limiting for authentication endpoints
+  - CSRF protection for sensitive operations
+  - Regular API key rotation for internal services

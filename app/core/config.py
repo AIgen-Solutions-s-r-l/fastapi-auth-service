@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
     OAUTH_SCOPES: str = os.getenv("OAUTH_SCOPES", "openid email profile")
     
+    # Service-to-service authentication
+    INTERNAL_API_KEY: str = os.getenv("INTERNAL_API_KEY", "INTERNAL_API_KEY_REMOVED")
+    
 settings = Settings()
 
 
@@ -214,6 +217,45 @@ def validate_oauth_config() -> Tuple[bool, Dict[str, Any]]:
             warning,
             event_type="config_warning",
             setting="GOOGLE_REDIRECT_URI"
+        )
+        warnings.append(warning)
+    
+    return valid, {
+        "valid": valid,
+        "issues": issues,
+        "warnings": warnings
+    }
+
+
+def validate_internal_api_key() -> Tuple[bool, Dict[str, Any]]:
+    """
+    Validate internal service API key configuration.
+    
+    Returns:
+        Tuple[bool, Dict[str, Any]]:
+            - Boolean indicating if configuration is valid
+            - Dictionary with validation details
+    """
+    valid = True
+    issues = []
+    warnings = []
+    
+    # Check internal API key
+    if not settings.INTERNAL_API_KEY:
+        issue = "Internal API key not configured (INTERNAL_API_KEY)"
+        logger.error(
+            issue,
+            event_type="config_error",
+            setting="INTERNAL_API_KEY"
+        )
+        issues.append(issue)
+        valid = False
+    elif len(settings.INTERNAL_API_KEY) < 32:
+        warning = "Internal API key may be too short for security (INTERNAL_API_KEY)"
+        logger.warning(
+            warning,
+            event_type="config_warning",
+            setting="INTERNAL_API_KEY"
         )
         warnings.append(warning)
     

@@ -1,121 +1,122 @@
-"""Test configuration and fixtures."""
+"""Common test fixtures and configurations."""
 
-import asyncio
-import uuid
 import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
 from typing import AsyncGenerator, Generator
-from fastapi import FastAPI
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    create_async_engine,
-    async_sessionmaker
-)
-from sqlalchemy.orm import declarative_base
+from unittest.mock import AsyncMock, patch
+import asyncio
+import greenlet
 
 from app.core.database import get_db
 from app.main import app
 from app.models.user import Base
+from app.services.email_service import EmailService
 
 # Use SQLite for testing
-TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
 
-# Create async engine for tests
 engine = create_async_engine(
-    TEST_DATABASE_URL,
-    echo=False,  # Disable SQL echo for cleaner test output
-    connect_args={"check_same_thread": False}
+    SQLALCHEMY_DATABASE_URL, 
+    connect_args={"check_same_thread": False},
+    poolclass=None  # Disable connection pooling for tests
 )
-async_session = async_sessionmaker(engine, expire_on_commit=False)
-
+TestingSessionLocal = sessionmaker(
+    autocommit=False, 
+    autoflush=False, 
+    bind=engine, 
+    class_=AsyncSession,
+    expire_on_commit=False
+)
 
 @pytest.fixture(scope="session")
-@pytest.mark.asyncio(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
+def event_loop():
     """Create an instance of the default event loop for the test session."""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
-
 @pytest.fixture
-async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Create a fresh database session for a test."""
+async def db() -> AsyncGenerator[AsyncSession, None]:
+    """Create a clean database session for a test."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
-    async with async_session() as session:
+    async with TestingSessionLocal() as session:
         yield session
-
-    # Clean up after test
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-
+        await session.rollback()
+        await session.close()
 
 @pytest.fixture
-async def test_app(db_session: AsyncSession) -> FastAPI:
-    """Create a test instance of the FastAPI application."""
+def client(db: AsyncSession) -> Generator:
+    """Create a test client with a clean database."""
+    
     async def override_get_db():
-        yield db_session
+        try:
+            yield db
+        finally:
+            await db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    return app
-
-
-@pytest.fixture
-async def async_client(test_app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
-    """Create an async HTTP client for testing."""
-    async with AsyncClient(
-        transport=ASGITransport(app=test_app),
-        base_url="http://test"
-    ) as client:
-        yield client
-
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
 
 @pytest.fixture
-async def test_app_client(test_app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
-    """Create an async HTTP client for testing (alternative name)."""
-    async with AsyncClient(
-        transport=ASGITransport(app=test_app),
-        base_url="http://test"
-    ) as client:
-        yield client
+def test_user_data():
+    """Test user data fixture."""
+    return {
+        "email": "test@example.com",
+        "password": "testpassword123"
+    }
 
+@pytest.fixture(autouse=True)
+def mock_email_service():
+    """Mock email service for all tests."""
+    with patch.object(EmailService, 'send_registration_confirmation', new_callable=AsyncMock) as mock_reg:
+        with patch.object(EmailService, 'send_welcome_email', new_callable=AsyncMock) as mock_welcome:
+            with patch.object(EmailService, 'send_password_change_confirmation', new_callable=AsyncMock) as mock_password:
+                with patch.object(EmailService, '_send_templated_email', new_callable=AsyncMock) as mock_template:
+                    mock_reg.return_value = True
+                    mock_welcome.return_value = True
+                    mock_password.return_value = True
+                    mock_template.return_value = True
+                    yield {
+                        'registration': mock_reg,
+                        'welcome': mock_welcome,
+                        'password': mock_password,
+                        'template': mock_template
+                    }
 
 @pytest.fixture
-async def test_user(async_client: AsyncClient):
-    """Create a test user with authentication token."""
-    # Generate a unique email
-    unique_id = uuid.uuid4().hex[:8]
-    email = f"testuser_{unique_id}@example.com"
-    password = "TestPassword123!"
+def mock_background_tasks():
+    """Mock background tasks."""
+    with patch('fastapi.BackgroundTasks.add_task') as mock:
+        yield mock
+
+# Helper functions for tests
+async def create_test_user(db: AsyncSession, email: str, password: str, is_verified: bool = False):
+    """Helper function to create a test user."""
+    from app.services.user_service import create_user
+    user = await create_user(db, email, password)
+    if is_verified:
+        user.is_verified = True
+        await db.commit()
+    return user
+
+async def create_test_token(db: AsyncSession, user_id: int, token: str, expires_in_hours: int = 24):
+    """Helper function to create a test token."""
+    from datetime import datetime, timedelta, timezone
+    from app.models.user import EmailVerificationToken
     
-    # Register the user
-    response = await async_client.post("/auth/register", json={
-        "email": email,
-        "password": password
-    })
-    assert response.status_code == 201, "User registration failed"
-    
-    # Login to get a valid token
-    login_response = await async_client.post("/auth/login", json={
-        "email": email,
-        "password": password
-    })
-    assert login_response.status_code == 200, "Login failed"
-    
-    data = login_response.json()
-    token = data.get("access_token")
-    assert token, "No access token in login response"
-    
-    user_data = {"email": email, "password": password, "token": token}
-    
-    yield user_data
-    
-    # Cleanup: delete the user after tests run
-    await async_client.delete(
-        "/auth/users/delete-account",
-        params={"password": password},
-        headers={"Authorization": f"Bearer {token}"}
+    token_record = EmailVerificationToken(
+        token=token,
+        user_id=user_id,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=expires_in_hours),
+        used=False
     )
+    db.add(token_record)
+    await db.commit()
+    return token_record
