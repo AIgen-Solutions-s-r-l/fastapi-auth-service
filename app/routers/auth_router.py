@@ -11,7 +11,7 @@ from app.models.user import EmailVerificationToken
 from app.core.database import get_db
 from app.core.exceptions import UserAlreadyExistsError, UserNotFoundError, InvalidCredentialsError
 from app.core.security import create_access_token, verify_jwt_token, verify_password
-from app.core.auth import get_current_user, get_current_active_user
+from app.core.auth import get_current_user, get_current_active_user, get_internal_service
 from app.schemas.auth_schemas import (
     LoginRequest, Token, UserCreate, PasswordChange,
     PasswordResetRequest, PasswordReset, RefreshToken, EmailChange,
@@ -378,21 +378,39 @@ async def resend_verification_email(
 @router.get(
     "/users/by-email/{email}",
     response_model=UserResponse,
+    include_in_schema=False,  # Hide from public API docs
     responses={
         200: {"description": "User details retrieved successfully"},
+        403: {"description": "Forbidden - Internal service access only"},
         404: {"description": "User not found"}
     }
 )
 async def get_user_details(
         email: str,
+        service_id: str = Depends(get_internal_service),
         db: AsyncSession = Depends(get_db)
 ) -> UserResponse:
-    """Retrieve user details by email."""
+    """
+    Retrieve user details by email.
+    
+    This is an internal-only endpoint for service-to-service communication.
+    Requires a valid INTERNAL_API_KEY header.
+    """
     try:
         user = await get_user_by_email(db, email)
-        logger.info("User details retrieved", event_type="user_details_retrieved", email=email)
+        logger.info(
+            "User details retrieved",
+            event_type="internal_endpoint_access",
+            email=email,
+            service_id=service_id
+        )
         if user is None:
-            logger.error("User object is None", event_type="user_lookup_error", email=email)
+            logger.error(
+                "User object is None",
+                event_type="internal_endpoint_error",
+                email=email,
+                service_id=service_id
+            )
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
             
         return UserResponse(
@@ -401,7 +419,13 @@ async def get_user_details(
         )
         
     except UserNotFoundError as e:
-        logger.error("User lookup failed", event_type="user_lookup_error", email=email, error_type="user_not_found")
+        logger.error(
+            "User lookup failed",
+            event_type="internal_endpoint_error",
+            email=email,
+            error_type="user_not_found",
+            service_id=service_id
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
 
@@ -970,37 +994,51 @@ async def get_current_user_profile(
 
 @router.get("/users/{user_id}/email",
     response_model=Dict[str, str],
+    include_in_schema=False,  # Hide from public API docs
     responses={
         200: {"description": "User email retrieved successfully"},
+        403: {"description": "Forbidden - Internal service access only"},
         404: {"description": "User not found"}
     }
 )
-async def get_email_by_user_id(user_id: int, db: AsyncSession = Depends(get_db)) -> Dict[str, str]:
-    """Get user's email by user ID without requiring authentication."""
+async def get_email_by_user_id(
+    user_id: int,
+    service_id: str = Depends(get_internal_service),
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, str]:
+    """
+    Get user's email by user ID.
+    
+    This is an internal-only endpoint for service-to-service communication.
+    Requires a valid INTERNAL_API_KEY header.
+    """
     try:
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if not user:
             logger.warning(
                 "Email retrieval failed - user not found",
-                event_type="email_retrieval_error",
+                event_type="internal_endpoint_error",
                 user_id=user_id,
+                service_id=service_id,
                 error_type="user_not_found"
             )
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
         
         logger.info(
             "Email retrieved by user_id",
-            event_type="email_retrieved",
-            user_id=user_id
+            event_type="internal_endpoint_access",
+            user_id=user_id,
+            service_id=service_id
         )
         return {"email": str(user.email)}
     except HTTPException as http_ex:
         # Re-log but keep the original HTTPException status code
         logger.error(
             "Failed to retrieve email by user_id",
-            event_type="email_retrieval_error",
+            event_type="internal_endpoint_error",
             user_id=user_id,
+            service_id=service_id,
             error_type="HTTPException",
             error_details=str(http_ex.detail)
         )
@@ -1009,8 +1047,9 @@ async def get_email_by_user_id(user_id: int, db: AsyncSession = Depends(get_db))
     except Exception as e:
         logger.error(
             "Failed to retrieve email by user_id",
-            event_type="email_retrieval_error",
+            event_type="internal_endpoint_error",
             user_id=user_id,
+            service_id=service_id,
             error_type=type(e).__name__,
             error_details=str(e)
         )

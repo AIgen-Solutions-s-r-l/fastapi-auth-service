@@ -2,6 +2,20 @@
 
 ## Completed Tasks
 
+### 2025-03-06: Internal Endpoint Restriction
+- ✅ Secured `/auth/users/{user_id}/email` as internal-only using `get_internal_service`
+- ✅ Secured `/auth/users/by-email/{email}` as internal-only using `get_internal_service`
+- ✅ Updated endpoint documentation to indicate internal-only status
+- ✅ Updated logging with service identification for audit trails
+- ✅ Created detailed endpoint security implementation plan and code changes
+- ✅ Created comprehensive security documentation for internal endpoints
+
+### 2025-03-06: Hide Internal Endpoints from API Schema
+- ✅ Added `include_in_schema=False` to the `/auth/users/{user_id}/email` endpoint
+- ✅ Added `include_in_schema=False` to the `/auth/users/by-email/{email}` endpoint
+- ✅ Fixed and updated internal endpoint tests in `test_internal_endpoints.py`
+- ✅ Added documentation of changes to `endpoint_security_code_changes.md`
+
 ### 2025-03-06: Endpoint Security Enhancement
 - ✅ Analyzed all endpoints in auth_router.py to identify those needing verification
 - ✅ Updated the `/link/google` endpoint to use `get_current_active_user` dependency
