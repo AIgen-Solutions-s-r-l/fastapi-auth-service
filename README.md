@@ -1,14 +1,76 @@
-# auth_service
+# 🔐 auth_service
 
-## Overview
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.95.0-009688.svg?style=flat&logo=FastAPI&logoColor=white)](https://fastapi.tiangolo.com)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-13+-336791.svg?style=flat&logo=postgresql&logoColor=white)](https://www.postgresql.org)
+[![JWT](https://img.shields.io/badge/JWT-Auth-000000.svg?style=flat&logo=json-web-tokens&logoColor=white)](https://jwt.io)
+
+## 📋 Table of Contents
+
+- [Overview](#-overview)
+- [Architecture and Implementation](#-architecture-and-implementation)
+  - [Authentication Flow](#authentication-flow)
+  - [Security Implementation](#security-implementation)
+  - [Error Handling](#error-handling)
+- [API Endpoints](#-api-endpoints)
+  - [Authentication Headers](#authentication-headers)
+  - [Endpoint Security Classification](#endpoint-security-classification)
+  - [Rate Limiting](#rate-limiting)
+- [Key Features](#-key-features)
+- [Prerequisites](#-prerequisites)
+- [Installation](#-installation)
+- [Configuration](#-configuration)
+- [Database Migrations](#-database-migrations)
+- [Running the Application](#-running-the-application)
+- [Development Tools](#-development-tools)
+- [Testing](#-testing)
+- [Project Structure](#-project-structure)
+- [Error Handling](#-error-handling)
+- [Logging](#-logging)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+## 🚀 Overview
 
 **auth_service** is a production-ready FastAPI-based authentication service designed to handle user authentication and management. It uses PostgreSQL for storing user data and provides secure JWT-based authentication with comprehensive logging and monitoring capabilities.
 
-## Architecture and Implementation
+> 💡 **Key Strengths**: Scalable architecture, robust security, and comprehensive API for seamless integration with other services.
+
+## 🏗️ Architecture and Implementation
+
+The auth_service follows a layered architecture pattern with clear separation of concerns:
+
+```mermaid
+graph TD
+    subgraph "Client Layer"
+        A[External Clients]
+    end
+    
+    subgraph "API Layer"
+        B[FastAPI Endpoints]
+    end
+    
+    subgraph "Service Layer"
+        C[Business Logic]
+    end
+    
+    subgraph "Data Layer"
+        D[PostgreSQL Database]
+    end
+    
+    A <--> B
+    B <--> C
+    C <--> D
+    
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style B fill:#bbf,stroke:#333,stroke-width:2px
+    style C fill:#bfb,stroke:#333,stroke-width:2px
+    style D fill:#fbb,stroke:#333,stroke-width:2px
+```
 
 ### Authentication Flow
 
-1. **Registration Flow**
+1. **🔑 Registration Flow**
    - User submits username, email, and password
    - System checks for existing username/email
    - Password is hashed using bcrypt
@@ -16,7 +78,7 @@
    - JWT token is generated and returned for immediate authentication
    - Welcome email is sent to user
 
-2. **Login Flow**
+2. **🔓 Login Flow**
    - User submits username and password
    - System verifies credentials against database
    - On success, generates JWT token with:
@@ -26,7 +88,7 @@
      - Expiration time (60 minutes)
    - Returns token for subsequent authenticated requests
 
-3. **Token Refresh Flow**
+3. **🔄 Token Refresh Flow**
    - Client submits existing JWT token
    - System verifies token validity and user existence
    - On success, generates new JWT token with:
@@ -34,7 +96,7 @@
      - New expiration time (60 minutes)
    - Returns new token for continued authentication
 
-4. **Password Reset Flow**
+4. **🔐 Password Reset Flow**
    - User requests password reset with email
    - System generates secure reset token (JWT)
    - Reset link is sent to user's email
@@ -44,20 +106,20 @@
 
 ### Security Implementation
 
-1. **Password Security**
+1. **🔒 Password Security**
    - Passwords are hashed using bcrypt with automatic salt generation
    - Salt is generated uniquely for each password and stored with hash
    - Constant-time comparison for password verification prevents timing attacks
    - Passwords never stored in plaintext or logs
 
-2. **JWT Implementation**
+2. **🔖 JWT Implementation**
    - Tokens are signed using HS256 algorithm with secure secret key
    - Include essential user claims (ID, username, admin status)
    - Configurable expiration time with automatic refresh mechanism
    - Timezone-aware token expiration handling
    - JWT validation checks signature, expiration, and user existence
 
-3. **Multi-Layered Endpoint Security**
+3. **🛡️ Multi-Layered Endpoint Security**
    The auth_service implements a comprehensive security classification system:
 
    ```mermaid
@@ -71,30 +133,41 @@
        G -->|No| H[Authenticated User]
        G -->|Yes| I[Verified User]
        F --> J[Internal Service]
+       
+       style A fill:#f9f9f9,stroke:#333,stroke-width:2px
+       style B fill:#ffeeee,stroke:#333,stroke-width:2px
+       style C fill:#eeffee,stroke:#333,stroke-width:2px
+       style D fill:#ffeeee,stroke:#333,stroke-width:2px
+       style E fill:#eeeeff,stroke:#333,stroke-width:2px
+       style F fill:#eeeeff,stroke:#333,stroke-width:2px
+       style G fill:#ffeeee,stroke:#333,stroke-width:2px
+       style H fill:#eeffee,stroke:#333,stroke-width:2px
+       style I fill:#eeffee,stroke:#333,stroke-width:2px
+       style J fill:#eeffee,stroke:#333,stroke-width:2px
    ```
 
-   - **Public Endpoints**: Open access to anyone, no authentication required
+   - **🌐 Public Endpoints**: Open access to anyone, no authentication required
      - Examples: login, register, password reset, email verification
      - No security credentials needed to access these endpoints
    
-   - **Authenticated Endpoints**: Require valid JWT token (authentication)
+   - **🔑 Authenticated Endpoints**: Require valid JWT token (authentication)
      - Examples: token refresh
      - Protected by `get_current_user` dependency
      - Checks: Bearer token present, JWT valid, user exists in database
    
-   - **Verified User Endpoints**: Require valid JWT token AND email verification
+   - **✓ Verified User Endpoints**: Require valid JWT token AND email verification
      - Examples: account management, profile editing, Google account linking
      - Protected by `get_current_active_user` dependency
      - Checks: All authentication checks PLUS email verification status
      - Returns 403 Forbidden if email not verified
    
-   - **Internal Service Endpoints**: Require API key authentication
+   - **🔒 Internal Service Endpoints**: Require API key authentication
      - Examples: credit system endpoints, Stripe webhook handlers
      - Protected by `get_internal_service` dependency
      - Not accessible externally
      - Validates API key from X-API-Key header
 
-4. **Security Dependencies**
+4. **🔐 Security Dependencies**
    
    a. **JWT Authentication Flow**
    ```mermaid
@@ -110,6 +183,19 @@
        I --> J{User exists?}
        J -->|No| K[401 Unauthorized]
        J -->|Yes| L[Return User model]
+       
+       style A fill:#f9f9f9,stroke:#333,stroke-width:2px
+       style B fill:#eeeeff,stroke:#333,stroke-width:2px
+       style C fill:#ffeeee,stroke:#333,stroke-width:2px
+       style D fill:#ffdddd,stroke:#333,stroke-width:2px
+       style E fill:#eeeeff,stroke:#333,stroke-width:2px
+       style F fill:#ffeeee,stroke:#333,stroke-width:2px
+       style G fill:#ffdddd,stroke:#333,stroke-width:2px
+       style H fill:#eeeeff,stroke:#333,stroke-width:2px
+       style I fill:#eeeeff,stroke:#333,stroke-width:2px
+       style J fill:#ffeeee,stroke:#333,stroke-width:2px
+       style K fill:#ffdddd,stroke:#333,stroke-width:2px
+       style L fill:#eeffee,stroke:#333,stroke-width:2px
    ```
    
    b. **Email Verification Check**
@@ -121,6 +207,14 @@
        D --> E{User.is_verified?}
        E -->|Yes| F[Return Verified User]
        E -->|No| G[403 Forbidden:<br>Email not verified]
+       
+       style A fill:#f9f9f9,stroke:#333,stroke-width:2px
+       style B fill:#eeeeff,stroke:#333,stroke-width:2px
+       style C fill:#eeeeff,stroke:#333,stroke-width:2px
+       style D fill:#eeeeff,stroke:#333,stroke-width:2px
+       style E fill:#ffeeee,stroke:#333,stroke-width:2px
+       style F fill:#eeffee,stroke:#333,stroke-width:2px
+       style G fill:#ffdddd,stroke:#333,stroke-width:2px
    ```
    
    c. **Internal Service Authentication Flow**
@@ -132,13 +226,21 @@
        C -->|Yes| E{API key == configured key?}
        E -->|No| F[401 Unauthorized]
        E -->|Yes| G[Allow access to<br>internal endpoint]
+       
+       style A fill:#f9f9f9,stroke:#333,stroke-width:2px
+       style B fill:#eeeeff,stroke:#333,stroke-width:2px
+       style C fill:#ffeeee,stroke:#333,stroke-width:2px
+       style D fill:#ffdddd,stroke:#333,stroke-width:2px
+       style E fill:#ffeeee,stroke:#333,stroke-width:2px
+       style F fill:#ffdddd,stroke:#333,stroke-width:2px
+       style G fill:#eeffee,stroke:#333,stroke-width:2px
    ```
    
    - `get_current_user`: Validates JWT token, confirms user exists (authentication only)
    - `get_current_active_user`: Validates JWT token, confirms user exists AND email is verified
    - `get_internal_service`: Validates API key for internal service access
 
-5. **Database Security**
+5. **🛢️ Database Security**
    - Async PostgreSQL connections with connection pooling
    - Prepared statements for SQL injection prevention
    - Transaction management with rollback capability for data integrity
@@ -149,22 +251,22 @@
 
 The service implements comprehensive error handling with custom exceptions:
 
-1. **Authentication Errors**
-   - InvalidCredentialsError: Wrong username/password
-   - UserNotFoundError: User doesn't exist
-   - UserAlreadyExistsError: Duplicate registration
+1. **🔐 Authentication Errors**
+   - `InvalidCredentialsError`: Wrong username/password
+   - `UserNotFoundError`: User doesn't exist
+   - `UserAlreadyExistsError`: Duplicate registration
 
-2. **Database Errors**
-   - DatabaseOperationError: Database transaction failures
-   - ConnectionError: Database connectivity issues
+2. **🛢️ Database Errors**
+   - `DatabaseOperationError`: Database transaction failures
+   - `ConnectionError`: Database connectivity issues
 
-3. **Token Errors**
-   - TokenExpiredError: JWT token has expired
-   - InvalidTokenError: Token validation failed
+3. **🔖 Token Errors**
+   - `TokenExpiredError`: JWT token has expired
+   - `InvalidTokenError`: Token validation failed
 
 All errors are logged with context for debugging and monitoring.
 
-## API Endpoints
+## 🔌 API Endpoints
 
 ### Authentication Headers
 
@@ -243,6 +345,20 @@ flowchart TB
     B -->|🔒 Internal Service| K[get_internal_service]
     K -->|Valid API Key| L[Process Request]
     K -->|Invalid API Key| M[401 Unauthorized]
+    
+    style A fill:#f9f9f9,stroke:#333,stroke-width:2px
+    style B fill:#ffeeee,stroke:#333,stroke-width:2px
+    style C fill:#eeffee,stroke:#333,stroke-width:2px
+    style D fill:#eeeeff,stroke:#333,stroke-width:2px
+    style E fill:#eeffee,stroke:#333,stroke-width:2px
+    style F fill:#ffdddd,stroke:#333,stroke-width:2px
+    style G fill:#eeeeff,stroke:#333,stroke-width:2px
+    style H fill:#eeffee,stroke:#333,stroke-width:2px
+    style I fill:#ffdddd,stroke:#333,stroke-width:2px
+    style J fill:#ffdddd,stroke:#333,stroke-width:2px
+    style K fill:#eeeeff,stroke:#333,stroke-width:2px
+    style L fill:#eeffee,stroke:#333,stroke-width:2px
+    style M fill:#ffdddd,stroke:#333,stroke-width:2px
 ```
 
 This multi-layered approach ensures appropriate security checks for each endpoint category, with stricter requirements for sensitive operations.
@@ -250,19 +366,20 @@ This multi-layered approach ensures appropriate security checks for each endpoin
 ### Rate Limiting
 
 All endpoints are rate-limited to prevent abuse:
-- 100 requests per minute for authentication endpoints
-- 1000 requests per minute for other endpoints
-- Rate limits are per IP address
+- ⏱️ 100 requests per minute for authentication endpoints
+- ⏱️ 1000 requests per minute for other endpoints
+- 🌐 Rate limits are per IP address
 
-## Key Features
+## 🌟 Key Features
 
-- **User Authentication**
+- **👤 User Authentication**
   - Secure user registration and login
   - JWT-based authentication with configurable expiration
   - Password reset functionality with email integration
   - bcrypt password hashing
+  - Google OAuth integration
 
-- **Credit System**
+- **💰 Credit System**
   - Secure credit balance management
   - Transaction history tracking
   - Credit addition and usage operations
@@ -271,38 +388,47 @@ All endpoints are rate-limited to prevent abuse:
   - Protection against negative balances
   - Transaction reference tracking
 
-- **Advanced Logging**
+- **📊 Advanced Logging**
   - Structured JSON logging
   - Logstash integration for centralized logging
   - Detailed error tracking with stack traces
   - Environment-specific logging configurations
   - TCP-based log shipping
 
-- **Email Integration**
+- **📧 Email Integration**
   - SMTP support with SSL/TLS
   - Customizable email templates
   - Password reset email functionality
   - Configurable email settings
+  - HTML email templates with responsive design
 
-- **Database**
+- **🛢️ Database**
   - Async PostgreSQL support with SQLAlchemy
   - Database migrations using Alembic
   - Connection pooling
   - Test database configuration
+  - Transaction management
 
-- **Security**
+- **🔒 Security**
   - CORS middleware with configurable origins
   - Request validation
   - Structured error handling
   - Environment-based configurations
+  - Multi-layered authentication
 
-## Prerequisites
+- **💳 Payment Integration**
+  - Stripe integration for payment processing
+  - Subscription management
+  - Webhook handling for payment events
+  - Secure payment method storage
 
-- Python 3.11 or higher
-- PostgreSQL
-- Poetry (dependency management)
+## 📋 Prerequisites
 
-## Installation
+- 🐍 Python 3.11 or higher
+- 🐘 PostgreSQL
+- 📦 Poetry (dependency management)
+
+## 🚀 Installation
 
 1. Clone the repository:
    ```sh
@@ -320,7 +446,7 @@ All endpoints are rate-limited to prevent abuse:
    pip install -r requirements.txt
    ```
 
-## Configuration
+## ⚙️ Configuration
 
 The service uses environment variables for configuration. Create a `.env` file with the following settings:
 
@@ -366,7 +492,7 @@ LOG_RETENTION=7 days
 ENABLE_LOGSTASH=True
 ```
 
-## Database Migrations
+## 🔄 Database Migrations
 
 The service uses Alembic for database migrations. Migrations are automatically handled during container startup in production, but you can also manage them manually during development.
 
@@ -401,19 +527,19 @@ The service uses Alembic for database migrations. Migrations are automatically h
 
 In production (Kubernetes deployment), migrations are automatically handled during container startup. The process:
 
-1. Waits for the database to be available
-2. Runs all pending migrations before starting the application
-3. Fails fast if migrations cannot be applied, preventing the pod from starting with an inconsistent database state
+1. ⏳ Waits for the database to be available
+2. 🔄 Runs all pending migrations before starting the application
+3. ❌ Fails fast if migrations cannot be applied, preventing the pod from starting with an inconsistent database state
 
 ### Migration Best Practices
 
-1. Always review autogenerated migrations before applying them
-2. Test migrations on a copy of production data before deploying
-3. Include both upgrade and downgrade paths in migrations
-4. Keep migrations reversible when possible
-5. Run migrations before deploying new application code
+1. 👀 Always review autogenerated migrations before applying them
+2. 🧪 Test migrations on a copy of production data before deploying
+3. ⬆️⬇️ Include both upgrade and downgrade paths in migrations
+4. 🔄 Keep migrations reversible when possible
+5. 🔄 Run migrations before deploying new application code
 
-## Running the Application
+## 🏃‍♂️ Running the Application
 
 ### Development Mode
 ```sh
@@ -425,26 +551,26 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 uvicorn app.main:app --host 0.0.0.0 --port 80
 ```
 
-## Development Tools
+## 🛠️ Development Tools
 
 The project includes several development tools:
 
-- **Black**: Code formatting
+- **🖤 Black**: Code formatting
   ```sh
   poetry run black .
   ```
 
-- **isort**: Import sorting
+- **🔄 isort**: Import sorting
   ```sh
   poetry run isort .
   ```
 
-- **flake8**: Code linting
+- **🔍 flake8**: Code linting
   ```sh
   poetry run flake8
   ```
 
-## Testing
+## 🧪 Testing
 
 Run the test suite using pytest:
 
@@ -458,7 +584,7 @@ Or with coverage:
 poetry run pytest --cov=app
 ```
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 auth_service/
@@ -490,7 +616,7 @@ auth_service/
 
 ### Component Details
 
-1. **Core Components** (`app/core/`)
+1. **🧩 Core Components** (`app/core/`)
    - `auth.py`: Implements JWT token generation, validation, and refresh logic
    - `config.py`: Manages environment-specific configurations using Pydantic
    - `database.py`: Handles async database connections and session management
@@ -498,7 +624,7 @@ auth_service/
    - `exceptions.py`: Defines custom exceptions for precise error handling
    - `logging_config.py`: Configures structured logging with Logstash integration
 
-2. **Models** (`app/models/`)
+2. **📊 Models** (`app/models/`)
    - `user.py`: Defines SQLAlchemy models for:
      - User: Stores user credentials and profile
      - PasswordResetToken: Manages password reset functionality
@@ -507,7 +633,7 @@ auth_service/
      - CreditTransaction: Tracks all credit operations with detailed history
      - TransactionType: Enumerates transaction types (purchase, credit_added, credit_used, etc.)
 
-3. **Routers** (`app/routers/`)
+3. **🔌 Routers** (`app/routers/`)
    - `auth_router.py`: Implements endpoints for:
      - User registration and login
      - Password management
@@ -519,7 +645,7 @@ auth_service/
      - Transaction history
      - Balance queries
 
-4. **Services** (`app/services/`)
+4. **⚙️ Services** (`app/services/`)
    - `user_service.py`: Implements business logic for:
      - User authentication flows
      - Password hashing and verification
@@ -531,7 +657,7 @@ auth_service/
      - Balance validation
      - Transaction history tracking
 
-5. **Schemas** (`app/schemas/`)
+5. **📝 Schemas** (`app/schemas/`)
    - `auth_schemas.py`: Defines Pydantic models for:
      - Request validation
      - Response serialization
@@ -542,44 +668,44 @@ auth_service/
      - Balance queries
      - Transaction history
 
-6. **Templates** (`app/templates/`)
+6. **📧 Templates** (`app/templates/`)
    - HTML email templates with support for:
      - Dynamic content injection
      - Responsive design
      - Localization support
 
-## Error Handling
+## ❌ Error Handling
 
 The service includes comprehensive error handling:
 
-- Validation errors (422)
-- Authentication errors (401)
-- Authorization errors (403)
-- Not found errors (404)
-- Internal server errors (500)
+- ✅ Validation errors (422)
+- 🔒 Authentication errors (401)
+- 🚫 Authorization errors (403)
+- 🔍 Not found errors (404)
+- 💥 Internal server errors (500)
 
 All errors are logged with detailed context and stack traces when applicable.
 
-## Logging
+## 📊 Logging
 
 The service implements structured logging with:
 
-- Console output for development
-- JSON formatting for production
-- Logstash integration for centralized logging
-- Custom TCP sink implementation
-- Detailed context for each log entry
-- Error tracking with stack traces
-- Request/response logging
+- 🖥️ Console output for development
+- 📄 JSON formatting for production
+- 🔄 Logstash integration for centralized logging
+- 🔌 Custom TCP sink implementation
+- 📝 Detailed context for each log entry
+- 🐞 Error tracking with stack traces
+- 🔍 Request/response logging
 
-## Contributing
+## 👥 Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+1. 🍴 Fork the repository
+2. 🌿 Create a feature branch
+3. 💻 Commit your changes
+4. 🚀 Push to the branch
+5. 🔄 Create a Pull Request
 
-## License
+## 📜 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
