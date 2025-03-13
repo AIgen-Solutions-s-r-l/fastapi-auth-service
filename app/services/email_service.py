@@ -160,7 +160,7 @@ class EmailService:
             user: User model instance
             verification_token: Token for email verification
         """
-        verification_link = f"{settings.FRONTEND_URL}/api/auth/verify-email?token={verification_token}"
+        verification_link = f"{settings.FRONTEND_URL}/auth/verify-email?token={verification_token}"
         
         # Log the verification link for debugging
         logger.info(
