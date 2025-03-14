@@ -3,14 +3,18 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware 
 from fastapi.responses import JSONResponse
 from fastapi_sqlalchemy import DBSessionMiddleware
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings, validate_email_config, validate_stripe_config, validate_internal_api_key
-from app.core.exceptions import AuthException
-from app.core.error_handlers import validation_exception_handler, auth_exception_handler, http_exception_handler, generic_exception_handler
+from app.core.exceptions import AuthException 
+from app.core.error_handlers import (validation_exception_handler, auth_exception_handler, 
+                                   http_exception_handler, generic_exception_handler,
+                                   database_exception_handler, sqlalchemy_exception_handler)
 from app.log.logging import logger, InterceptHandler
+from app.core.db_exceptions import DatabaseException
 from app.routers.auth_router import router as auth_router
 from app.routers.healthcheck_router import router as healthcheck_router
 from app.routers.credit_router import router as credit_router
@@ -113,6 +117,8 @@ app.add_middleware(DBSessionMiddleware, db_url=settings.database_url)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(AuthException, auth_exception_handler)
 app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(DatabaseException, database_exception_handler)
+app.add_exception_handler(SQLAlchemyError, sqlalchemy_exception_handler)
 app.add_exception_handler(Exception, generic_exception_handler)
 
 @app.get("/")
