@@ -30,6 +30,15 @@ from app.log.logging import logger
 # Type variable for return type
 T = TypeVar('T')
 
+# Define exceptions that should be retried by default
+retry_exceptions = [
+    ConnectionRefusedError,
+    ConnectionLostError,
+    ConnectionTimeoutError,
+    InsufficientResourcesError,
+    OperationalError
+]
+
 # PostgreSQL error codes mapping to our custom error types
 PG_ERROR_CODE_MAP = {
     # Connection errors
@@ -145,13 +154,7 @@ def with_exponential_backoff(
     Returns:
         Decorated function with retry logic
     """
-    retry_exceptions = retry_errors or [
-        ConnectionRefusedError,
-        ConnectionLostError,
-        ConnectionTimeoutError,
-        InsufficientResourcesError,
-        OperationalError
-    ]
+    retry_error_types = retry_errors or retry_exceptions
     
     def decorator(func):
         @wraps(func)
@@ -180,7 +183,7 @@ def with_exponential_backoff(
                     
                     # Check if we should retry this exception
                     should_retry = False
-                    for retry_exc in retry_exceptions:
+                    for retry_exc in retry_error_types:
                         if isinstance(exc, retry_exc) or exception_class == retry_exc:
                             should_retry = True
                             break
