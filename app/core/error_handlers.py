@@ -18,12 +18,12 @@ async def auth_exception_handler(request: Request, exc: AuthException) -> Decima
 
 async def database_exception_handler(request: Request, exc: DatabaseException) -> DecimalJSONResponse:
     """Handle database exceptions with appropriate status codes and retry information."""
-    logger.error(
-        f'Database error on {request.url}: {exc.detail}',
+    error_detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
+    logger.error(f'Database error on {request.url}',
         event_type='db_api_error',
-        error_code=exc.error_code.name if hasattr(exc, 'error_code') else None,
-        error_details=exc.error_details if hasattr(exc, 'error_details') else {},
-        status_code=exc.status_code
+        error_code=exc.error_code.name if hasattr(exc, 'error_code') else "UNKNOWN_ERROR",
+        error_details=getattr(exc, 'error_details', {}),
+        status_code=getattr(exc, 'status_code', 500)
     )
     
     return DecimalJSONResponse(
