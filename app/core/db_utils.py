@@ -8,9 +8,10 @@ import asyncio
 import random
 import time
 from functools import wraps
-from typing import Dict, Any, Callable, TypeVar, Optional, Type, Tuple, Union, List, cast
+from typing import Dict, Any, Callable, TypeVar, Optional, Type, Tuple, Union, List
 
 from sqlalchemy.exc import SQLAlchemyError, OperationalError, DatabaseError
+from sqlalchemy.sql import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db_exceptions import (
@@ -252,7 +253,7 @@ async def healthcheck_database(db_session) -> Dict[str, Any]:
     start_time = time.time()
     try:
         # Simple query to test database connectivity
-        result = await db_session.execute(cast(str, "SELECT 1"))
+        result = await db_session.execute(text("SELECT 1"))
         row = result.scalar()
         
         response_time = time.time() - start_time
