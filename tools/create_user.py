@@ -3,7 +3,7 @@ import json
 
 # Replace with your actual API endpoint
 API_ENDPOINT = "http://localhost:8001/auth/register"
-EMAIL = "test@example.com"  # Replace with the desired email
+EMAIL = "test1345635@example.com"  # Replace with the desired email
 PASSWORD = "password"  # Replace with the desired password
 
 def create_user():
@@ -12,7 +12,7 @@ def create_user():
         "password": PASSWORD
     }
     headers = {
-        "Content-Type": "application/json; charset=utf-8",
+        "Content-Type": "application/json",
         "Accept": "application/json"
     }
 
