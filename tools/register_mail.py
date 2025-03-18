@@ -16,7 +16,7 @@ from psycopg2.extras import DictCursor
 API_ENDPOINT = "http://localhost:8001/auth/register"
 VERIFY_ENDPOINT = "http://localhost:8001/auth/verify-email"
 
-# PostgreSQL connection details
+# PostgreSQL connection details (as globals)
 PG_HOST = "172.17.0.1"
 PG_PORT = 5432
 PG_USER = "testuser"
@@ -238,6 +238,8 @@ def verify_email(token):
         return None
 
 def main():
+    global PG_HOST, PG_PORT, PG_USER, PG_PASSWORD, PG_DATABASE
+    
     parser = argparse.ArgumentParser(description='Register a new user and verify email')
     parser.add_argument('--email', required=True, help='Email address for registration')
     parser.add_argument('--password', required=True, help='Password for registration')
@@ -251,7 +253,6 @@ def main():
     args = parser.parse_args()
     
     # Update PostgreSQL connection details
-    global PG_HOST, PG_PORT, PG_USER, PG_PASSWORD, PG_DATABASE
     PG_HOST = args.pg_host
     PG_PORT = args.pg_port
     PG_USER = args.pg_user
