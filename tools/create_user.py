@@ -16,8 +16,10 @@ def create_user():
     }
 
     try:
+        print("Request Headers:", headers)
         response = requests.post(API_ENDPOINT, data=json.dumps(payload), headers=headers)
         response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+        print("Response Headers:", response.headers)
         data = response.json()
         print(json.dumps(data, indent=4))
         return data
