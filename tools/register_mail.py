@@ -116,13 +116,13 @@ def get_verification_token(email):
         user_id = user_row[0]
         print(f"Found user with ID: {user_id}")
         
-        # Now get the verification token for this user
+        # Now get the verification token for this user (note: no created_at column)
         cursor.execute(
             """
-            SELECT token, created_at, expires_at 
+            SELECT token, expires_at 
             FROM email_verification_tokens 
             WHERE user_id = %s AND used = false 
-            ORDER BY created_at DESC LIMIT 1
+            ORDER BY expires_at DESC LIMIT 1
             """, 
             (user_id,)
         )
@@ -135,10 +135,10 @@ def get_verification_token(email):
             # Check if there are any tokens for this user
             cursor.execute(
                 """
-                SELECT token, created_at, used 
+                SELECT token, expires_at, used 
                 FROM email_verification_tokens 
                 WHERE user_id = %s 
-                ORDER BY created_at DESC
+                ORDER BY expires_at DESC
                 """, 
                 (user_id,)
             )
@@ -147,7 +147,7 @@ def get_verification_token(email):
             if all_tokens:
                 print(f"Found {len(all_tokens)} tokens for user (including used ones):")
                 for t in all_tokens:
-                    print(f"  Token: {t['token'][:10]}..., Created: {t['created_at']}, Used: {t['used']}")
+                    print(f"  Token: {t['token'][:10]}..., Expires: {t['expires_at']}, Used: {t['used']}")
             else:
                 print("No tokens found for this user.")
             
@@ -156,7 +156,7 @@ def get_verification_token(email):
             return None
             
         token = token_row['token']
-        print(f"Found token created at {token_row['created_at']}, expires at {token_row['expires_at']}")
+        print(f"Found token, expires at {token_row['expires_at']}")
         
         cursor.close()
         conn.close()
