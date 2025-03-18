@@ -8,68 +8,95 @@ import json
 import sys
 import argparse
 import os
-import sqlite3
 import time
+import psycopg2
+from psycopg2.extras import DictCursor
 
 # API endpoints
 API_ENDPOINT = "http://localhost:8001/auth/register"
 VERIFY_ENDPOINT = "http://localhost:8001/auth/verify-email"
 
-def get_db_info(db_path="test.db"):
+# PostgreSQL connection details
+PG_HOST = "172.17.0.1"
+PG_PORT = 5432
+PG_USER = "testuser"
+PG_PASSWORD = "testpassword"
+PG_DATABASE = "main_db"
+
+def get_pg_connection():
+    """
+    Create and return a PostgreSQL database connection.
+    
+    Returns:
+        The PostgreSQL connection object or None if connection fails
+    """
+    try:
+        conn = psycopg2.connect(
+            host=PG_HOST,
+            port=PG_PORT,
+            user=PG_USER,
+            password=PG_PASSWORD,
+            database=PG_DATABASE
+        )
+        print(f"Successfully connected to PostgreSQL database: {PG_DATABASE}")
+        return conn
+    except psycopg2.Error as e:
+        print(f"Error connecting to PostgreSQL: {e}")
+        return None
+
+def get_db_info():
     """Print debug info about the database"""
     try:
-        if not os.path.exists(db_path):
-            print(f"Database file not found: {db_path}")
+        conn = get_pg_connection()
+        if not conn:
             return False
-        
-        print(f"Database file exists: {db_path}")
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
+            
+        cursor = conn.cursor(cursor_factory=DictCursor)
         
         # List tables
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        cursor.execute("""
+            SELECT tablename 
+            FROM pg_catalog.pg_tables 
+            WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'
+        """)
         tables = cursor.fetchall()
         print(f"Database tables: {[t[0] for t in tables]}")
         
         # Count users
         try:
-            cursor.execute("SELECT COUNT(*) FROM users;")
+            cursor.execute("SELECT COUNT(*) FROM users")
             user_count = cursor.fetchone()[0]
             print(f"Total users in database: {user_count}")
-        except sqlite3.OperationalError as e:
+        except psycopg2.Error as e:
             print(f"Error counting users: {e}")
         
+        cursor.close()
         conn.close()
         return True
     except Exception as e:
         print(f"Error getting database info: {e}")
         return False
 
-def get_verification_token(email, db_path="test.db"):
+def get_verification_token(email):
     """
-    Retrieve the verification token from the database directly using SQLite.
+    Retrieve the verification token from PostgreSQL database.
     
     Args:
         email: The email address to look up
-        db_path: Path to the SQLite database file
         
     Returns:
         The verification token if found, None otherwise
     """
     try:
-        # Make sure the database file exists
-        if not os.path.exists(db_path):
-            print(f"Database file not found: {db_path}")
+        conn = get_pg_connection()
+        if not conn:
             return None
             
-        # Connect to the database
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row  # Enable column access by name
-        cursor = conn.cursor()
+        cursor = conn.cursor(cursor_factory=DictCursor)
         
         # First get the user_id for the email
         print(f"Looking up user with email: {email}")
-        cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+        cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
         user_row = cursor.fetchone()
         
         if not user_row:
@@ -82,6 +109,8 @@ def get_verification_token(email, db_path="test.db"):
             for user in recent_users:
                 print(f"  ID: {user['id']}, Email: {user['email']}, Verified: {user['is_verified']}")
             
+            cursor.close()
+            conn.close()
             return None
             
         user_id = user_row[0]
@@ -89,9 +118,12 @@ def get_verification_token(email, db_path="test.db"):
         
         # Now get the verification token for this user
         cursor.execute(
-            "SELECT token, created_at, expires_at FROM email_verification_tokens "
-            "WHERE user_id = ? AND used = 0 "
-            "ORDER BY created_at DESC LIMIT 1", 
+            """
+            SELECT token, created_at, expires_at 
+            FROM email_verification_tokens 
+            WHERE user_id = %s AND used = false 
+            ORDER BY created_at DESC LIMIT 1
+            """, 
             (user_id,)
         )
         
@@ -102,8 +134,12 @@ def get_verification_token(email, db_path="test.db"):
             
             # Check if there are any tokens for this user
             cursor.execute(
-                "SELECT token, created_at, used FROM email_verification_tokens "
-                "WHERE user_id = ? ORDER BY created_at DESC", 
+                """
+                SELECT token, created_at, used 
+                FROM email_verification_tokens 
+                WHERE user_id = %s 
+                ORDER BY created_at DESC
+                """, 
                 (user_id,)
             )
             all_tokens = cursor.fetchall()
@@ -115,15 +151,19 @@ def get_verification_token(email, db_path="test.db"):
             else:
                 print("No tokens found for this user.")
             
+            cursor.close()
+            conn.close()
             return None
             
         token = token_row['token']
         print(f"Found token created at {token_row['created_at']}, expires at {token_row['expires_at']}")
+        
+        cursor.close()
         conn.close()
         return token
         
-    except sqlite3.Error as e:
-        print(f"SQLite error: {e}")
+    except psycopg2.Error as e:
+        print(f"PostgreSQL error: {e}")
         return None
     except Exception as e:
         print(f"Error retrieving verification token: {e}")
@@ -201,14 +241,26 @@ def main():
     parser = argparse.ArgumentParser(description='Register a new user and verify email')
     parser.add_argument('--email', required=True, help='Email address for registration')
     parser.add_argument('--password', required=True, help='Password for registration')
-    parser.add_argument('--db', default='test.db', help='Path to the SQLite database file')
     parser.add_argument('--delay', type=int, default=2, help='Delay in seconds after registration')
+    parser.add_argument('--pg-host', default=PG_HOST, help='PostgreSQL host')
+    parser.add_argument('--pg-port', type=int, default=PG_PORT, help='PostgreSQL port')
+    parser.add_argument('--pg-user', default=PG_USER, help='PostgreSQL user')
+    parser.add_argument('--pg-password', default=PG_PASSWORD, help='PostgreSQL password')
+    parser.add_argument('--pg-db', default=PG_DATABASE, help='PostgreSQL database name')
     
     args = parser.parse_args()
     
+    # Update PostgreSQL connection details
+    global PG_HOST, PG_PORT, PG_USER, PG_PASSWORD, PG_DATABASE
+    PG_HOST = args.pg_host
+    PG_PORT = args.pg_port
+    PG_USER = args.pg_user
+    PG_PASSWORD = args.pg_password
+    PG_DATABASE = args.pg_db
+    
     # Show database info
     print("\n=== Database Information ===")
-    get_db_info(args.db)
+    get_db_info()
     
     # Register the user
     print("\n=== Registering User ===")
@@ -228,7 +280,7 @@ def main():
         
         # Get verification token from database
         print("\n=== Retrieving Verification Token ===")
-        token = get_verification_token(registered_email, args.db)
+        token = get_verification_token(registered_email)
         
         if token:
             print(f"Verification token: {token}")
