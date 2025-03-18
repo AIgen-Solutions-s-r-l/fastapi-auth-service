@@ -4,7 +4,8 @@ import json
 # Replace with your actual API endpoint
 API_ENDPOINT = "http://localhost:8001/auth/register"
 VERIFY_ENDPOINT = "http://localhost:8001/auth/verify-email"
-EMAIL = "test1345635@example.com"  # Replace with the desired email
+LOGIN_ENDPOINT = "http://localhost:8001/auth/login"
+EMAIL = "test13456355@example.com"  # Replace with the desired email
 PASSWORD = "password"  # Replace with the desired password
 
 def create_user():
@@ -60,6 +61,33 @@ def verify_email(token):
         print(f"Error: {e}")
         return None
 
+def get_token(email, password):
+    payload = {
+        "email": email,
+        "password": password
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+
+    try:
+        print("Login Request Headers:", headers)
+        data = json.dumps(payload)
+        headers["Content-Length"] = str(len(data))
+        response = requests.post(LOGIN_ENDPOINT, data=data, headers=headers)
+        response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+        print("Login Response Headers:", response.headers)
+        response_data = response.json()
+        print("Login Response:", json.dumps(response_data, indent=4))
+        return response_data["access_token"]
+    except requests.exceptions.RequestException as e:
+        print(f"Error: {e}")
+        return None
+    except KeyError:
+        print("Error: 'access_token' not found in response.")
+        return None
+
 if __name__ == "__main__":
     registration_result = create_user()
     if registration_result:
@@ -74,6 +102,11 @@ if __name__ == "__main__":
         verification_result = verify_email(token)
         if verification_result:
             print("Email verified successfully.")
+            access_token = get_token(email, PASSWORD)
+            if access_token:
+                print(f"Access Token: {access_token}")
+            else:
+                print("Failed to retrieve access token.")
         else:
             print("Failed to verify email.")
     else:
