@@ -1,12 +1,34 @@
 import requests
 import json
+import asyncio
 
 # Replace with your actual API endpoint
 API_ENDPOINT = "http://localhost:8001/auth/register"
 VERIFY_ENDPOINT = "http://localhost:8001/auth/verify-email"
 LOGIN_ENDPOINT = "http://localhost:8001/auth/login"
-EMAIL = "test13456355@example.com"  # Replace with the desired email
+EMAIL = "test1345635@example.com"  # Replace with the desired email
 PASSWORD = "password"  # Replace with the desired password
+
+async def get_verification_token(email):
+    try:
+        from app.core.database import engine
+        from app.models.user import User, EmailVerificationToken
+        from sqlalchemy import select
+        async with engine.begin() as conn:
+            result = await conn.execute(select(User).where(User.email == email))
+            user = result.scalar_one_or_none()
+            if not user:
+                print("User not found")
+                return None
+            result = await conn.execute(select(EmailVerificationToken).where(EmailVerificationToken.user_id == user.id))
+            token = result.scalar_one_or_none()
+            if not token:
+                print("Token not found")
+                return None
+            return token.token
+    except Exception as e:
+        print(f"Error getting token: {e}")
+        return None
 
 def create_user():
     payload = {
@@ -96,18 +118,23 @@ if __name__ == "__main__":
         print(f"Email: {email}")
         
         # Extract token from registration result
-        token = registration_result.get("message").split("token=")[1]
-        print(f"Extracted Token: {token}")
+        #token = registration_result.get("message").split("token=")[1]
+        #print(f"Extracted Token: {token}")
+        token = asyncio.run(get_verification_token(email))
+        if token:
+            print(f"Extracted Token from DB: {token}")
 
-        verification_result = verify_email(token)
-        if verification_result:
-            print("Email verified successfully.")
-            access_token = get_token(email, PASSWORD)
-            if access_token:
-                print(f"Access Token: {access_token}")
+            verification_result = verify_email(token)
+            if verification_result:
+                print("Email verified successfully.")
+                access_token = get_token(email, PASSWORD)
+                if access_token:
+                    print(f"Access Token: {access_token}")
+                else:
+                    print("Failed to retrieve access token.")
             else:
-                print("Failed to retrieve access token.")
+                print("Failed to verify email.")
         else:
-            print("Failed to verify email.")
+            print("Failed to extract token from DB.")
     else:
         print("Failed to create user.")
