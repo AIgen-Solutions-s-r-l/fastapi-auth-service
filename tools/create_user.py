@@ -12,17 +12,22 @@ def create_user():
         "password": PASSWORD
     }
     headers = {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Accept": "application/json"
     }
 
     try:
         print("Request Headers:", headers)
-        response = requests.post(API_ENDPOINT, data=json.dumps(payload), headers=headers)
+        data = json.dumps(payload)
+        response = requests.post(API_ENDPOINT, data=data, headers=headers)
         response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
         print("Response Headers:", response.headers)
         data = response.json()
         print(json.dumps(data, indent=4))
         return data
+    except json.JSONDecodeError as e:
+        print(f"JSONDecodeError: {e}")
+        return None
     except requests.exceptions.RequestException as e:
         print(f"Error: {e}")
         return None
