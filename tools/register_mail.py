@@ -5,44 +5,69 @@ Script to register a new email account and validate it using a token from the da
 
 import requests
 import json
-import asyncio
 import sys
 import argparse
+import os
+import sqlite3
 
-# API endpoints (corrected port to 8001 where Auth Service is running)
+# API endpoints
 API_ENDPOINT = "http://localhost:8001/auth/register"
 VERIFY_ENDPOINT = "http://localhost:8001/auth/verify-email"
 
-async def get_verification_token(email):
-    """Retrieve the verification token from the database."""
-    try:
-        from app.core.database import engine
-        from app.models.user import User, EmailVerificationToken
-        from sqlalchemy import select
+def get_verification_token(email, db_path="test.db"):
+    """
+    Retrieve the verification token from the database directly using SQLite.
+    
+    Args:
+        email: The email address to look up
+        db_path: Path to the SQLite database file
         
-        async with engine.begin() as conn:
-            # Find the user by email
-            result = await conn.execute(select(User).where(User.email == email))
-            user = result.scalar_one_or_none()
-            if not user:
-                print("User not found in the database")
-                return None
-                
-            # Find the verification token for the user
-            result = await conn.execute(
-                select(EmailVerificationToken)
-                .where(EmailVerificationToken.user_id == user.id)
-                .where(EmailVerificationToken.used == False)  # Get unused token
-            )
-            token = result.scalar_one_or_none()
-            if not token:
-                print("Verification token not found for user")
-                return None
-                
-            return token.token
+    Returns:
+        The verification token if found, None otherwise
+    """
+    try:
+        # Make sure the database file exists
+        if not os.path.exists(db_path):
+            print(f"Database file not found: {db_path}")
+            return None
             
+        # Connect to the database
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # First get the user_id for the email
+        cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+        user_row = cursor.fetchone()
+        
+        if not user_row:
+            print(f"User with email {email} not found in the database")
+            return None
+            
+        user_id = user_row[0]
+        
+        # Now get the verification token for this user
+        cursor.execute(
+            "SELECT token FROM email_verification_tokens "
+            "WHERE user_id = ? AND used = 0 "
+            "ORDER BY created_at DESC LIMIT 1", 
+            (user_id,)
+        )
+        
+        token_row = cursor.fetchone()
+        
+        if not token_row:
+            print(f"No unused verification token found for user ID {user_id}")
+            return None
+            
+        token = token_row[0]
+        conn.close()
+        return token
+        
+    except sqlite3.Error as e:
+        print(f"SQLite error: {e}")
+        return None
     except Exception as e:
-        print(f"Error retrieving verification token from database: {e}")
+        print(f"Error retrieving verification token: {e}")
         return None
 
 def register_user(email, password):
@@ -117,6 +142,7 @@ def main():
     parser = argparse.ArgumentParser(description='Register a new user and verify email')
     parser.add_argument('--email', required=True, help='Email address for registration')
     parser.add_argument('--password', required=True, help='Password for registration')
+    parser.add_argument('--db', default='test.db', help='Path to the SQLite database file')
     
     args = parser.parse_args()
     
@@ -133,7 +159,7 @@ def main():
         
         # Get verification token from database
         print("Retrieving verification token from database...")
-        token = asyncio.run(get_verification_token(registered_email))
+        token = get_verification_token(registered_email, args.db)
         
         if token:
             print(f"Verification token: {token}")
@@ -146,11 +172,18 @@ def main():
                 token_info = f"Access token: {verification_result.get('access_token')}"
                 print(token_info)
                 print("\nAccount successfully registered and email verified!")
+                
+                # Output how to use the token
+                print("\n=== Example Usage with curl ===")
+                print(f"curl -H 'Authorization: Bearer {verification_result.get('access_token')}' http://localhost:8001/auth/me")
+                
+                return 0
             else:
                 print("Failed to verify email.")
                 sys.exit(1)
         else:
             print("Failed to retrieve verification token. Email verification skipped.")
+            print("You can manually verify the email by checking the email verification link.")
             sys.exit(1)
     else:
         print("Failed to register user properly.")
