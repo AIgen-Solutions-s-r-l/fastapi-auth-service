@@ -1,0 +1,33 @@
+import requests
+import json
+
+# Replace with your actual API endpoint
+API_ENDPOINT = "http://localhost:8001/auth/register"
+EMAIL = "rocchi.b.a@gmail.com"  # Replace with the desired email
+PASSWORD = "Fuffa.123!"  # Replace with the desired password
+
+def create_user():
+    payload = {
+        "email": EMAIL,
+        "password": PASSWORD
+    }
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.post(API_ENDPOINT, data=json.dumps(payload), headers=headers)
+        response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+        data = response.json()
+        print(data)
+        return data
+    except requests.exceptions.RequestException as e:
+        print(f"Error: {e}")
+        return None
+
+if __name__ == "__main__":
+    result = create_user()
+    if result:
+        print("User created successfully.")
+    else:
+        print("Failed to create user.")
