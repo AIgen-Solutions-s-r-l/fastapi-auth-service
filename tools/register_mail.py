@@ -9,10 +9,41 @@ import sys
 import argparse
 import os
 import sqlite3
+import time
 
 # API endpoints
 API_ENDPOINT = "http://localhost:8001/auth/register"
 VERIFY_ENDPOINT = "http://localhost:8001/auth/verify-email"
+
+def get_db_info(db_path="test.db"):
+    """Print debug info about the database"""
+    try:
+        if not os.path.exists(db_path):
+            print(f"Database file not found: {db_path}")
+            return False
+        
+        print(f"Database file exists: {db_path}")
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # List tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = cursor.fetchall()
+        print(f"Database tables: {[t[0] for t in tables]}")
+        
+        # Count users
+        try:
+            cursor.execute("SELECT COUNT(*) FROM users;")
+            user_count = cursor.fetchone()[0]
+            print(f"Total users in database: {user_count}")
+        except sqlite3.OperationalError as e:
+            print(f"Error counting users: {e}")
+        
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error getting database info: {e}")
+        return False
 
 def get_verification_token(email, db_path="test.db"):
     """
@@ -33,21 +64,32 @@ def get_verification_token(email, db_path="test.db"):
             
         # Connect to the database
         conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row  # Enable column access by name
         cursor = conn.cursor()
         
         # First get the user_id for the email
+        print(f"Looking up user with email: {email}")
         cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
         user_row = cursor.fetchone()
         
         if not user_row:
             print(f"User with email {email} not found in the database")
+            
+            # List recent users for debugging
+            print("Recent users in database:")
+            cursor.execute("SELECT id, email, is_verified FROM users ORDER BY id DESC LIMIT 5")
+            recent_users = cursor.fetchall()
+            for user in recent_users:
+                print(f"  ID: {user['id']}, Email: {user['email']}, Verified: {user['is_verified']}")
+            
             return None
             
         user_id = user_row[0]
+        print(f"Found user with ID: {user_id}")
         
         # Now get the verification token for this user
         cursor.execute(
-            "SELECT token FROM email_verification_tokens "
+            "SELECT token, created_at, expires_at FROM email_verification_tokens "
             "WHERE user_id = ? AND used = 0 "
             "ORDER BY created_at DESC LIMIT 1", 
             (user_id,)
@@ -57,9 +99,26 @@ def get_verification_token(email, db_path="test.db"):
         
         if not token_row:
             print(f"No unused verification token found for user ID {user_id}")
+            
+            # Check if there are any tokens for this user
+            cursor.execute(
+                "SELECT token, created_at, used FROM email_verification_tokens "
+                "WHERE user_id = ? ORDER BY created_at DESC", 
+                (user_id,)
+            )
+            all_tokens = cursor.fetchall()
+            
+            if all_tokens:
+                print(f"Found {len(all_tokens)} tokens for user (including used ones):")
+                for t in all_tokens:
+                    print(f"  Token: {t['token'][:10]}..., Created: {t['created_at']}, Used: {t['used']}")
+            else:
+                print("No tokens found for this user.")
+            
             return None
             
-        token = token_row[0]
+        token = token_row['token']
+        print(f"Found token created at {token_row['created_at']}, expires at {token_row['expires_at']}")
         conn.close()
         return token
         
@@ -143,10 +202,16 @@ def main():
     parser.add_argument('--email', required=True, help='Email address for registration')
     parser.add_argument('--password', required=True, help='Password for registration')
     parser.add_argument('--db', default='test.db', help='Path to the SQLite database file')
+    parser.add_argument('--delay', type=int, default=2, help='Delay in seconds after registration')
     
     args = parser.parse_args()
     
+    # Show database info
+    print("\n=== Database Information ===")
+    get_db_info(args.db)
+    
     # Register the user
+    print("\n=== Registering User ===")
     registration_result = register_user(args.email, args.password)
     
     if not registration_result:
@@ -157,14 +222,19 @@ def main():
         registered_email = registration_result["email"]
         print(f"Registration successful for: {registered_email}")
         
+        # Wait for database operations to complete
+        print(f"Waiting {args.delay} seconds for database operations to complete...")
+        time.sleep(args.delay)
+        
         # Get verification token from database
-        print("Retrieving verification token from database...")
+        print("\n=== Retrieving Verification Token ===")
         token = get_verification_token(registered_email, args.db)
         
         if token:
             print(f"Verification token: {token}")
             
             # Verify the email
+            print("\n=== Verifying Email ===")
             verification_result = verify_email(token)
             
             if verification_result and verification_result.get("message") == "Email verified successfully":
