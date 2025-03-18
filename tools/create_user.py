@@ -3,6 +3,7 @@ import json
 
 # Replace with your actual API endpoint
 API_ENDPOINT = "http://localhost:8001/auth/register"
+VERIFY_ENDPOINT = "http://localhost:8001/auth/verify-email"
 EMAIL = "test1345635@example.com"  # Replace with the desired email
 PASSWORD = "password"  # Replace with the desired password
 
@@ -17,15 +18,22 @@ def create_user():
     }
 
     try:
-        print("Request Headers:", headers)
+        print("Register Request Headers:", headers)
         data = json.dumps(payload)
         headers["Content-Length"] = str(len(data))
         response = requests.post(API_ENDPOINT, data=data, headers=headers)
         response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-        print("Response Headers:", response.headers)
-        data = response.json()
-        print(json.dumps(data, indent=4))
-        return data
+        print("Register Response Headers:", response.headers)
+        response_data = response.json()
+        print("Register Response:", json.dumps(response_data, indent=4))
+
+        # Extract verification token
+        if "message" in response_data and "email" in response_data and "verification_sent" in response_data:
+            return response_data
+        else:
+            print("Failed to extract verification token.")
+            return None
+
     except json.JSONDecodeError as e:
         print(f"JSONDecodeError: {e}")
         return None
@@ -33,9 +41,40 @@ def create_user():
         print(f"Error: {e}")
         return None
 
+def verify_email(token):
+    headers = {
+        "Accept": "application/json"
+    }
+    params = {
+        "token": token
+    }
+    try:
+        print("Verify Request Headers:", headers)
+        response = requests.get(VERIFY_ENDPOINT, params=params, headers=headers)
+        response.raise_for_status()
+        print("Verify Response Headers:", response.headers)
+        response_data = response.json()
+        print("Verify Response:", json.dumps(response_data, indent=4))
+        return response_data
+    except requests.exceptions.RequestException as e:
+        print(f"Error: {e}")
+        return None
+
 if __name__ == "__main__":
-    result = create_user()
-    if result:
-        print("User created successfully.")
+    registration_result = create_user()
+    if registration_result:
+        # Extract token from registration result
+        email = registration_result["email"]
+        print(f"Email: {email}")
+        
+        # Extract token from registration result
+        token = registration_result.get("message").split("token=")[1]
+        print(f"Extracted Token: {token}")
+
+        verification_result = verify_email(token)
+        if verification_result:
+            print("Email verified successfully.")
+        else:
+            print("Failed to verify email.")
     else:
         print("Failed to create user.")
