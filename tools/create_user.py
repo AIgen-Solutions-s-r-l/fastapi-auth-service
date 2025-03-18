@@ -6,7 +6,7 @@ import asyncio
 API_ENDPOINT = "http://localhost:8001/auth/register"
 VERIFY_ENDPOINT = "http://localhost:8001/auth/verify-email"
 LOGIN_ENDPOINT = "http://localhost:8001/auth/login"
-EMAIL = "test1345635@example.com"  # Replace with the desired email
+EMAIL = "test134533635@example.com"  # Replace with the desired email
 PASSWORD = "password"  # Replace with the desired password
 
 async def get_verification_token(email):
