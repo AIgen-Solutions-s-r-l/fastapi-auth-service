@@ -19,7 +19,7 @@ def create_user():
         response = requests.post(API_ENDPOINT, data=json.dumps(payload), headers=headers)
         response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
         data = response.json()
-        print(data)
+        print(json.dumps(data, indent=4))
         return data
     except requests.exceptions.RequestException as e:
         print(f"Error: {e}")
