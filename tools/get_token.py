@@ -3,8 +3,8 @@ import json
 
 # Replace with your actual API endpoint and credentials
 API_ENDPOINT = "http://localhost:8001/auth/login"  # Assuming the service is running locally
-USERNAME = "rocchi.b.a@gmail.com"  # Replace with a valid username
-PASSWORD = "Fuffa.123!"  # Replace with a valid password
+USERNAME = "test1345635@example.com"  # Replace with a valid username
+PASSWORD = "password"  # Replace with a valid password
 
 def get_token():
     payload = {
