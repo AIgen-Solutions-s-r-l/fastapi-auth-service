@@ -4,7 +4,7 @@ import json
 # Replace with your actual API endpoint
 API_ENDPOINT = "http://localhost:8001/auth/register"
 EMAIL = "test@example.com"  # Replace with the desired email
-PASSWORD = "Fuffa.123!"  # Replace with the desired password
+PASSWORD = "password"  # Replace with the desired password
 
 def create_user():
     payload = {
