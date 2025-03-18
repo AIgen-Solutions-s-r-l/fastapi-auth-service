@@ -7,8 +7,8 @@ import requests
 import json
 import argparse
 
-# API endpoint using port 9000
-API_ENDPOINT = "http://localhost:9000/auth/login"
+# API endpoint using port 8001 where the Auth Service is running
+API_ENDPOINT = "http://localhost:8001/auth/login"
 
 def get_token(email, password):
     """
@@ -81,7 +81,7 @@ def main():
         
         # Show how to use the token in curl or other API requests
         print("\n=== Example Usage with curl ===")
-        print(f"curl -H 'Authorization: Bearer {result['token']}' http://localhost:9000/auth/me")
+        print(f"curl -H 'Authorization: Bearer {result['token']}' http://localhost:8001/auth/me")
         
         # Optionally show full response details
         if args.show_full:

@@ -9,9 +9,9 @@ import asyncio
 import sys
 import argparse
 
-# API endpoints
-API_ENDPOINT = "http://localhost:9000/auth/register"
-VERIFY_ENDPOINT = "http://localhost:9000/auth/verify-email"
+# API endpoints (corrected port to 8001 where Auth Service is running)
+API_ENDPOINT = "http://localhost:8001/auth/register"
+VERIFY_ENDPOINT = "http://localhost:8001/auth/verify-email"
 
 async def get_verification_token(email):
     """Retrieve the verification token from the database."""
