@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Address Changed</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .content {
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        .button {
+            display: inline-block;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+        .info-box {
+            background-color: #e9f7fe;
+            border-left: 4px solid #007bff;
+            padding: 10px 15px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Email Address Changed</h1>
+    </div>
+    <div class="content">
+        <p>Hello,</p>
+        <p>This is a confirmation that your email address has been successfully changed to <strong>{{ email }}</strong>.</p>
+        
+        <div class="info-box">
+            <p><strong>Change Details:</strong></p>
+            <p>Time: {{ time }}</p>
+            <p>IP Address: {{ ip_address }}</p>
+        </div>
+        
+        <p>You can now use your new email address to log in to your account:</p>
+        
+        <div style="text-align: center;">
+            <a href="{{ login_link }}" class="button">Go to Login</a>
+        </div>
+        
+        <p>If you did not make this change, please contact our support team immediately.</p>
+        
+        <p>Thank you,<br>The Support Team</p>
+    </div>
+    <div class="footer">
+        <p>This is an automated message, please do not reply to this email.</p>
+    </div>
+</body>
+</html>
