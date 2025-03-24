@@ -630,7 +630,7 @@ async def change_email(
         ) from e
 
 @router.put(
-    "/users/change-password",
+    "/users/password",
     responses={
         200: {"description": "Password successfully updated"},
         401: {"description": "Invalid current password"},
