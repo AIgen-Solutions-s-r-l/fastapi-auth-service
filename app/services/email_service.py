@@ -285,6 +285,81 @@ class EmailService:
             }
         )
     
+    async def send_email_change_verification(
+        self,
+        user: User,
+        new_email: str,
+        verification_token: str
+    ) -> None:
+        """
+        Send email change verification to the new email address.
+        
+        Args:
+            user: User model instance
+            new_email: New email address to verify
+            verification_token: Token for email change verification
+        """
+        verification_link = f"{settings.FRONTEND_URL}/auth/verify-email-change?token={verification_token}"
+        
+        # Log the verification link for debugging
+        logger.info(
+            "Sending email change verification with link",
+            event_type="email_change_verification_sending",
+            user_id=user.id,
+            current_email=user.email,
+            new_email=new_email,
+            verification_link=verification_link
+        )
+        
+        await self._send_templated_email(
+            template_name="email_change_verification",
+            subject="Verify Your New Email Address",
+            recipients=[str(new_email)],  # Send to the new email address
+            context={
+                "email": new_email,
+                "verification_link": verification_link,
+                "hours_valid": 24  # Token validity in hours
+            }
+        )
+    
+    async def send_email_change_confirmation(
+        self,
+        user: User,
+        old_email: str
+    ) -> None:
+        """
+        Send confirmation after email has been changed to both old and new addresses.
+        
+        Args:
+            user: User model instance with updated email
+            old_email: Previous email address
+        """
+        # Send to new email
+        await self._send_templated_email(
+            template_name="email_change_confirmation",
+            subject="Email Change Confirmation",
+            recipients=[str(user.email)],
+            context={
+                "email": user.email,
+                "login_link": f"{settings.FRONTEND_URL}/login",
+                "ip_address": "Not available",
+                "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            }
+        )
+        
+        # Send notification to old email
+        await self._send_templated_email(
+            template_name="email_change_confirmation",
+            subject="Your Email Address Has Been Changed",
+            recipients=[str(old_email)],
+            context={
+                "email": user.email,  # Show the new email in the notification
+                "login_link": f"{settings.FRONTEND_URL}/login",
+                "ip_address": "Not available",
+                "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            }
+        )
+    
     async def send_one_time_credit_purchase(
         self, 
         user: User, 
