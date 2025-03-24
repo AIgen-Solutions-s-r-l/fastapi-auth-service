@@ -1,6 +1,6 @@
-"""SQLAlchemy models for user-related database tables including User and PasswordResetToken."""
+"""SQLAlchemy models for user-related database tables including User, PasswordResetToken, and EmailChangeRequest."""
 
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 
@@ -76,6 +76,34 @@ class EmailVerificationToken(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     used = Column(Boolean, default=False, nullable=False)
+    # Relationship
+    user = relationship("User")
+
+
+class EmailChangeRequest(Base):
+    """
+    SQLAlchemy model for tracking email change requests.
+    
+    Attributes:
+        id (int): Primary key
+        user_id (int): Foreign key reference to the user requesting the change
+        current_email (str): Current email address
+        new_email (str): Requested new email address
+        token (str): Verification token
+        expires_at (datetime): Expiration timestamp for the token
+        created_at (datetime): When the request was created
+        completed (bool): Whether the request has been completed
+    """
+    __tablename__ = "email_change_requests"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    current_email = Column(String(100), nullable=False)
+    new_email = Column(String(100), nullable=False)
+    token = Column(String(255), nullable=False, unique=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    completed = Column(Boolean, default=False, nullable=False)
     
     # Relationship
     user = relationship("User")
