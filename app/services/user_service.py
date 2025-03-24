@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
 from app.core.security import get_password_hash, verify_password
-from app.models.user import User, EmailVerificationToken
+from app.models.user import User, EmailVerificationToken, EmailChangeRequest
 from app.services.email_service import EmailService
 from app.log.logging import logger
 
@@ -441,6 +441,191 @@ class UserService:
                 error=str(e)
             )
             return False
+
+    async def create_email_change_request(
+        self,
+        user: User,
+        new_email: str,
+        password: str
+    ) -> Tuple[bool, str, Optional[EmailChangeRequest]]:
+        """
+        Create a request to change a user's email address.
+        
+        Args:
+            user: User requesting the change
+            new_email: New email address
+            password: Current password for verification
+            
+        Returns:
+            Tuple containing:
+            - success status (bool)
+            - message (str)
+            - email change request if successful (Optional[EmailChangeRequest])
+        """
+        # Verify password
+        if not verify_password(password, user.hashed_password):
+            logger.warning(
+                "Invalid password for email change request",
+                event_type="email_change_request_error",
+                user_id=user.id,
+                email=user.email,
+                error_type="invalid_password"
+            )
+            return False, "Invalid password", None
+            
+        # Check if new email is already in use
+        existing_user = await self.get_user_by_email(new_email)
+        if existing_user and existing_user.id != user.id:
+            logger.warning(
+                "Email already registered",
+                event_type="email_change_request_error",
+                user_id=user.id,
+                email=user.email,
+                new_email=new_email,
+                error_type="email_exists"
+            )
+            return False, "Email already registered", None
+            
+        try:
+            # Generate token
+            alphabet = string.ascii_letters + string.digits
+            token = ''.join(secrets.choice(alphabet) for _ in range(64))
+            
+            # Set expiration (24 hours)
+            expires_at = datetime.now(UTC) + timedelta(hours=24)
+            
+            # Delete any existing requests for this user
+            sql = text("DELETE FROM email_change_requests WHERE user_id = :user_id AND completed = FALSE")
+            await self.db.execute(sql, {"user_id": user.id})
+            
+            # Create request
+            email_change_request = EmailChangeRequest(
+                user_id=user.id,
+                current_email=user.email,
+                new_email=new_email,
+                token=token,
+                expires_at=expires_at,
+                completed=False
+            )
+            
+            self.db.add(email_change_request)
+            await self.db.commit()
+            
+            logger.info(
+                "Email change request created",
+                event_type="email_change_request_created",
+                user_id=user.id,
+                current_email=user.email,
+                new_email=new_email
+            )
+            
+            return True, "Email change request created", email_change_request
+            
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(
+                "Error creating email change request",
+                event_type="email_change_request_error",
+                user_id=user.id,
+                email=user.email,
+                new_email=new_email,
+                error_type=type(e).__name__,
+                error_details=str(e)
+            )
+            return False, f"Error creating email change request: {str(e)}", None
+
+    async def verify_email_change(self, token: str) -> Tuple[bool, str, Optional[User]]:
+        """
+        Verify an email change request and update the user's email if valid.
+        
+        Args:
+            token: The verification token
+            
+        Returns:
+            Tuple containing:
+            - success status (bool)
+            - message (str)
+            - updated user if successful (Optional[User])
+        """
+        try:
+            # Find request by token
+            result = await self.db.execute(
+                select(EmailChangeRequest).where(
+                    EmailChangeRequest.token == token,
+                    EmailChangeRequest.completed == False  # noqa: E712
+                )
+            )
+            request = result.scalar_one_or_none()
+            
+            if not request:
+                logger.warning(
+                    "Invalid email change verification token",
+                    event_type="email_change_verification_error",
+                    token=token,
+                    error="invalid_token"
+                )
+                return False, "Invalid or expired token", None
+                
+            # Check if token expired
+            if datetime.now(UTC) > request.expires_at:
+                logger.warning(
+                    "Expired email change verification token",
+                    event_type="email_change_verification_error",
+                    token=token,
+                    user_id=request.user_id,
+                    error="expired_token"
+                )
+                return False, "Token has expired", None
+                
+            # Get user
+            result = await self.db.execute(
+                select(User).where(User.id == request.user_id)
+            )
+            user = result.scalar_one_or_none()
+            
+            if not user:
+                logger.error(
+                    "User not found for email change verification token",
+                    event_type="email_change_verification_error",
+                    token=token,
+                    user_id=request.user_id,
+                    error="user_not_found"
+                )
+                return False, "User not found", None
+                
+            # Store old email for logging
+            old_email = user.email
+                
+            # Update user's email
+            user.email = request.new_email
+            user.is_verified = True  # Automatically verify since we've confirmed the email
+            
+            # Mark request as completed
+            request.completed = True
+            
+            await self.db.commit()
+            await self.db.refresh(user)
+            
+            logger.info(
+                "Email changed successfully through verification",
+                event_type="email_changed",
+                user_id=user.id,
+                old_email=old_email,
+                new_email=user.email
+            )
+            
+            return True, "Email updated successfully", user
+            
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(
+                "Error verifying email change",
+                event_type="email_change_verification_error",
+                token=token,
+                error_type=type(e).__name__,
+                error_details=str(e)
+            )
+            return False, f"Error verifying email change: {str(e)}", None
 
 
 # Function exports for backward compatibility
