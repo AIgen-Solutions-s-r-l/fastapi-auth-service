@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.models.user import EmailVerificationToken
+from app.models.user import EmailVerificationToken, EmailChangeRequest
 from app.core.database import get_db
 from app.core.exceptions import UserAlreadyExistsError, UserNotFoundError, InvalidCredentialsError
 from app.core.security import create_access_token, verify_jwt_token, verify_password
@@ -446,11 +446,11 @@ async def get_user_details(
     response_model=Dict[str, Any],
     responses={
         200: {
-            "description": "Email successfully updated",
+            "description": "Email change request created and verification email sent",
             "content": {
                 "application/json": {
                     "example": {
-                        "message": "Email updated successfully",
+                        "message": "Verification email sent to your new email address",
                         "email": "new.email@example.com",
                         "verification_sent": True
                     }
@@ -469,19 +469,19 @@ async def change_email(
     current_user: User = Depends(get_current_active_user)
 ) -> Dict[str, Any]:
     """
-    Change user's email address and send verification.
-
-    Requires authentication, verification, and current password verification.
-    The new email must not be already registered by another user.
+    Request to change user's email address.
+    
+    Creates an email change request and sends a verification email to the new address.
+    The email will only be updated after verification of the new address.
 
     Args:
-        email_change: Current email, new email and current password
+        email_change: New email and current password
         background_tasks: FastAPI background tasks
         db: Database session
         current_user: Authenticated and verified user
 
     Returns:
-        Dict containing success message and updated user info
+        Dict containing success message and verification status
 
     Raises:
         HTTPException: If authentication fails, email is taken, or user not found
@@ -531,74 +531,46 @@ async def change_email(
                 detail="Email already registered"
             )
 
-        # Check if another user exists in the system
-        result = await db.execute(select(User))
-        users = result.scalars().all()
-        if len(users) > 1:
+        # Create email change request
+        success, message, change_request = await user_service.create_email_change_request(
+            current_user,
+            str(email_change.new_email),
+            email_change.current_password
+        )
+        
+        if not success:
             logger.error(
-                "Unauthorized email change attempt - multiple users exist",
-                event_type="email_change_error",
-                email=current_user.email,
-                error_type="unauthorized"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Not authorized to change email when other users exist"
-            )
-
-        # Update email through service
-        try:
-            updated_user = await user_service.update_user_email(
-                current_user.email,
-                email_change.current_password,
-                str(email_change.new_email)
-            )
-        except Exception as e:
-            logger.error(
-                "Failed to update email",
+                "Failed to create email change request",
                 event_type="email_change_error",
                 email=current_user.email,
                 new_email=str(email_change.new_email),
-                error_type=type(e).__name__,
-                error_details=str(e)
+                error=message
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update email"
+                detail=message
             )
 
-        # Send verification email for new email address
-        verification_sent = await user_service.send_verification_email(updated_user, background_tasks)
-
-        # Create a new token with the updated email
-        expires_delta = timedelta(minutes=60)
-        expire_time = datetime.now(timezone.utc) + expires_delta
-        
-        # Create new access token with updated email
-        access_token = create_access_token(
-            data={
-                "sub": updated_user.email,  # Use the new email
-                "id": updated_user.id,
-                "is_admin": updated_user.is_admin,
-                "exp": expire_time.timestamp()
-            },
-            expires_delta=expires_delta
+        # Send verification email to the new address
+        email_service = EmailService(background_tasks, db)
+        await email_service.send_email_change_verification(
+            current_user,
+            str(email_change.new_email),
+            change_request.token
         )
 
         logger.info(
-            "Email changed successfully",
-            event_type="email_changed",
+            "Email change request created",
+            event_type="email_change_requested",
+            user_id=current_user.id,
             old_email=current_user.email,
-            new_email=str(email_change.new_email),
-            verification_sent=verification_sent
+            new_email=str(email_change.new_email)
         )
 
         return {
-            "message": "Email updated successfully. Please verify your new email address.",
-            "email": str(updated_user.email),
-            "verification_sent": verification_sent,
-            "access_token": access_token,
-            "token_type": "bearer"
+            "message": "Verification email sent to your new email address. Please check your inbox and click the verification link to complete the email change.",
+            "email": str(email_change.new_email),
+            "verification_sent": True
         }
 
     except JWTError as e:
@@ -626,8 +598,120 @@ async def change_email(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error updating email"
+            detail="Error processing email change request"
         ) from e
+
+
+@router.get(
+    "/verify-email-change",
+    response_model=Dict[str, Any],
+    responses={
+        200: {"description": "Email successfully changed and verified"},
+        400: {"description": "Invalid or expired verification token"}
+    }
+)
+async def verify_email_change(
+    token: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Verify and complete an email change request using the token sent via email.
+    
+    Args:
+        token: The verification token from query parameter
+        background_tasks: FastAPI background tasks
+        db: Database session
+        
+    Returns:
+        Dict containing success message and new access token
+        
+    Raises:
+        HTTPException: If token is invalid or expired
+    """
+    try:
+        # Initialize user service
+        user_service = UserService(db)
+        
+        # Verify the email change token
+        success, message, updated_user = await user_service.verify_email_change(token)
+        
+        if not success or not updated_user:
+            logger.error(
+                "Email change verification failed",
+                event_type="email_change_verification_error",
+                token=token,
+                error=message
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=message
+            )
+        
+        # Send confirmation emails
+        email_service = EmailService(background_tasks, db)
+        
+        # Get the old email from the change request
+        result = await db.execute(
+            select(EmailChangeRequest)
+            .where(EmailChangeRequest.token == token)
+        )
+        change_request = result.scalar_one_or_none()
+        
+        if change_request:
+            # Send confirmation emails to both old and new addresses
+            await email_service.send_email_change_confirmation(
+                updated_user,
+                change_request.current_email
+            )
+        
+        # Generate a token for immediate login with the new email
+        expires_delta = timedelta(minutes=60)
+        expire_time = datetime.now(timezone.utc) + expires_delta
+        
+        # Create token with the new email
+        access_token = create_access_token(
+            data={
+                "sub": updated_user.email,
+                "id": updated_user.id,
+                "is_admin": updated_user.is_admin,
+                "exp": expire_time.timestamp()
+            },
+            expires_delta=expires_delta
+        )
+        
+        logger.info(
+            "Email change verification successful",
+            event_type="email_change_verified",
+            user_id=updated_user.id,
+            email=updated_user.email
+        )
+        
+        return {
+            "message": "Email address successfully changed and verified",
+            "email": str(updated_user.email),
+            "is_verified": True,
+            "access_token": access_token,
+            "token_type": "bearer"
+        }
+        
+    except HTTPException as http_ex:
+        # Re-raise HTTP exceptions
+        raise http_ex
+        
+    except Exception as e:
+        logger.error(
+            "Email change verification error",
+            event_type="email_change_verification_error",
+            token=token,
+            error_type=type(e).__name__,
+            error_details=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to verify email change"
+        )
+
 
 @router.put(
     "/users/password",
@@ -677,7 +761,7 @@ async def change_password(
         return {"message": "Password updated successfully"}
         
     except (UserNotFoundError, InvalidCredentialsError) as e:
-        logger.error("Password change failed", event_type="password_change_error", email=email, error_type=type(e).__name__)
+        logger.error("Password change failed", event_type="password_change_error", email=current_user.email, error_type=type(e).__name__)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
@@ -698,443 +782,6 @@ async def change_password(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error changing password: {str(e)}"
         ) from e
-
-
-@router.delete(
-    "/users/delete-account",
-    responses={
-        200: {"description": "User successfully deleted"},
-        401: {"description": "Invalid password"},
-        404: {"description": "User not found"}
-    }
-)
-async def remove_user(
-        password: str,
-        db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(get_current_active_user)
-) -> Dict[str, str]:
-    """
-    Delete user account.
-
-    Requires authentication, verification, and password verification.
-    """
-    try:
-        await delete_user(db, current_user.email, password)
-        logger.info("User deleted", event_type="user_deleted", email=current_user.email)
-        return {"message": "User deleted successfully"}
-    except (UserNotFoundError, InvalidCredentialsError) as e:
-        logger.error("User deletion failed", event_type="user_deletion_error", email=current_user.email, error_type=type(e).__name__)
-        
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
-        ) from e
-    except HTTPException as http_ex:
-        # Re-raise HTTP exceptions without changing status code
-        logger.error(f"HTTP exception in remove_user: {http_ex.status_code}: {http_ex.detail}",
-                    event_type="user_deletion_error",
-                    error_type="HTTPException",
-                    error_details=str(http_ex.detail))
-        raise http_ex
-    except Exception as e:
-        logger.error(f"Unhandled exception in remove_user: {type(e).__name__}: {str(e)}",
-                    event_type="debug_user_deletion_error",
-                    error_type=type(e).__name__,
-                    error_details=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error deleting user: {str(e)}"
-        ) from e
-
-
-@router.post(
-    "/logout",
-    responses={
-        200: {"description": "Successfully logged out"},
-        401: {"description": "Invalid or expired token"}
-    }
-)
-async def logout(current_user: User = Depends(get_current_active_user)) -> Dict[str, str]:
-    """
-    Logout endpoint that validates the JWT token.
-    
-    Note: In a JWT-based system, the token remains valid until expiration.
-    The client should handle token removal from their storage.
-    
-    Requires authentication and verification.
-    """
-    try:
-        logger.info("User logged out", event_type="user_logout", email=current_user.email)
-        
-        return {"message": "Successfully logged out"}
-    except Exception as e:
-        logger.error("Logout failed", event_type="logout_error", email=current_user.email, error_type=type(e).__name__, error_details=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error during logout"
-        ) from e
-
-
-@router.post(
-    "/password-reset-request",
-    responses={
-        200: {"description": "Password reset link sent if account exists"}
-    }
-)
-async def request_password_reset(
-    request: PasswordResetRequest,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db)
-) -> dict:
-    """Request a password reset link to be sent via email."""
-    try:
-        token = await create_password_reset_token(db, request.email)
-        # Use the correct endpoint for password reset
-        reset_link = f"{settings.FRONTEND_URL}/auth/reset-password?token={token}"
-
-        # Create email service
-        email_service = EmailService(background_tasks, db)
-        
-        # Get user for email
-        user_service = UserService(db)
-        user = await user_service.get_user_by_email(str(request.email))
-        
-        if user:
-            # Log the reset link for debugging
-            logger.info(
-                "Generated password reset link",
-                event_type="password_reset_link_generated",
-                email=str(request.email),
-                reset_link=reset_link
-            )
-            await email_service.send_password_change_request(user, token)
-
-        logger.info(
-            "Password reset requested",
-            event_type="password_reset_requested",
-            email=str(request.email)
-        )
-
-        return {"message": "Password reset link sent to email if account exists"}
-    except (UserNotFoundError, ValueError, jwt.JWTError) as e:
-        logger.error("Password reset request failed", event_type="password_reset_request_error", email=request.email, error=str(e))
-        # Return same message to prevent email enumeration
-        return {"message": "Password reset link sent to email if account exists"}
-
-
-@router.post(
-    "/reset-password",
-    responses={
-        200: {"description": "Password successfully reset"},
-        400: {"description": "Invalid or expired reset token"}
-    }
-)
-async def reset_password_with_token(
-    reset_data: PasswordReset,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db)
-) -> dict:
-    """Reset password using the token received via email."""
-    try:
-        user_id = await verify_reset_token(reset_data.token)
-        await reset_password(db, user_id, reset_data.new_password)
-
-        # Send confirmation email
-        result = await db.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
-        
-        if user:
-            user_service = UserService(db)
-            await user_service.send_password_change_confirmation(user, background_tasks)
-
-        logger.info("Password reset successful", event_type="password_reset_success", user_id=user_id)
-        return {"message": "Password has been reset successfully"}
-    except (UserNotFoundError, jwt.JWTError, ValueError) as e:
-        logger.error("Password reset failed", event_type="password_reset_error", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired reset token"
-        ) from e
-
-
-@router.post(
-    "/refresh",
-    response_model=Token,
-    responses={
-        200: {"description": "Token refreshed successfully"},
-        401: {"description": "Invalid or expired token"}
-    }
-)
-async def refresh_token(
-    refresh_request: RefreshToken,
-    db: AsyncSession = Depends(get_db)
-) -> Token:
-    """Refresh an existing JWT token."""
-    try:
-        # Verify the existing token
-        payload = verify_jwt_token(refresh_request.token)
-        
-        # Get email from token
-        email = payload.get("sub")
-        
-        # Get user by email
-        user = await get_user_by_email(db, email)
-            
-        if not user:
-            logger.error("Token refresh failed - user not found", event_type="token_refresh_error", email=email, error_type="user_not_found")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token"
-            )
-
-        # Calculate new expiration time
-        expires_delta = timedelta(minutes=60)
-        expire_time = datetime.now(timezone.utc) + expires_delta
-
-        # Create new access token - always use email as subject for new tokens
-        access_token = create_access_token(
-            data={
-                "sub": user.email,  # Always use email for new tokens
-                "id": user.id,
-                "is_admin": user.is_admin,
-                "exp": expire_time.timestamp()
-            },
-            expires_delta=expires_delta
-        )
-
-        logger.info("Token refreshed successfully", event_type="token_refresh_success", email=user.email)
-
-        return Token(access_token=access_token, token_type="bearer")
-
-    except jwt.JWTError as e:
-        logger.error("Token refresh failed - invalid token", event_type="token_refresh_error", error_type="jwt_error", error_details=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
-        ) from e
-
-
-@router.get(
-    "/me",
-    response_model=UserResponse,
-    responses={
-        200: {
-            "description": "User profile retrieved successfully"
-        },
-        401: {"description": "Not authenticated"},
-        404: {"description": "User not found"}
-    }
-)
-async def get_current_user_profile(
-    user_id: int | None = None,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-) -> UserResponse:
-    """
-    Retrieve the profile of the authenticated user.
-    For non-admin users, any provided user_id is ignored.
-    Admin users can retrieve other users' profiles by providing a valid user_id.
-    
-    Requires authentication and verification.
-    """
-    try:
-        # If requesting another user's profile, verify admin status
-        if user_id is not None and user_id != current_user.id:
-            if not current_user.is_admin:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Not authorized to view other users' profiles"
-                )
-                
-            # Get user by ID for admin lookup
-            result = await db.execute(select(User).where(User.id == user_id))
-            target_user = result.scalar_one_or_none()
-            
-            if not target_user:
-                logger.error(
-                    "Admin lookup failed - user not found",
-                    event_type="profile_retrieval_error",
-                    user_id=user_id,
-                    admin_email=current_user.email
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"User with ID {user_id} not found"
-                )
-            
-            logger.info(
-                "Admin retrieved user profile",
-                event_type="admin_profile_retrieved",
-                admin_email=current_user.email,
-                target_user_id=user_id
-            )
-            
-            return UserResponse(
-                email=target_user.email,
-                is_verified=target_user.is_verified
-            )
-        
-        # Regular case - return current user profile
-        logger.info(
-            "User profile retrieved",
-            event_type="profile_retrieved",
-            email=current_user.email
-        )
-        
-        return UserResponse(
-            email=current_user.email,
-            is_verified=current_user.is_verified
-        )
-        
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-        
-    except Exception as e:
-        logger.error(
-            "Profile retrieval failed",
-            event_type="profile_retrieval_error",
-            email=current_user.email if current_user else "unknown",
-            error_type=type(e).__name__,
-            error_details=str(e)
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error retrieving user profile"
-        ) from e
-
-@router.get("/users/{user_id}/email",
-    response_model=Dict[str, str],
-    include_in_schema=False,  # Hide from public API docs
-    responses={
-        200: {"description": "User email retrieved successfully"},
-        403: {"description": "Forbidden - Internal service access only"},
-        404: {"description": "User not found"}
-    }
-)
-async def get_email_by_user_id(
-    user_id: int,
-    service_id: str = Depends(get_internal_service),
-    db: AsyncSession = Depends(get_db)
-) -> Dict[str, str]:
-    """
-    Get user's email by user ID.
-    
-    This is an internal-only endpoint for service-to-service communication.
-    Requires a valid INTERNAL_API_KEY header.
-    """
-    try:
-        result = await db.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
-        if not user:
-            logger.warning(
-                "Email retrieval failed - user not found",
-                event_type="internal_endpoint_error",
-                user_id=user_id,
-                service_id=service_id,
-                error_type="user_not_found"
-            )
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-        
-        logger.info(
-            "Email retrieved by user_id",
-            event_type="internal_endpoint_access",
-            user_id=user_id,
-            service_id=service_id
-        )
-        return {"email": str(user.email)}
-    except HTTPException as http_ex:
-        # Re-log but keep the original HTTPException status code
-        logger.error(
-            "Failed to retrieve email by user_id",
-            event_type="internal_endpoint_error",
-            user_id=user_id,
-            service_id=service_id,
-            error_type="HTTPException",
-            error_details=str(http_ex.detail)
-        )
-        # Re-raise the same HTTPException to maintain the status code
-        raise http_ex
-    except Exception as e:
-        logger.error(
-            "Failed to retrieve email by user_id",
-            event_type="internal_endpoint_error",
-            user_id=user_id,
-            service_id=service_id,
-            error_type=type(e).__name__,
-            error_details=str(e)
-        )
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                           detail="Internal server error when retrieving user email")
-
-@router.post(
-    "/test-email",
-    response_model=Dict[str, Any],
-    responses={
-        200: {"description": "Test email sent successfully"},
-        500: {"description": "Failed to send test email"}
-    }
-)
-async def test_email(
-    email_test: Dict[str, str],
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Test endpoint to verify email sending functionality.
-    Requires an email address to send the test to.
-    
-    Example request:
-    ```json
-    {
-        "email": "test@example.com"
-    }
-    ```
-    """
-    try:
-        email = email_test.get("email")
-        if not email:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email address is required"
-            )
-            
-        # Create email service
-        email_service = EmailService(background_tasks, db)
-        
-        # Send a test email directly (not in background)
-        from app.core.email import send_email
-        result = await send_email(
-            subject="Test Email from Auth Service",
-            recipients=[email],
-            body="<p>This is a test email to verify the email sending functionality.</p>"
-        )
-        
-        logger.info(
-            "Test email sent",
-            event_type="test_email_sent",
-            recipient=email,
-            status_code=result
-        )
-        
-        return {
-            "message": "Test email sent",
-            "status_code": result,
-            "recipient": email
-        }
-    except Exception as e:
-        logger.error(
-            "Failed to send test email",
-            event_type="test_email_error",
-            error=str(e),
-            error_type=type(e).__name__
-        )
-        
-        return {
-            "message": "Failed to send test email",
-            "error": str(e),
-            "error_type": type(e).__name__
-        }
 
 
 @router.get(
@@ -1191,6 +838,27 @@ async def verify_email_templates(
         }
     )
     
+    # Test email change verification template
+    results["email_change_verification"] = email_service.verify_template(
+        "email_change_verification",
+        {
+            "email": "new.email@example.com",
+            "verification_link": "https://example.com/verify-email-change?token=test_token",
+            "hours_valid": 24
+        }
+    )
+    
+    # Test email change confirmation template
+    results["email_change_confirmation"] = email_service.verify_template(
+        "email_change_confirmation",
+        {
+            "email": "new.email@example.com",
+            "login_link": "https://example.com/login",
+            "ip_address": "127.0.0.1",
+            "time": "2025-02-26 11:30:00 UTC"
+        }
+    )
+    
     # Test one time credit purchase template
     results["one_time_credit_purchase"] = email_service.verify_template(
         "one_time_credit_purchase",
@@ -1219,213 +887,3 @@ async def verify_email_templates(
         "message": "Template verification completed",
         "results": results
     }
-
-
-# Google OAuth Endpoints
-
-@router.get(
-    "/oauth/google/login",
-    response_model=Dict[str, str],
-    responses={
-        200: {"description": "Google login URL generated"},
-        500: {"description": "Failed to generate login URL"}
-    }
-)
-async def google_login(
-    redirect_uri: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
-) -> Dict[str, str]:
-    """
-    Generate Google OAuth login URL.
-    
-    Args:
-        redirect_uri: Optional custom redirect URI
-        db: Database session
-        
-    Returns:
-        Dict with login URL
-    """
-    try:
-        oauth_service = GoogleOAuthService(db)
-        auth_url = await oauth_service.get_authorization_url(redirect_uri)
-        
-        logger.info(
-            "Generated Google OAuth URL",
-            event_type="oauth_url_generated",
-            redirect_uri=redirect_uri or settings.GOOGLE_REDIRECT_URI
-        )
-        
-        return {"auth_url": auth_url}
-    
-    except Exception as e:
-        logger.error(
-            "Failed to generate Google OAuth URL",
-            event_type="oauth_url_error",
-            error=str(e),
-            error_type=type(e).__name__
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating Google login URL: {str(e)}"
-        )
-
-@router.post(
-    "/oauth/google/callback",
-    response_model=Token,
-    responses={
-        200: {"description": "Successfully authenticated with Google"},
-        400: {"description": "Invalid OAuth callback"}
-    }
-)
-async def google_callback(
-    callback: GoogleAuthCallback,
-    db: AsyncSession = Depends(get_db)
-) -> Token:
-    """
-    Process Google OAuth callback and generate JWT token.
-    
-    Args:
-        callback: Callback data with authorization code
-        db: Database session
-        
-    Returns:
-        JWT token same as regular login
-    """
-    try:
-        oauth_service = GoogleOAuthService(db)
-        user, access_token = await oauth_service.login_with_google(callback.code)
-        
-        logger.info(
-            "Google OAuth login successful",
-            event_type="oauth_login_success",
-            user_id=user.id,
-            email=user.email
-        )
-        
-        return Token(access_token=access_token, token_type="bearer")
-        
-    except HTTPException as http_ex:
-        # Re-raise HTTP exceptions
-        raise http_ex
-    except Exception as e:
-        logger.error(
-            "Google OAuth callback error",
-            event_type="oauth_callback_error",
-            error=str(e),
-            error_type=type(e).__name__
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Error processing Google callback: {str(e)}"
-        )
-
-@router.post(
-    "/link/google",
-    response_model=Dict[str, str],
-    responses={
-        200: {"description": "Google account linked successfully"},
-        401: {"description": "Not authenticated or invalid password"},
-        400: {"description": "Invalid OAuth callback"},
-        403: {"description": "Email not verified"}
-    }
-)
-async def link_google_account(
-    link_request: AccountLinkRequest,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-) -> Dict[str, str]:
-    """
-    Link Google account to existing user.
-    
-    Args:
-        link_request: Link request with Google auth code and password
-        current_user: Current authenticated user
-        db: Database session
-        
-    Returns:
-        Success message
-    """
-    try:
-        # Verify password
-        if not verify_password(link_request.password, current_user.hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid password"
-            )
-            
-        oauth_service = GoogleOAuthService(db)
-        
-        # Exchange code for tokens
-        tokens = await oauth_service.exchange_code_for_tokens(link_request.code)
-        
-        # Get user profile
-        profile = await oauth_service.get_user_profile(tokens['access_token'])
-        
-        # Link account
-        await oauth_service.link_google_account(current_user, profile)
-        
-        return {"message": "Google account linked successfully"}
-        
-    except HTTPException as http_ex:
-        # Re-raise HTTP exceptions
-        raise http_ex
-    except Exception as e:
-        logger.error(
-            "Google account linking error",
-            event_type="oauth_link_error",
-            user_id=current_user.id,
-            email=current_user.email,
-            error=str(e),
-            error_type=type(e).__name__
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Error linking Google account: {str(e)}"
-        )
-
-@router.post(
-    "/unlink/google",
-    response_model=Dict[str, str],
-    responses={
-        200: {"description": "Google account unlinked successfully"},
-        400: {"description": "Cannot unlink account without password"},
-        401: {"description": "Not authenticated"},
-        403: {"description": "Email not verified"}
-    }
-)
-async def unlink_google_account(
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-) -> Dict[str, str]:
-    """
-    Unlink Google account from user.
-    
-    Args:
-        current_user: Current authenticated user
-        db: Database session
-        
-    Returns:
-        Success message
-    """
-    try:
-        oauth_service = GoogleOAuthService(db)
-        await oauth_service.unlink_google_account(current_user)
-        
-        return {"message": "Google account unlinked successfully"}
-        
-    except HTTPException as http_ex:
-        # Re-raise HTTP exceptions
-        raise http_ex
-    except Exception as e:
-        logger.error(
-            "Google account unlinking error",
-            event_type="oauth_unlink_error",
-            user_id=current_user.id,
-            email=current_user.email,
-            error=str(e),
-            error_type=type(e).__name__
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Error unlinking Google account: {str(e)}"
-        )
