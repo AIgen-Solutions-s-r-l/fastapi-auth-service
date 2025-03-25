@@ -15,7 +15,7 @@ from app.core.error_handlers import (validation_exception_handler, auth_exceptio
                                    database_exception_handler, sqlalchemy_exception_handler)
 from app.log.logging import logger, InterceptHandler
 from app.core.db_exceptions import DatabaseException
-from app.routers.auth_router import router as auth_router
+from app.routers.auth import router as auth_router
 from app.routers.healthcheck_router import router as healthcheck_router
 from app.routers.credit_router import router as credit_router
 from app.routers.stripe_webhook import router as stripe_webhook_router
