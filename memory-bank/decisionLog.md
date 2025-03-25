@@ -60,5 +60,7 @@
 - Added database health check endpoint for monitoring
 - Created comprehensive documentation for the error handling strategy
 
+
+| 2025-03-25 09:32:00 | Auth Router Refactoring | The auth_router.py has grown too large (890 lines) and handles multiple concerns. This makes it difficult to maintain and extend. | Split into domain-specific modules (user_auth.py, email_verification.py, password_management.py, email_management.py, social_auth.py) to improve maintainability, organization, collaboration, and future extensibility. |
 **References:**
 - [Database Error Handling Documentation](../docs/database_error_handling.md)
