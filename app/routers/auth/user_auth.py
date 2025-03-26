@@ -192,3 +192,68 @@ async def get_user_details(
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+
+
+@router.get("/users/{user_id}/email",
+    response_model=Dict[str, str],
+    include_in_schema=False,  # Hide from public API docs
+    responses={
+        200: {"description": "User email retrieved successfully"},
+        403: {"description": "Forbidden - Internal service access only"},
+        404: {"description": "User not found"}
+    }
+)
+async def get_email_by_user_id(
+    user_id: int,
+    service_id: str = Depends(get_internal_service),
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, str]:
+    """
+    Get user's email by user ID.
+    
+    This is an internal-only endpoint for service-to-service communication.
+    Requires a valid INTERNAL_API_KEY header.
+    """
+    try:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            logger.warning(
+                "Email retrieval failed - user not found",
+                event_type="internal_endpoint_error",
+                user_id=user_id,
+                service_id=service_id,
+                error_type="user_not_found"
+            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        
+        logger.info(
+            "Email retrieved by user_id",
+            event_type="internal_endpoint_access",
+            user_id=user_id,
+            service_id=service_id
+        )
+        return {"email": str(user.email)}
+    except HTTPException as http_ex:
+        # Re-log but keep the original HTTPException status code
+        logger.error(
+            "Failed to retrieve email by user_id",
+            event_type="internal_endpoint_error",
+            user_id=user_id,
+            service_id=service_id,
+            error_type="HTTPException",
+            error_details=str(http_ex.detail)
+        )
+        # Re-raise the same HTTPException to maintain the status code
+        raise http_ex
+    except Exception as e:
+        logger.error(
+            "Failed to retrieve email by user_id",
+            event_type="internal_endpoint_error",
+            user_id=user_id,
+            service_id=service_id,
+            error_type=type(e).__name__,
+            error_details=str(e)
+        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                           detail="Internal server error when retrieving user email")
