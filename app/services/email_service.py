@@ -195,7 +195,7 @@ class EmailService:
             recipients=[str(user.email)],
             context={
                 "email": user.email,
-                "login_link": f"{settings.FRONTEND_URL}/login"
+                "login_link": f"{settings.FRONTEND_URL}/signin"
             }
         )
     
@@ -279,7 +279,7 @@ class EmailService:
             recipients=[str(user.email)],
             context={
                 "email": user.email,
-                "login_link": f"{settings.FRONTEND_URL}/login",
+                "login_link": f"{settings.FRONTEND_URL}/signin",
                 "ip_address": "Not available",  # Could be passed in from the request
                 "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
             }
@@ -298,7 +298,7 @@ class EmailService:
             recipients=[str(user.email)],
             context={
                 "email": user.email,
-                "login_link": f"{settings.FRONTEND_URL}/login",
+                "login_link": f"{settings.FRONTEND_URL}/signin",
                 "ip_address": "Not available",  # Could be passed in from the request
                 "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
             }
@@ -360,7 +360,7 @@ class EmailService:
             recipients=[str(user.email)],
             context={
                 "email": user.email,
-                "login_link": f"{settings.FRONTEND_URL}/login",
+                "login_link": f"{settings.FRONTEND_URL}/signin",
                 "ip_address": "Not available",
                 "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
             }
@@ -373,7 +373,7 @@ class EmailService:
             recipients=[str(old_email)],
             context={
                 "email": user.email,  # Show the new email in the notification
-                "login_link": f"{settings.FRONTEND_URL}/login",
+                "login_link": f"{settings.FRONTEND_URL}/signin",
                 "ip_address": "Not available",
                 "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
             }
