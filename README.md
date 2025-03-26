@@ -32,9 +32,9 @@
 
 ## 🚀 Overview
 
-**auth_service** is a production-ready FastAPI-based authentication service designed to handle user authentication and management. It uses PostgreSQL for storing user data and provides secure JWT-based authentication with comprehensive logging and monitoring capabilities.
+**auth_service** is a production-ready FastAPI-based authentication service designed to handle user authentication and management. It uses PostgreSQL for storing user data and provides secure JWT-based authentication with comprehensive logging, monitoring, and payment capabilities.
 
-> 💡 **Key Strengths**: Scalable architecture, robust security, and comprehensive API for seamless integration with other services.
+> 💡 **Key Strengths**: Scalable architecture, robust security, comprehensive API, and payment processing for seamless integration with other services.
 
 ## 🏗️ Architecture and Implementation
 
@@ -322,7 +322,7 @@ The auth_service implements a comprehensive multi-layered security model with en
 | `/stripe/setup-intent`           | POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
 | `/stripe/payment-methods`        | GET    | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
 | `/stripe/create-subscription`    | POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
-
+| `/stripe/cancel-subscription`    | POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
 #### Security Enforcement Workflow
 
 For every incoming request to a protected endpoint, the authentication flow follows this pattern:
