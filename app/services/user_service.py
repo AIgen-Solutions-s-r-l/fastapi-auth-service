@@ -726,33 +726,16 @@ async def verify_reset_token(db: AsyncSession, token: str) -> int:
     Raises:
         HTTPException: If the token is invalid or expired
     """
-    try:
-        result = await db.execute(
-            select(User).where(
-                User.verification_token == token,
-                User.verification_token_expires_at > datetime.now(UTC)
-            )
+    result = await db.execute(
+        select(User).where(
+            User.verification_token == token,
+            User.verification_token_expires_at > datetime.now(UTC)
         )
-        user = result.scalar_one_or_none()
-        if not user:
-            raise ValueError("Invalid or expired token")
-        return user.id
-        
-        # For testing purposes, we'll return user ID 32 (the one we just created)
-        # logger.warning(
-        #     "Using placeholder implementation of verify_reset_token",
-        #     event_type="password_reset_token_verification",
-        #     token=token
-        # )
-        # return 32
-    except Exception as e:
-        logger.error(
-            f"Error verifying reset token: {str(e)}",
-            event_type="password_reset_token_verification_error",
-            token=token,
-            error=str(e)
-        )
-        raise ValueError(f"Error verifying reset token: {str(e)}")
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise ValueError("Invalid user or invalid/expired token")
+    return user.id
 
 async def reset_password(db: AsyncSession, user_id: int, new_password: str) -> bool:
     """Reset user password."""

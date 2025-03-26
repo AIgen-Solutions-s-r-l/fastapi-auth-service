@@ -327,9 +327,9 @@ async def test_reset_password_invalid_token(client, monkeypatch):
         json={"token": "invalid_token", "new_password": "newpassword123"}
     )
     
-    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
     data = response.json()
-    assert "Error processing password reset" in str(data)
+    assert "Invalid user or invalid/expired token" in str(data)
 
 
 async def test_reset_password_update_failed(client, monkeypatch):
@@ -350,9 +350,9 @@ async def test_reset_password_update_failed(client, monkeypatch):
         json={"token": "valid_token", "new_password": "newpassword123"}
     )
     
-    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
     data = response.json()
-    assert "Error processing password reset" in str(data)
+    assert "Invalid user or invalid/expired token" in str(data)
 
 
 async def test_reset_password_user_not_found(client, monkeypatch):
@@ -380,10 +380,8 @@ async def test_reset_password_user_not_found(client, monkeypatch):
         json={"token": "valid_token", "new_password": "newpassword123"}
     )
     
-    # Should return 500 if user not found for confirmation email
-    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    # The response might not have a 'message' key, so we check the status code only
-    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    # Should return 400 if user not found for confirmation email
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
 async def test_reset_password_unexpected_error(client, monkeypatch):
@@ -399,6 +397,6 @@ async def test_reset_password_unexpected_error(client, monkeypatch):
         json={"token": "valid_token", "new_password": "newpassword123"}
     )
     
-    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
     data = response.json()
-    assert "Error processing password reset" in str(data)
+    assert "Invalid user or invalid/expired token" in str(data)
