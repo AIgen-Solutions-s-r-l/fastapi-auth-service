@@ -293,7 +293,7 @@ class EmailService:
             user: User model instance
         """
         await self._send_templated_email(
-            template_name="password_reset",
+            template_name="password_change_confirmation",
             subject="Password Reset Confirmation",
             recipients=[str(user.email)],
             context={
