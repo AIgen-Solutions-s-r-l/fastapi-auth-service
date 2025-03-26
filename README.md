@@ -309,8 +309,8 @@ The auth_service implements a comprehensive multi-layered security model with en
 | `/auth/users/delete-account`     | DELETE | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
 | `/auth/link/google`              | POST   | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
 | `/auth/unlink/google`            | POST   | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
-| `/auth/users/{user_id}/email`    | GET    | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
-| `/auth/users/by-email/{email}`   | GET    | ✓ Verified User     | JWT token + verified email | 401: Invalid, 403: Unverified         | get_current_active_user dependency       |
+| `/auth/users/{user_id}/email`    | GET    | 🔒 Internal Service | API key in X-API-Key header | 401: Invalid, 403: Unverified         | get_internal_service dependency          |
+| `/auth/users/by-email/{email}`   | GET    | 🔒 Internal Service | API key in X-API-Key header | 401: Invalid, 403: Unverified         | get_internal_service dependency          |
 | **Credit Endpoints**             |        |                     |                            |                                        |                                           |
 | `/credits/balance`               | GET    | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
 | `/credits/add`                   | POST   | 🔒 Internal Service | API key in X-API-Key header| 401: Invalid/missing API key           | get_internal_service dependency          |
