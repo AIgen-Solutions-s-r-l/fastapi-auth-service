@@ -64,7 +64,7 @@ curl -X POST http://localhost:8000/auth/password-reset-request \
 }'
 
 # Reset password with token
-curl -X POST http://localhost:8000/auth/reset-password \
+curl -X POST http://localhost:8000/update-password \
 -H "Content-Type: application/json" \
 -d '{
   "token": "YOUR_RESET_TOKEN",

@@ -104,7 +104,7 @@ async def request_password_reset(
     try:
         token = await create_password_reset_token(db, request.email)
         # Use the correct endpoint for password reset
-        reset_link = f"{settings.FRONTEND_URL}/auth/reset-password?token={token}"
+        reset_link = f"{settings.FRONTEND_URL}/update-password?token={token}"
 
         # Create email service
         email_service = EmailService(background_tasks, db)

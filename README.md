@@ -296,7 +296,7 @@ The auth_service implements a comprehensive multi-layered security model with en
 | `/auth/verify-email`             | GET    | 🌐 Public           | None                       | 400: Invalid token                     | No authentication check                   |
 | `/auth/resend-verification`      | POST   | 🌐 Public           | None                       | 404: User not found                    | No authentication check                   |
 | `/auth/password-reset-request`   | POST   | 🌐 Public           | None                       | 200: Always returns success            | No authentication check                   |
-| `/auth/reset-password`           | POST   | 🌐 Public           | None                       | 400: Invalid/expired token             | No authentication check                   |
+| `/update-password`           | POST   | 🌐 Public           | None                       | 400: Invalid/expired token             | No authentication check                   |
 | `/auth/oauth/google/login`       | GET    | 🌐 Public           | None                       | 302: Redirect to Google                | No authentication check                   |
 | `/auth/oauth/google/callback`    | GET    | 🌐 Public           | None                       | 400: Invalid state/code                | No authentication check                   |
 | `/auth/test-email`               | GET    | 🌐 Public           | None                       | 500: Email sending failed              | No authentication check                   |

@@ -244,7 +244,7 @@ class EmailService:
             user: User model instance
             reset_token: Token for password reset
         """
-        reset_link = f"{settings.FRONTEND_URL}/auth/reset-password?token={reset_token}"
+        reset_link = f"{settings.FRONTEND_URL}/update-password?token={reset_token}"
         
         # Log the reset link for debugging
         logger.info(
