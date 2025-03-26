@@ -284,6 +284,25 @@ class EmailService:
                 "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
             }
         )
+        
+    async def send_password_reset_confirmation(self, user: User) -> None:
+        """
+        Send confirmation after password has been reset.
+        
+        Args:
+            user: User model instance
+        """
+        await self._send_templated_email(
+            template_name="password_reset",
+            subject="Password Reset Confirmation",
+            recipients=[str(user.email)],
+            context={
+                "email": user.email,
+                "login_link": f"{settings.FRONTEND_URL}/login",
+                "ip_address": "Not available",  # Could be passed in from the request
+                "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            }
+        )
     
     async def send_email_change_verification(
         self,

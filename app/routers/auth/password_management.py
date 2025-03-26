@@ -4,13 +4,14 @@ from typing import Dict, Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from jose import jwt
 
 from app.core.database import get_db
 from app.core.exceptions import UserNotFoundError, InvalidCredentialsError
 from app.schemas.auth_schemas import PasswordChange, PasswordResetRequest, PasswordReset
 from app.models.user import User
-from app.services.user_service import UserService, create_password_reset_token
+from app.services.user_service import UserService, create_password_reset_token, verify_reset_token, reset_password
 from app.services.email_service import EmailService
 from app.core.auth import get_current_active_user
 from app.core.config import settings
