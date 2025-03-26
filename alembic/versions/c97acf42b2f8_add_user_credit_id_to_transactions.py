@@ -1,7 +1,7 @@
 """add_user_credit_id_to_transactions
 
 Revision ID: c97acf42b2f8
-Revises: add_credit_system_tables
+Revises: a1b2c3d4e5f6
 Create Date: 2025-02-06 20:07:31.953325
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'c97acf42b2f8'
-down_revision: Union[str, None] = 'add_credit_system_tables'
+down_revision: Union[str, None] = 'a1b2c3d4e5f6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
