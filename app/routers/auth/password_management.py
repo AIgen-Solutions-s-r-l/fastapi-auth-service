@@ -153,7 +153,7 @@ async def reset_password_with_token(
     """Reset a user's password using a valid reset token."""
     try:
         # Verify token and get user ID
-        user_id = await verify_reset_token(reset_data.token)
+        user_id = await verify_reset_token(db, reset_data.token)
         
         # Reset the password
         success = await reset_password(db, user_id, reset_data.new_password)

@@ -713,7 +713,7 @@ async def create_password_reset_token(db: AsyncSession, email: str) -> str:
             detail=f"Error creating password reset token: {str(e)}"
         )
 
-async def verify_reset_token(token: str) -> int:
+async def verify_reset_token(db: AsyncSession, token: str) -> int:
     """
     Verify a password reset token.
     
@@ -727,32 +727,24 @@ async def verify_reset_token(token: str) -> int:
         HTTPException: If the token is invalid or expired
     """
     try:
-        # In a real implementation, you would query the database
-        # to find the user with this token and check if it's expired
-        
-        # For now, we'll just return a dummy user ID since we're
-        # storing the token directly in the user record
-        # This is a placeholder implementation
-        
-        # In a production system, you would do something like:
-        # result = await db.execute(
-        #     select(User).where(
-        #         User.verification_token == token,
-        #         User.verification_token_expires_at > datetime.now(UTC)
-        #     )
-        # )
-        # user = result.scalar_one_or_none()
-        # if not user:
-        #     raise ValueError("Invalid or expired token")
-        # return user.id
+        result = await db.execute(
+            select(User).where(
+                User.verification_token == token,
+                User.verification_token_expires_at > datetime.now(UTC)
+            )
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            raise ValueError("Invalid or expired token")
+        return user.id
         
         # For testing purposes, we'll return user ID 32 (the one we just created)
-        logger.warning(
-            "Using placeholder implementation of verify_reset_token",
-            event_type="password_reset_token_verification",
-            token=token
-        )
-        return 32
+        # logger.warning(
+        #     "Using placeholder implementation of verify_reset_token",
+        #     event_type="password_reset_token_verification",
+        #     token=token
+        # )
+        # return 32
     except Exception as e:
         logger.error(
             f"Error verifying reset token: {str(e)}",
