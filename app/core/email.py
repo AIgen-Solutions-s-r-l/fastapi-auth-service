@@ -104,7 +104,9 @@ async def send_email(subject: str, recipients: List[str], body: str):
                 event_type="email_api_response",
                 status_code=response.status_code,
                 response_text=response.text,
-                response_headers=dict(response.headers)
+                response_headers=dict(response.headers),
+                request_json=payload,
+                headers=headers
             )
             
             if response.status_code >= 400:
