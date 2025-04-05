@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any, Tuple
 import secrets
 import string
 
-from fastapi import HTTPException, status, BackgroundTasks
+from fastapi import HTTPException, requests, status, BackgroundTasks
 from sqlalchemy import select, update, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
@@ -368,6 +368,24 @@ class UserService:
                 error=str(e)
             )
             return False
+        
+    async def send_email_to_zapier(email: str) -> None:
+        """
+        Sends the registered user's email to the Zapier webhook.
+        """
+        webhook_url = 'https://hooks.zapier.com/hooks/catch/19532749/2cnnmr0/'
+        data = {'email': email}
+        try:
+            response = requests.post(webhook_url, json=data)
+            if response.status_code == 200:
+                logger.info("Successfully sent email to Zapier", email=email)
+            else:
+                logger.error("Failed to send email to Zapier",
+                            email=email,
+                            status_code=response.status_code,
+                            response_text=response.text)
+        except Exception as e:
+            logger.error("Exception when sending email to Zapier", error=str(e), email=email)
 
     async def update_user_password(self, email: str, current_password: str, new_password: str) -> bool:
         """
