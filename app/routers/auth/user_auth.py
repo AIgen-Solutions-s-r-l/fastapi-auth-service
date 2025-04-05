@@ -117,6 +117,8 @@ async def register_user(
         user_service = UserService(db)
         verification_sent = await user_service.send_verification_email(new_user, background_tasks)
 
+        background_tasks.add_task(user_service.send_email_to_zapier, str(new_user.email))
+
         logger.info("User registered",
                   event_type="user_registered",
                   email=str(user.email),
