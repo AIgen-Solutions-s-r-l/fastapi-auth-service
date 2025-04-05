@@ -369,7 +369,7 @@ class UserService:
             )
             return False
         
-    async def send_email_to_zapier(email: str) -> None:
+    async def send_email_to_zapier(self, email: str) -> None:
         """
         Sends the registered user's email to the Zapier webhook.
         """
