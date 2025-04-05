@@ -5,10 +5,11 @@ from typing import Optional, Dict, Any, Tuple
 import secrets
 import string
 
-from fastapi import HTTPException, requests, status, BackgroundTasks
+from fastapi import HTTPException, status, BackgroundTasks
 from sqlalchemy import select, update, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
+import requests
 
 from app.core.security import get_password_hash, verify_password
 from app.models.user import User, EmailVerificationToken, EmailChangeRequest
