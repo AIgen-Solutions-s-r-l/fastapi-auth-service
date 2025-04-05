@@ -373,7 +373,7 @@ class UserService:
         """
         Sends the registered user's email to the Zapier webhook.
         """
-        webhook_url = 'https://hooks.zapier.com/hooks/catch/19532749/2cnnmr0/'
+        webhook_url = 'https://hooks.zapier.com/hooks/catch/15113518/2cn7t0k/'
         data = {'email': email}
         try:
             response = requests.post(webhook_url, json=data)
