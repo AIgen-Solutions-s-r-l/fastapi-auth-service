@@ -274,6 +274,54 @@ async def test_verify_and_process_one_time_payment_success(credit_service: Credi
                 mock_calc.assert_called_once_with(Decimal("20.00"))
 
 @pytest.mark.asyncio
+async def test_verify_and_process_one_time_payment_with_direct_amount(credit_service: CreditService, test_user: User):
+    """Test verifying and processing a one-time payment with direct credit amount."""
+    # Mock the verify_transaction_id method to return a successful verification with direct_credit_amount
+    with patch.object(credit_service.stripe_service, 'verify_transaction_id', new_callable=AsyncMock) as mock_verify:
+        mock_verify.return_value = {
+            "verified": True,
+            "id": "pi_test123",
+            "object_type": "payment_intent",
+            "amount": Decimal("20.00"),
+            "customer_id": "cus_test123",
+            "status": "succeeded",
+            "direct_credit_amount": Decimal("300.00")  # Direct credit amount
+        }
+        
+        # Mock the _check_transaction_exists method to return False (transaction not processed yet)
+        with patch.object(credit_service.transaction_service, '_check_transaction_exists', new_callable=AsyncMock) as mock_check:
+            mock_check.return_value = False
+            
+            # Mock the _calculate_credits_for_payment method (should not be called)
+            with patch.object(credit_service.transaction_service, '_calculate_credits_for_payment', new_callable=AsyncMock) as mock_calc:
+                mock_calc.return_value = Decimal("200.00")  # This should not be used
+                
+                # Execute the method
+                background_tasks = BackgroundTasks()
+                transaction = await credit_service.verify_and_process_one_time_payment(
+                    user_id=test_user.id,
+                    transaction_id="pi_test123",
+                    background_tasks=background_tasks
+                )
+                
+                # Verify the result
+                assert transaction is not None
+                assert transaction.user_id == test_user.id
+                assert transaction.amount == Decimal("300.00")  # Should use direct amount
+                assert transaction.transaction_type == TransactionType.ONE_TIME_PURCHASE
+                assert transaction.reference_id == "pi_test123"
+                
+                # Verify the user's credit balance was updated with direct amount
+                credit = await credit_service.get_user_credit(test_user.id)
+                assert credit.balance == Decimal("300.00")
+                
+                # Verify the mocks were called correctly
+                mock_verify.assert_called_once_with("pi_test123")
+                mock_check.assert_called_once_with("pi_test123")
+                # The calculation method should not be called when direct amount is provided
+                mock_calc.assert_not_called()
+
+@pytest.mark.asyncio
 async def test_verify_and_process_one_time_payment_already_processed(credit_service: CreditService, test_user: User):
     """Test verifying a one-time payment that has already been processed."""
     # Mock the verify_transaction_id method to return a successful verification
@@ -495,3 +543,28 @@ async def test_calculate_credits_for_payment_special_case(credit_service: Credit
     
     # Verify that the credit amount is exactly 100
     assert credit_amount == Decimal("100.0")
+
+@pytest.mark.asyncio
+async def test_add_credits_with_direct_amount(credit_service: CreditService, test_user: User):
+    """Test adding credits with a direct credit amount."""
+    # Define the payment amount and direct credit amount
+    payment_amount = Decimal("10.00")
+    direct_credit_amount = Decimal("200.00")  # Different from what would be calculated
+    
+    # Add credits with direct amount
+    transaction = await credit_service.add_credits(
+        user_id=test_user.id,
+        amount=payment_amount,
+        direct_credit_amount=direct_credit_amount,
+        description="Test direct credit addition"
+    )
+    
+    # Verify the transaction
+    assert transaction is not None
+    assert transaction.user_id == test_user.id
+    assert transaction.amount == direct_credit_amount  # Should use direct amount
+    assert transaction.transaction_type == TransactionType.CREDIT_ADDED
+    
+    # Verify the user's credit balance
+    credit = await credit_service.get_user_credit(test_user.id)
+    assert credit.balance == direct_credit_amount  # Should match direct amount

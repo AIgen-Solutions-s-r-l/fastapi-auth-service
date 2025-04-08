@@ -187,7 +187,8 @@ async def add_credits(
             user_id=user_id,
             amount=request.amount,
             reference_id=request.reference_id,
-            description=request.description
+            description=request.description,
+            direct_credit_amount=request.direct_credit_amount
         )
         
     except HTTPException:
@@ -341,6 +342,14 @@ async def add_credits_from_stripe(
         
         # Analyze transaction
         analysis = await stripe_service.analyze_transaction(transaction_data)
+        
+        # Add direct_credit_amount to analysis if provided in the request
+        if request.direct_credit_amount is not None:
+            analysis["direct_credit_amount"] = request.direct_credit_amount
+            logger.info(f"Using direct credit amount from request: {request.direct_credit_amount}",
+                      event_type="direct_credit_amount_provided",
+                      user_id=user_id,
+                      direct_credit_amount=float(request.direct_credit_amount))
         
         # Validate transaction type matches the requested type
         if analysis["transaction_type"] != request.transaction_type:

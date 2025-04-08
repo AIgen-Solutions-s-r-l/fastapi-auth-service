@@ -21,6 +21,7 @@ class CreditTransactionBase(BaseModel):
     amount: Decimal = Field(..., gt=0, description="Transaction amount must be greater than 0")
     reference_id: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = None
+    direct_credit_amount: Optional[Decimal] = Field(None, gt=0, description="Direct credit amount to use (bypasses calculation)")
 
 
 class AddCreditRequest(CreditTransactionBase):
