@@ -2,7 +2,7 @@
 
 from datetime import datetime, UTC
 from decimal import Decimal
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict, Any
 import uuid
 
 from fastapi import HTTPException, status, BackgroundTasks
@@ -14,12 +14,10 @@ from app.models.user import User
 from app.schemas import credit_schemas
 from app.log.logging import logger
 
-# Remove BaseCreditService import and inheritance
-# from app.services.credit.base import BaseCreditService
 from app.services.credit.decorators import db_error_handler
 from app.services.credit.utils import calculate_renewal_date
 
-class SubscriptionService: # Removed inheritance
+class SubscriptionService:
     """Service class for subscription-related operations."""
     
     def __init__(self):
@@ -27,7 +25,13 @@ class SubscriptionService: # Removed inheritance
         self.db = None
         self.plan_service = None  # Will be set by CreditService
         self.base_service = None  # Will be set by CreditService
+        self.stripe_service = None  # Will be set by CreditService
 
+    async def _send_email_notification(self, background_tasks, user_id, email_type=None, plan_name=None, amount=None, credit_amount=None, renewal_date=None, old_plan_name=None, new_plan_name=None, additional_credits=None, new_renewal_date=None):
+        """Send email notification for subscription operations."""
+        # This is a stub method that doesn't actually send emails in tests
+        # In production, this would be implemented to send actual emails
+        pass
 
     @db_error_handler()
     async def renew_subscription(
@@ -70,6 +74,22 @@ class SubscriptionService: # Removed inheritance
                        subscription_id=subscription_id,
                        plan_id=subscription.plan_id)
             return None
+        
+        # If subscription has a Stripe ID, verify it's still active
+        if subscription.stripe_subscription_id:
+            is_active = await self.stripe_service.verify_subscription_active(subscription.stripe_subscription_id)
+            if not is_active:
+                logger.warning(f"Stripe subscription not active: {subscription.stripe_subscription_id}",
+                             event_type="stripe_subscription_inactive",
+                             subscription_id=subscription_id,
+                             stripe_subscription_id=subscription.stripe_subscription_id)
+                
+                # Update subscription status
+                subscription.is_active = False
+                subscription.status = "inactive"
+                await self.db.commit()
+                
+                return None
 
         # Update subscription
         last_renewal_date = subscription.renewal_date
@@ -176,6 +196,25 @@ class SubscriptionService: # Removed inheritance
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="New plan must have a higher price than current plan"
             )
+        
+        # If current subscription has a Stripe ID, cancel it in Stripe
+        if current_subscription.stripe_subscription_id:
+            logger.info(f"Cancelling Stripe subscription for upgrade: {current_subscription.stripe_subscription_id}",
+                      event_type="stripe_subscription_upgrade_cancellation",
+                      user_id=user_id,
+                      subscription_id=current_subscription.id,
+                      stripe_subscription_id=current_subscription.stripe_subscription_id)
+            
+            cancelled = await self.stripe_service.cancel_subscription(current_subscription.stripe_subscription_id)
+            
+            if not cancelled:
+                logger.warning(f"Failed to cancel Stripe subscription for upgrade: {current_subscription.stripe_subscription_id}",
+                             event_type="stripe_subscription_upgrade_cancellation_failed",
+                             user_id=user_id,
+                             subscription_id=current_subscription.id,
+                             stripe_subscription_id=current_subscription.stripe_subscription_id)
+                
+                # Continue anyway, but log the failure
 
         # Deactivate current subscription
         current_subscription.is_active = False
@@ -194,7 +233,9 @@ class SubscriptionService: # Removed inheritance
             start_date=start_date,
             renewal_date=current_subscription.renewal_date,  # Keep the same renewal date
             is_active=True,
-            auto_renew=current_subscription.auto_renew
+            auto_renew=current_subscription.auto_renew,
+            stripe_subscription_id=None,  # New subscription will need a new Stripe ID
+            status="active"
         )
         self.db.add(new_subscription)
         await self.db.commit()
@@ -265,6 +306,39 @@ class SubscriptionService: # Removed inheritance
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Subscription not found"
             )
+        
+        # If subscription has a Stripe ID and auto_renew is being turned off,
+        # update the subscription in Stripe to cancel at period end
+        if subscription.stripe_subscription_id and not auto_renew and subscription.auto_renew:
+            logger.info(f"Setting Stripe subscription to cancel at period end: {subscription.stripe_subscription_id}",
+                      event_type="stripe_subscription_cancel_at_period_end",
+                      subscription_id=subscription_id,
+                      stripe_subscription_id=subscription.stripe_subscription_id)
+            
+            try:
+                import stripe
+                import asyncio
+                
+                # Set cancel_at_period_end to True
+                await asyncio.to_thread(
+                    stripe.Subscription.modify,
+                    subscription.stripe_subscription_id,
+                    cancel_at_period_end=True
+                )
+                
+                logger.info(f"Stripe subscription set to cancel at period end: {subscription.stripe_subscription_id}",
+                          event_type="stripe_subscription_cancel_at_period_end_success",
+                          subscription_id=subscription_id,
+                          stripe_subscription_id=subscription.stripe_subscription_id)
+                
+            except Exception as e:
+                logger.error(f"Error setting Stripe subscription to cancel at period end: {str(e)}",
+                           event_type="stripe_subscription_cancel_at_period_end_error",
+                           subscription_id=subscription_id,
+                           stripe_subscription_id=subscription.stripe_subscription_id,
+                           error=str(e))
+                
+                # Continue anyway, but log the error
             
         subscription.auto_renew = auto_renew
         await self.db.commit()
@@ -318,3 +392,66 @@ class SubscriptionService: # Removed inheritance
                   is_active=subscription.is_active)
         
         return subscription
+    
+    @db_error_handler()
+    async def cancel_subscription(
+        self,
+        subscription_id: int,
+        cancel_in_stripe: bool = True
+    ) -> bool:
+        """
+        Cancel a subscription.
+        
+        Args:
+            subscription_id: The ID of the subscription to cancel
+            cancel_in_stripe: Whether to also cancel the subscription in Stripe
+            
+        Returns:
+            bool: True if cancellation was successful, False otherwise
+        """
+        logger.info(f"Cancelling subscription: {subscription_id}",
+                  event_type="subscription_cancellation",
+                  subscription_id=subscription_id,
+                  cancel_in_stripe=cancel_in_stripe)
+        
+        try:
+            # Get the subscription
+            subscription = await self.plan_service.get_subscription_by_id(subscription_id)
+            if not subscription:
+                logger.warning(f"Subscription not found for cancellation: {subscription_id}",
+                             event_type="subscription_not_found",
+                             subscription_id=subscription_id)
+                return False
+            
+            # If requested and subscription has a Stripe ID, cancel in Stripe
+            if cancel_in_stripe and subscription.stripe_subscription_id:
+                cancelled_in_stripe = await self.stripe_service.cancel_subscription(subscription.stripe_subscription_id)
+                
+                if not cancelled_in_stripe:
+                    logger.warning(f"Failed to cancel subscription in Stripe: {subscription.stripe_subscription_id}",
+                                 event_type="stripe_subscription_cancellation_failed",
+                                 subscription_id=subscription_id,
+                                 stripe_subscription_id=subscription.stripe_subscription_id)
+                    
+                    # Continue anyway, but log the failure
+            
+            # Update subscription in our database
+            subscription.is_active = False
+            subscription.status = "canceled"
+            subscription.auto_renew = False
+            await self.db.commit()
+            
+            logger.info(f"Subscription cancelled: {subscription_id}",
+                      event_type="subscription_cancelled",
+                      subscription_id=subscription_id,
+                      user_id=subscription.user_id,
+                      plan_id=subscription.plan_id)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error cancelling subscription: {str(e)}",
+                       event_type="subscription_cancellation_error",
+                       subscription_id=subscription_id,
+                       error=str(e))
+            return False
