@@ -112,8 +112,7 @@ class BaseCreditService:
         description: Optional[str] = None,
         transaction_type: TransactionType = TransactionType.CREDIT_ADDED,
         plan_id: Optional[int] = None,
-        subscription_id: Optional[int] = None,
-        direct_credit_amount: Optional[Decimal] = None
+        subscription_id: Optional[int] = None
     ) -> credit_schemas.TransactionResponse:
         """
         Add credits to user's balance.
@@ -132,16 +131,13 @@ class BaseCreditService:
         """
         credit = await self.get_user_credit(user_id)
         
-        # Use direct_credit_amount if provided, otherwise use amount
-        credit_amount_to_add = direct_credit_amount if direct_credit_amount is not None else amount
-        
-        credit.balance += credit_amount_to_add
+        credit.balance += amount
         credit.updated_at = datetime.now(UTC)
 
         transaction = CreditTransaction(
             user_id=user_id,
             user_credit_id=credit.id,
-            amount=credit_amount_to_add,  # Use the actual amount of credits added
+            amount=amount,
             transaction_type=transaction_type,
             reference_id=reference_id,
             description=description,
@@ -153,21 +149,12 @@ class BaseCreditService:
         await self.db.commit()
         await self.db.refresh(transaction)
 
-        if direct_credit_amount is not None:
-            logger.info(f"Added {credit_amount_to_add} credits to user {user_id} (direct amount). New balance: {credit.balance}",
-                      event_type="credits_added_direct",
-                      user_id=user_id,
-                      amount=amount,
-                      direct_credit_amount=credit_amount_to_add,
-                      transaction_type=transaction_type,
-                      new_balance=credit.balance)
-        else:
-            logger.info(f"Added {amount} credits to user {user_id}. New balance: {credit.balance}",
-                      event_type="credits_added",
-                      user_id=user_id,
-                      amount=amount,
-                      transaction_type=transaction_type,
-                      new_balance=credit.balance)
+        logger.info(f"Added {amount} credits to user {user_id}. New balance: {credit.balance}",
+                  event_type="credits_added",
+                  user_id=user_id,
+                  amount=amount,
+                  transaction_type=transaction_type,
+                  new_balance=credit.balance)
 
         return create_transaction_response(transaction, credit.balance)
 

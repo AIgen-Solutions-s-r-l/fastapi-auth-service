@@ -19,7 +19,6 @@ class StripeTransactionRequest(BaseModel):
     transaction_id: Optional[str] = Field(None, description="Stripe transaction ID")
     email: Optional[EmailStr] = Field(None, description="Customer email for lookup")
     transaction_type: str = Field(..., description="Transaction type (oneoff, subscription)")
-    direct_credit_amount: Optional[Decimal] = Field(None, gt=0, description="Direct credit amount to use (bypasses calculation)")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
     
     @validator('transaction_type')

@@ -41,10 +41,9 @@ This endpoint now supports automatic detection of Stripe transaction IDs. If the
 **Request Schema**:
 ```json
 {
-  "amount": 100.00,                // Required for regular credit additions, ignored for Stripe transactions
+  "amount": 100.00,                // Required: Amount of credits to add
   "reference_id": "pi_1234567890", // Optional: Can be a Stripe transaction ID
-  "description": "Credit purchase", // Optional: Description of the transaction
-  "direct_credit_amount": 100.0    // Optional: Exact credit amount to add (bypasses backend calculation)
+  "description": "Credit purchase" // Optional: Description of the transaction
 }
 ```
 
@@ -82,8 +81,7 @@ Based on the provided information, it:
   "transaction_id": "pi_1234567890",  // Optional: Stripe transaction ID
   "email": "customer@example.com",    // Optional: Customer email (if transaction_id not provided)
   "transaction_type": "oneoff",       // Required: "oneoff" or "subscription"
-  "metadata": {},                     // Optional: Additional metadata
-  "direct_credit_amount": 100.0       // Optional: Exact credit amount to add (bypasses backend calculation)
+  "metadata": {}                      // Optional: Additional metadata
 }
 ```
 
@@ -124,8 +122,9 @@ The system now includes a comprehensive transaction handling system that differe
 
 1. **Transaction Verification**: The system verifies that the transaction ID exists in Stripe and is in a valid state (succeeded or processing).
 2. **Duplicate Prevention**: Checks if the transaction has already been processed to prevent duplicate credits.
-3. **Credit Addition**: Adds the specified credits to the user's account.
-4. **Logging**: Logs all steps of the process with appropriate log levels.
+3. **Credit Calculation**: Calculates the appropriate number of credits based on the payment amount.
+4. **Credit Addition**: Adds the calculated credits to the user's account.
+5. **Logging**: Logs all steps of the process with appropriate log levels.
 
 ### Subscription Handling
 
@@ -141,10 +140,10 @@ The system now includes a comprehensive transaction handling system that differe
 ### One-time Purchase Flow
 
 1. Customer makes a payment through Stripe checkout
-2. Frontend calls `/credits/add` with the payment intent ID as the reference_id and optionally specifies the exact credit amount
+2. Frontend calls `/credits/add` with the payment intent ID as the reference_id
 3. Backend detects the Stripe payment intent ID and verifies the transaction in Stripe
 4. Backend checks if the transaction has already been processed
-5. If a direct credit amount is provided, it is used directly; otherwise, credits are calculated based on plan ratios
+5. Credits are calculated based on plan ratios (explained below)
 6. Credits are added to the user's account
 7. Confirmation email is sent to the user
 8. User can immediately use the new credits
@@ -152,29 +151,18 @@ The system now includes a comprehensive transaction handling system that differe
 ### Subscription Flow
 
 1. Customer subscribes to a plan through Stripe checkout
-2. Frontend calls `/credits/add` with the subscription ID as the reference_id and optionally specifies the exact credit amount
+2. Frontend calls `/credits/add` with the subscription ID as the reference_id
 3. Backend detects the Stripe subscription ID and verifies the subscription in Stripe
 4. Backend checks if the user already has an active subscription
 5. If an active subscription exists, it is cancelled through the Stripe API
 6. A new subscription record is created in our database
-7. Credits are added to the user's account based on the plan or the direct credit amount if provided
+7. Credits are added to the user's account based on the plan
 8. Confirmation email is sent to the user
 9. When the subscription renews:
    - Stripe sends an `invoice.payment_succeeded` webhook event
    - Our webhook handler processes the event
    - Additional credits are added to the user's account
    - Renewal confirmation email is sent to the user
-
-## Direct Credit Amount Pass-through
-
-The system now supports direct pass-through of credit amounts from the frontend:
-
-1. **Frontend Specification**: The frontend can specify the exact credit amount to add via the `direct_credit_amount` parameter.
-2. **Backend Processing**: When a `direct_credit_amount` is provided, the backend bypasses all credit calculation logic.
-3. **Direct Application**: The exact credit amount specified by the frontend is directly added to the user's account.
-4. **Compatibility**: This feature works with both one-time payments and subscriptions.
-
-This approach allows for complete control over credit amounts from the frontend, eliminating any discrepancies that might arise from backend calculations.
 
 ## Webhook Processing
 
@@ -230,17 +218,14 @@ All errors are properly logged with relevant context for troubleshooting, includ
 ## Credit Calculation
 
 ### For Subscriptions
-For subscription-based purchases, the credit amount is determined by the plan configuration in the database or by the direct credit amount if provided.
+For subscription-based purchases, the credit amount is determined by the plan configuration in the database.
 
 ### For One-time Purchases
-For one-time purchases, there are two approaches:
+One-time purchases use a dynamic credit calculation approach:
 
-1. **Direct Credit Amount**: If a `direct_credit_amount` is provided, it is used directly without any calculation.
-
-2. **Dynamic Calculation**: If no direct amount is provided, the system uses a dynamic credit calculation approach:
-   - Find plans with similar prices to the payment amount
-   - Use the credit-to-price ratio from the most similar plan
-   - Calculate credits = payment amount × ratio
+1. Find plans with similar prices to the payment amount
+2. Use the credit-to-price ratio from the most similar plan
+3. Calculate credits = payment amount × ratio
 
 For example, if:
 - Plan A costs $10 and provides 120 credits (ratio = 12)
@@ -265,4 +250,3 @@ The tests include scenarios for:
 - Verifying and processing valid subscriptions
 - Handling users with existing subscriptions
 - Cancelling subscriptions
-- Processing direct credit amounts

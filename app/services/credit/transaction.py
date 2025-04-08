@@ -117,28 +117,15 @@ class TransactionService:
                     detail=f"Invalid payment amount: {amount}"
                 )
             
-            # Check if direct credit amount is provided in the verification result
-            direct_credit_amount = verification_result.get("direct_credit_amount")
+            # Calculate credits based on payment amount
+            credit_amount = await self._calculate_credits_for_payment(amount)
             
-            if direct_credit_amount is not None and direct_credit_amount > 0:
-                # Use the direct credit amount provided by the frontend
-                credit_amount = direct_credit_amount
-                logger.info(f"Using direct credit amount: User {user_id}, Amount {amount}, Direct Credits {credit_amount}",
-                           event_type="direct_credit_amount_used",
-                           user_id=user_id,
-                           transaction_id=transaction_id,
-                           amount=amount,
-                           credit_amount=credit_amount)
-            else:
-                # Calculate credits based on payment amount
-                credit_amount = await self._calculate_credits_for_payment(amount)
-                
-                logger.info(f"Processing one-time payment: User {user_id}, Amount {amount}, Calculated Credits {credit_amount}",
-                           event_type="one_time_payment_processing",
-                           user_id=user_id,
-                           transaction_id=transaction_id,
-                           amount=amount,
-                           credit_amount=credit_amount)
+            logger.info(f"Processing one-time payment: User {user_id}, Amount {amount}, Calculated Credits {credit_amount}",
+                       event_type="one_time_payment_processing",
+                       user_id=user_id,
+                       transaction_id=transaction_id,
+                       amount=amount,
+                       credit_amount=credit_amount)
             
             # Process the payment and add credits
             transaction = await self.purchase_one_time_credits(
@@ -147,8 +134,7 @@ class TransactionService:
                 price=amount,
                 reference_id=transaction_id,
                 description=f"Verified one-time purchase from Stripe: {transaction_id}",
-                background_tasks=background_tasks,
-                direct_credit_amount=verification_result.get("direct_credit_amount")
+                background_tasks=background_tasks
             )
             
             logger.info(f"One-time payment processed successfully: User {user_id}, Transaction {transaction_id}",
@@ -253,8 +239,7 @@ class TransactionService:
         price: Decimal,
         reference_id: Optional[str] = None,
         description: Optional[str] = None,
-        background_tasks: Optional[BackgroundTasks] = None,
-        direct_credit_amount: Optional[Decimal] = None
+        background_tasks: Optional[BackgroundTasks] = None
     ) -> credit_schemas.TransactionResponse:
         """
         Process one-time credit purchase without subscription.

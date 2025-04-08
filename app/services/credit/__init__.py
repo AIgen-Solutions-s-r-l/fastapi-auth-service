@@ -60,10 +60,12 @@ class CreditService:
     async def add_credits(self, **kwargs):
         user_id = kwargs.get('user_id')
         amount = kwargs.get('amount')
-        logger.debug(f"Adding credits: User {user_id}, Amount {amount}", 
-                   event_type="add_credits", 
-                   user_id=user_id, 
+        
+        logger.debug(f"Adding credits: User {user_id}, Amount {amount}",
+                   event_type="add_credits",
+                   user_id=user_id,
                    amount=amount)
+        
         return await self.base_service.add_credits(**kwargs)
         
     async def use_credits(self, **kwargs):

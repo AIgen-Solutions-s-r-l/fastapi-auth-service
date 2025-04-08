@@ -187,8 +187,7 @@ async def add_credits(
             user_id=user_id,
             amount=request.amount,
             reference_id=request.reference_id,
-            description=request.description,
-            direct_credit_amount=request.direct_credit_amount
+            description=request.description
         )
         
     except HTTPException:
