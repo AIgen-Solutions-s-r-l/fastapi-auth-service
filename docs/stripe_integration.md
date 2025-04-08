@@ -215,17 +215,17 @@ All errors are properly logged with relevant context for troubleshooting, includ
 - Error details
 - Operation type
 
-## Credit Calculation
+## Credit Amount
 
 ### For Subscriptions
 For subscription-based purchases, the credit amount is determined by the plan configuration in the database.
 
 ### For One-time Purchases
-One-time purchases use a dynamic credit calculation approach:
+For one-time purchases, the credit amount is now set to be exactly equal to the payment amount:
 
-1. Find plans with similar prices to the payment amount
-2. Use the credit-to-price ratio from the most similar plan
-3. Calculate credits = payment amount × ratio
+1. The payment amount in currency units (e.g., USD) is used directly as the credit amount
+2. No calculation or conversion is performed
+3. This provides a simple 1:1 relationship between payment and credits
 
 For example, if:
 - Plan A costs $10 and provides 120 credits (ratio = 12)

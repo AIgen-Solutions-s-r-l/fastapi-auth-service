@@ -117,15 +117,14 @@ class TransactionService:
                     detail=f"Invalid payment amount: {amount}"
                 )
             
-            # Calculate credits based on payment amount
-            credit_amount = await self._calculate_credits_for_payment(amount)
+            # Use the amount directly from the frontend as the credit amount
+            credit_amount = amount
             
-            logger.info(f"Processing one-time payment: User {user_id}, Amount {amount}, Calculated Credits {credit_amount}",
+            logger.info(f"Processing one-time payment: User {user_id}, Amount/Credits {amount}",
                        event_type="one_time_payment_processing",
                        user_id=user_id,
                        transaction_id=transaction_id,
-                       amount=amount,
-                       credit_amount=credit_amount)
+                       amount=amount)
             
             # Process the payment and add credits
             transaction = await self.purchase_one_time_credits(

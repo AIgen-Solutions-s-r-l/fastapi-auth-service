@@ -245,37 +245,32 @@ async def test_verify_and_process_one_time_payment_success(credit_service: Credi
         with patch.object(credit_service.transaction_service, '_check_transaction_exists', new_callable=AsyncMock) as mock_check:
             mock_check.return_value = False
             
-            # Mock the _calculate_credits_for_payment method to return a credit amount
-            with patch.object(credit_service.transaction_service, '_calculate_credits_for_payment', new_callable=AsyncMock) as mock_calc:
-                mock_calc.return_value = Decimal("200.00")  # 10x the payment amount
-                
-                # Execute the method
-                background_tasks = BackgroundTasks()
-                transaction = await credit_service.verify_and_process_one_time_payment(
-                    user_id=test_user.id,
-                    transaction_id="pi_test123",
-                    background_tasks=background_tasks
-                )
-                
-                # Verify the result
-                assert transaction is not None
-                assert transaction.user_id == test_user.id
-                assert transaction.amount == Decimal("200.00")
-                assert transaction.transaction_type == TransactionType.ONE_TIME_PURCHASE
-                assert transaction.reference_id == "pi_test123"
-                
-                # Verify the user's credit balance was updated
-                credit = await credit_service.get_user_credit(test_user.id)
-                assert credit.balance == Decimal("200.00")
-                
-                # Verify the mocks were called correctly
-                mock_verify.assert_called_once_with("pi_test123")
-                mock_check.assert_called_once_with("pi_test123")
-                mock_calc.assert_called_once_with(Decimal("20.00"))
+            # Execute the method
+            background_tasks = BackgroundTasks()
+            transaction = await credit_service.verify_and_process_one_time_payment(
+                user_id=test_user.id,
+                transaction_id="pi_test123",
+                background_tasks=background_tasks
+            )
+            
+            # Verify the result
+            assert transaction is not None
+            assert transaction.user_id == test_user.id
+            assert transaction.amount == Decimal("20.00")  # Should use the amount directly
+            assert transaction.transaction_type == TransactionType.ONE_TIME_PURCHASE
+            assert transaction.reference_id == "pi_test123"
+            
+            # Verify the user's credit balance was updated
+            credit = await credit_service.get_user_credit(test_user.id)
+            assert credit.balance == Decimal("20.00")
+            
+            # Verify the mocks were called correctly
+            mock_verify.assert_called_once_with("pi_test123")
+            mock_check.assert_called_once_with("pi_test123")
 
 @pytest.mark.asyncio
 async def test_verify_and_process_one_time_payment_with_amount(credit_service: CreditService, test_user: User):
-    """Test verifying and processing a one-time payment with calculated credit amount."""
+    """Test verifying and processing a one-time payment with direct credit amount."""
     # Mock the verify_transaction_id method to return a successful verification
     with patch.object(credit_service.stripe_service, 'verify_transaction_id', new_callable=AsyncMock) as mock_verify:
         mock_verify.return_value = {
@@ -291,34 +286,28 @@ async def test_verify_and_process_one_time_payment_with_amount(credit_service: C
         with patch.object(credit_service.transaction_service, '_check_transaction_exists', new_callable=AsyncMock) as mock_check:
             mock_check.return_value = False
             
-            # Mock the _calculate_credits_for_payment method
-            with patch.object(credit_service.transaction_service, '_calculate_credits_for_payment', new_callable=AsyncMock) as mock_calc:
-                mock_calc.return_value = Decimal("200.00")  # This will be used
-                
-                # Execute the method
-                background_tasks = BackgroundTasks()
-                transaction = await credit_service.verify_and_process_one_time_payment(
-                    user_id=test_user.id,
-                    transaction_id="pi_test123",
-                    background_tasks=background_tasks
-                )
-                
-                # Verify the result
-                assert transaction is not None
-                assert transaction.user_id == test_user.id
-                assert transaction.amount == Decimal("200.00")  # Should use calculated amount
-                assert transaction.transaction_type == TransactionType.ONE_TIME_PURCHASE
-                assert transaction.reference_id == "pi_test123"
-                
-                # Verify the user's credit balance was updated with calculated amount
-                credit = await credit_service.get_user_credit(test_user.id)
-                assert credit.balance == Decimal("200.00")
-                
-                # Verify the mocks were called correctly
-                mock_verify.assert_called_once_with("pi_test123")
-                mock_check.assert_called_once_with("pi_test123")
-                # The calculation method should be called
-                mock_calc.assert_called_once_with(Decimal("20.00"))
+            # Execute the method
+            background_tasks = BackgroundTasks()
+            transaction = await credit_service.verify_and_process_one_time_payment(
+                user_id=test_user.id,
+                transaction_id="pi_test123",
+                background_tasks=background_tasks
+            )
+            
+            # Verify the result
+            assert transaction is not None
+            assert transaction.user_id == test_user.id
+            assert transaction.amount == Decimal("20.00")  # Should use the amount directly
+            assert transaction.transaction_type == TransactionType.ONE_TIME_PURCHASE
+            assert transaction.reference_id == "pi_test123"
+            
+            # Verify the user's credit balance was updated with the amount
+            credit = await credit_service.get_user_credit(test_user.id)
+            assert credit.balance == Decimal("20.00")
+            
+            # Verify the mocks were called correctly
+            mock_verify.assert_called_once_with("pi_test123")
+            mock_check.assert_called_once_with("pi_test123")
 
 @pytest.mark.asyncio
 async def test_verify_and_process_one_time_payment_already_processed(credit_service: CreditService, test_user: User):

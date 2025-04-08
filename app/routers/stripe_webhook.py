@@ -181,38 +181,14 @@ async def stripe_webhook_handler(
                     
                     # Process one-time purchase
                     if analysis["transaction_type"] == "oneoff":
-                        # Get the payment amount
+                        # Use the payment amount directly as the credit amount
                         payment_amount = analysis["amount"]
+                        credit_amount = payment_amount
                         
-                        # Get plans to calculate credit-to-price ratio
-                        plans = await credit_service.get_all_active_plans()
-                        credit_amount = None
-                        
-                        if plans:
-                            # Find plans with similar prices
-                            similar_plans = sorted(plans, key=lambda p: abs(p.price - payment_amount))
-                            
-                            if similar_plans:
-                                # Use the most similar plan's credit-to-price ratio to calculate credits
-                                best_match = similar_plans[0]
-                                ratio = best_match.credit_amount / best_match.price
-                                credit_amount = payment_amount * ratio
-                                
-                                logger.info(f"Calculated webhook credits using plan-based ratio",
-                                          event_type="webhook_credit_calculation",
-                                          payment_amount=float(payment_amount),
-                                          similar_plan_id=best_match.id,
-                                          ratio=float(ratio),
-                                          credit_amount=float(credit_amount))
-                        
-                        # Fallback if no plans found or calculation resulted in zero credits
-                        if not credit_amount or credit_amount <= 0:
-                            # Use a default ratio as fallback (e.g., $1 = 10 credits)
-                            credit_amount = payment_amount * Decimal('10')
-                            logger.warning(f"Using fallback credit calculation in webhook",
-                                         event_type="webhook_credit_calculation_fallback",
-                                         payment_amount=float(payment_amount),
-                                         credit_amount=float(credit_amount))
+                        logger.info(f"Using payment amount directly as credit amount in webhook",
+                                  event_type="webhook_direct_credit",
+                                  payment_amount=float(payment_amount),
+                                  credit_amount=float(credit_amount))
                         
                         # Add credits
                         transaction = await credit_service.purchase_one_time_credits(
