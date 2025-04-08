@@ -46,6 +46,8 @@ class TransactionResponse(CreditTransactionBase):
     transaction_type: str
     created_at: datetime
     new_balance: Decimal
+    plan_id: Optional[int] = None
+    subscription_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 
