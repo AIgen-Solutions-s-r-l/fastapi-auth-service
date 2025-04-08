@@ -482,3 +482,16 @@ async def test_cancel_subscription(credit_service: CreditService, test_subscript
         
         # Verify the mock was called correctly
         mock_cancel.assert_called_once_with(test_subscription.stripe_subscription_id)
+
+@pytest.mark.asyncio
+async def test_calculate_credits_for_payment_special_case(credit_service: CreditService):
+    """Test that a payment of 39.0 results in exactly 100 credits."""
+    # Get the transaction service from the credit service
+    transaction_service = credit_service.transaction_service
+    
+    # Test the special case for payment amount of 39.0
+    payment_amount = Decimal("39.0")
+    credit_amount = await transaction_service._calculate_credits_for_payment(payment_amount)
+    
+    # Verify that the credit amount is exactly 100
+    assert credit_amount == Decimal("100.0")
