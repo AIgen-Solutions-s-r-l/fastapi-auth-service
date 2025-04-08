@@ -47,7 +47,7 @@ logger.info(
 # Create engine with enhanced connection pool settings
 engine = create_async_engine(
     database_url,
-    echo=True,
+    echo=False,
     pool_size=pool_size,
     max_overflow=max_overflow,
     pool_timeout=pool_timeout,
