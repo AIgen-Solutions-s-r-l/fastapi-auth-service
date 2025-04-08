@@ -8,11 +8,14 @@ from typing import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, patch
 import asyncio
 import greenlet
+import logging
 
 from app.core.database import get_db
 from app.main import app
 from app.models.user import Base
 from app.services.email_service import EmailService
+
+logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
 
 # Use SQLite for testing
 SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
@@ -20,7 +23,8 @@ SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
 engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL, 
     connect_args={"check_same_thread": False},
-    poolclass=None  # Disable connection pooling for tests
+    poolclass=None,
+    echo=False
 )
 TestingSessionLocal = sessionmaker(
     autocommit=False, 

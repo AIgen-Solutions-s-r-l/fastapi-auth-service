@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.credit import UserCredit, CreditTransaction, TransactionType
-from app.models.plan import Plan, Subscription, PlanTier
+from app.models.plan import Plan, Subscription
 from app.models.user import User
 from app.schemas import credit_schemas
 from app.services.email_service import EmailService
@@ -589,7 +589,7 @@ class CreditService:
         background_tasks: Optional[BackgroundTasks] = None
     ) -> Tuple[credit_schemas.TransactionResponse, Subscription]:
         """
-        Upgrade a subscription to a higher plan tier.
+        Upgrade a subscription to a higher plan.
 
         Args:
             user_id: ID of the user
@@ -636,12 +636,11 @@ class CreditService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="New plan not found or inactive"
                 )
-
-            # Validate upgrade (ensure new plan is higher tier)
+            # Validate upgrade (ensure new plan is higher priced)
             if new_plan.price <= current_plan.price:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="New plan must be a higher tier than current plan"
+                    detail="New plan must have a higher price than current plan"
                 )
 
             # Deactivate current subscription

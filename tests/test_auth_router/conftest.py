@@ -14,7 +14,7 @@ from datetime import timedelta, datetime, timezone
 
 # Create a test database
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
-engine = create_async_engine(TEST_DATABASE_URL, echo=True)
+engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 TestingSessionLocal = sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
 )

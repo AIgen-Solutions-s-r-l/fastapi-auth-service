@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field, field_validator, ConfigDict
 class PlanBase(BaseModel):
     """Base schema for plan operations."""
     name: str
-    tier: str
     credit_amount: Decimal = Field(..., gt=0)
     price: Decimal = Field(..., gt=0)
     description: Optional[str] = None
@@ -32,7 +31,6 @@ class PlanCreate(PlanBase):
 class PlanUpdate(BaseModel):
     """Schema for updating an existing plan."""
     name: Optional[str] = None
-    tier: Optional[str] = None
     credit_amount: Optional[Decimal] = None
     price: Optional[Decimal] = None
     is_active: Optional[bool] = None
@@ -87,7 +85,6 @@ class SubscriptionResponse(BaseModel):
     user_id: int
     plan_id: int
     plan_name: str
-    plan_tier: str
     credit_amount: Decimal
     start_date: datetime
     renewal_date: datetime

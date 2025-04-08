@@ -1,22 +1,11 @@
 """Models for plan and subscription management."""
 
 from datetime import datetime, UTC
-from enum import Enum
 from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from decimal import Decimal
 
 from app.core.base import Base
-
-
-class PlanTier(str, Enum):
-    """Plan tier levels based on application count."""
-    TIER_100 = "tier_100"
-    TIER_200 = "tier_200"
-    TIER_300 = "tier_300"
-    TIER_500 = "tier_500"
-    TIER_1000 = "tier_1000"
-    CUSTOM = "custom"  # Keep custom tier for special cases
 
 
 class Plan(Base):
@@ -26,7 +15,6 @@ class Plan(Base):
     Attributes:
         id (int): The primary key for the plan.
         name (str): Name of the plan.
-        tier (str): Plan tier level (basic, standard, premium, etc.).
         credit_amount (Decimal): Amount of credits provided by the plan.
         price (Decimal): Price of the plan.
         is_active (bool): Flag indicating if the plan is currently active.
@@ -36,7 +24,6 @@ class Plan(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(50), nullable=False)
-    tier = Column(String(20), nullable=False)
     credit_amount = Column(Numeric(10, 2), nullable=False)
     price = Column(Numeric(10, 2), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
