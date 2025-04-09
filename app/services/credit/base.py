@@ -145,19 +145,26 @@ class BaseCreditService:
             subscription_id=subscription_id
         )
 
+        logger.info(f"Adding transaction to database: User {user_id}, Amount {amount}, Type {transaction_type}",
+                  event_type="adding_transaction",
+                  user_id=user_id,
+                  amount=amount,
+                  transaction_type=transaction_type,
+                  reference_id=reference_id)
+
         self.db.add(transaction)
         await self.db.commit()
         await self.db.refresh(transaction)
 
-        logger.info(f"Added {amount} credits to user {user_id}. New balance: {credit.balance}",
+        logger.info(f"Added {amount} credits to user {user_id}. New balance: {credit.balance}, Transaction ID: {transaction.id}",
                   event_type="credits_added",
                   user_id=user_id,
                   amount=amount,
                   transaction_type=transaction_type,
-                  new_balance=credit.balance)
+                  new_balance=credit.balance,
+                  transaction_id=transaction.id)
 
         return create_transaction_response(transaction, credit.balance)
-
     @db_error_handler()
     async def use_credits(
         self,
@@ -249,6 +256,12 @@ class BaseCreditService:
         Returns:
             TransactionHistoryResponse: List of transactions and total count
         """
+        logger.info(f"Getting transaction history for user {user_id}",
+                  event_type="get_transaction_history_start",
+                  user_id=user_id,
+                  skip=skip,
+                  limit=limit)
+
         # Get total count with a single query
         count_result = await self.db.execute(
             select(func.count()).select_from(CreditTransaction).where(
@@ -256,6 +269,11 @@ class BaseCreditService:
             )
         )
         total_count = count_result.scalar_one()
+
+        logger.info(f"Found {total_count} transactions for user {user_id}",
+                  event_type="transaction_count",
+                  user_id=user_id,
+                  total_count=total_count)
 
         # Get transactions with pagination
         result = await self.db.execute(
@@ -267,13 +285,27 @@ class BaseCreditService:
         )
         transactions = result.scalars().all()
 
+        logger.info(f"Retrieved {len(transactions)} transactions for user {user_id}",
+                  event_type="transactions_retrieved",
+                  user_id=user_id,
+                  retrieved_count=len(transactions),
+                  transaction_ids=[tx.id for tx in transactions])
+
         # Get current balance
         credit = await self.get_user_credit(user_id)
         
-        return credit_schemas.TransactionHistoryResponse(
+        response = credit_schemas.TransactionHistoryResponse(
             transactions=[
                 create_transaction_response(tx, credit.balance)
                 for tx in transactions
             ],
             total_count=total_count
         )
+
+        logger.info(f"Returning transaction history response for user {user_id}",
+                  event_type="get_transaction_history_complete",
+                  user_id=user_id,
+                  total_count=total_count,
+                  returned_count=len(response.transactions))
+
+        return response
