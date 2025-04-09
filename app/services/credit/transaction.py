@@ -38,7 +38,8 @@ class TransactionService:
         self,
         user_id: int,
         transaction_id: str,
-        background_tasks: Optional[BackgroundTasks] = None
+        background_tasks: Optional[BackgroundTasks] = None,
+        amount: Optional[Decimal] = None
     ) -> Optional[credit_schemas.TransactionResponse]:
         """
         Verify a one-time payment transaction with Stripe and process it if valid.
@@ -47,6 +48,7 @@ class TransactionService:
             user_id: ID of the user
             transaction_id: Stripe transaction ID
             background_tasks: Optional background tasks for sending emails
+            amount: Optional amount of credits to add (overrides the Stripe amount)
             
         Returns:
             Optional[TransactionResponse]: Transaction details if successful, None otherwise
@@ -117,10 +119,10 @@ class TransactionService:
                     detail=f"Invalid payment amount: {amount}"
                 )
             
-            # Use the amount directly from the frontend as the credit amount
-            credit_amount = amount
+            # Use the amount from the frontend if provided, otherwise use the Stripe amount
+            credit_amount = amount if amount is not None else verification_result.get("amount", Decimal('0.00'))
             
-            logger.info(f"Processing one-time payment: User {user_id}, Amount/Credits {amount}",
+            logger.info(f"Processing one-time payment: User {user_id}, Amount/Credits {credit_amount}",
                        event_type="one_time_payment_processing",
                        user_id=user_id,
                        transaction_id=transaction_id,

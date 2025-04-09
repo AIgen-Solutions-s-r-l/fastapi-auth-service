@@ -165,7 +165,8 @@ async def add_credits(
                 transaction = await credit_service.verify_and_process_one_time_payment(
                     user_id=user_id,
                     transaction_id=request.reference_id,
-                    background_tasks=background_tasks
+                    background_tasks=background_tasks,
+                    amount=request.amount
                 )
                 
                 logger.info(f"One-time payment processed successfully: {request.reference_id}",
@@ -401,10 +402,20 @@ async def add_credits_from_stripe(
             
         else:
             # Handle one-time purchase using the new method
+            # For one-time purchases, we use the amount from the metadata if available
+            amount = None
+            if request.metadata and "amount" in request.metadata:
+                amount = Decimal(str(request.metadata["amount"]))
+                logger.info(f"Using amount from metadata: {amount}",
+                          event_type="using_metadata_amount",
+                          user_id=user.id,
+                          amount=float(amount))
+            
             transaction = await credit_service.verify_and_process_one_time_payment(
                 user_id=user.id,
                 transaction_id=analysis["transaction_id"],
-                background_tasks=background_tasks
+                background_tasks=background_tasks,
+                amount=amount
             )
             
             logger.info(f"Processed one-time purchase from Stripe",
