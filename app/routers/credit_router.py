@@ -342,13 +342,11 @@ async def add_credits_from_stripe(
         # Analyze transaction
         analysis = await stripe_service.analyze_transaction(transaction_data)
         
-        # Add direct_credit_amount to analysis if provided in the request
-        if request.direct_credit_amount is not None:
-            analysis["direct_credit_amount"] = request.direct_credit_amount
-            logger.info(f"Using direct credit amount from request: {request.direct_credit_amount}",
-                      event_type="direct_credit_amount_provided",
-                      user_id=user_id,
-                      direct_credit_amount=float(request.direct_credit_amount))
+        # Use the amount directly from the request
+        logger.info(f"Using amount directly from request: {request.transaction_type}",
+                  event_type="direct_amount_processing",
+                  user_id=user_id,
+                  transaction_type=request.transaction_type)
         
         # Validate transaction type matches the requested type
         if analysis["transaction_type"] != request.transaction_type:
