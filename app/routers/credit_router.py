@@ -264,12 +264,28 @@ async def get_user_transaction_history(
                skip=skip,
                limit=limit)
     
+    # Log user details for debugging
+    logger.info(f"User details: ID {current_user.id}, Email {current_user.email}",
+               event_type="user_transaction_history_user_details",
+               user_id=current_user.id,
+               user_email=current_user.email)
+    
     credit_service = CreditService(db)
-    return await credit_service.get_transaction_history(
+    response = await credit_service.get_transaction_history(
         user_id=current_user.id,
         skip=skip,
         limit=limit
     )
+    
+    # Log response details for debugging
+    logger.info(f"Transaction history response: {len(response.transactions)} transactions, Total count {response.total_count}",
+               event_type="user_transaction_history_response",
+               user_id=current_user.id,
+               returned_count=len(response.transactions),
+               total_count=response.total_count,
+               transaction_ids=[tx.id for tx in response.transactions])
+    
+    return response
 
 
 @router.post("/stripe/add", response_model=StripeTransactionResponse)

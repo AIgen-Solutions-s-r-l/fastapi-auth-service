@@ -290,6 +290,17 @@ class BaseCreditService:
                   user_id=user_id,
                   retrieved_count=len(transactions),
                   transaction_ids=[tx.id for tx in transactions])
+                  
+        # Log transaction details for debugging
+        for tx in transactions:
+            logger.info(f"Transaction details: ID {tx.id}, Type {tx.transaction_type}, Amount {tx.amount}, Created {tx.created_at}",
+                      event_type="transaction_details",
+                      user_id=user_id,
+                      transaction_id=tx.id,
+                      transaction_type=tx.transaction_type,
+                      amount=tx.amount,
+                      created_at=tx.created_at,
+                      reference_id=tx.reference_id)
 
         # Get current balance
         credit = await self.get_user_credit(user_id)
