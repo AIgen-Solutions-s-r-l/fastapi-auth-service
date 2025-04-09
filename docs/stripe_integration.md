@@ -221,20 +221,18 @@ All errors are properly logged with relevant context for troubleshooting, includ
 For subscription-based purchases, the credit amount is determined by the plan configuration in the database.
 
 ### For One-time Purchases
-For one-time purchases, the credit amount is now set to be exactly equal to the payment amount:
+For one-time purchases, the credit amount is now directly passed from the frontend:
 
-1. The payment amount in currency units (e.g., USD) is used directly as the credit amount
-2. No calculation or conversion is performed
-3. This provides a simple 1:1 relationship between payment and credits
+1. The frontend specifies exactly how many credits to add in the "amount" field
+2. No calculation or conversion is performed in the backend
+3. This provides a direct pass-through of the credit amount
 
-For example, if:
-- Plan A costs $10 and provides 120 credits (ratio = 12)
-- Plan B costs $50 and provides 700 credits (ratio = 14)
-- Customer pays $30
+The system uses the exact credit amount specified in the request, creating a transparent and predictable credit allocation system. This direct credit amount pass-through feature simplifies the integration between frontend and backend systems.
 
-The system would use the ratio from Plan B (as it's closer to $30 than Plan A), resulting in $30 × 14 = 420 credits.
-
-If no similar plans are found, the system falls back to a default ratio as a safety measure.
+For example:
+- If the frontend sends a request with "amount": 500, exactly 500 credits will be added
+- The payment amount in Stripe and the credit amount can be different, allowing for flexible pricing models
+- This approach gives the frontend complete control over credit allocation
 
 ## Testing
 
