@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.auth import get_internal_service
+from app.core.auth import get_internal_service, get_current_user
 from app.models.user import User
 from app.schemas.credit_schemas import (
     TransactionResponse,
@@ -207,8 +207,6 @@ async def add_credits(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error adding credits: {str(e)}"
         )
-
-
 @router.get("/transactions", response_model=TransactionHistoryResponse)
 async def get_transaction_history(
     user_id: int,
@@ -235,6 +233,40 @@ async def get_transaction_history(
     credit_service = CreditService(db)
     return await credit_service.get_transaction_history(
         user_id=user_id,
+        skip=skip,
+        limit=limit
+    )
+
+@router.get("/user/transactions", response_model=TransactionHistoryResponse)
+async def get_user_transaction_history(
+    skip: int = 0,
+    limit: int = 50,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get transaction history for the authenticated user.
+    
+    This endpoint is accessible to authenticated users to view their own transaction history.
+    
+    Args:
+        skip: Number of records to skip
+        limit: Maximum number of records to return
+        current_user: Authenticated user (from JWT token)
+        db: Database session
+        
+    Returns:
+        TransactionHistoryResponse: List of transactions and total count
+    """
+    logger.info(f"User {current_user.id} requesting their transaction history",
+               event_type="user_transaction_history_request",
+               user_id=current_user.id,
+               skip=skip,
+               limit=limit)
+    
+    credit_service = CreditService(db)
+    return await credit_service.get_transaction_history(
+        user_id=current_user.id,
         skip=skip,
         limit=limit
     )
