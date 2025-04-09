@@ -105,34 +105,33 @@ class TransactionService:
                     detail=f"Transaction has already been processed: {transaction_id}"
                 )
             
-            # Get payment amount
-            amount = verification_result.get("amount", Decimal('0.00'))
-            if amount <= 0:
-                logger.warning(f"Invalid payment amount: {amount}",
+            # Get payment amount from Stripe
+            stripe_amount = verification_result.get("amount", Decimal('0.00'))
+            if stripe_amount <= 0:
+                logger.warning(f"Invalid payment amount: {stripe_amount}",
                              event_type="one_time_payment_invalid_amount",
                              user_id=user_id,
                              transaction_id=transaction_id,
-                             amount=amount)
+                             amount=stripe_amount)
                 
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid payment amount: {amount}"
+                    detail=f"Invalid payment amount: {stripe_amount}"
                 )
             
             # Use the amount from the frontend if provided, otherwise use the Stripe amount
-            credit_amount = amount if amount is not None else verification_result.get("amount", Decimal('0.00'))
-            
+            credit_amount = amount if amount is not None else stripe_amount
             logger.info(f"Processing one-time payment: User {user_id}, Amount/Credits {credit_amount}",
                        event_type="one_time_payment_processing",
                        user_id=user_id,
                        transaction_id=transaction_id,
-                       amount=amount)
+                       amount=credit_amount)
             
             # Process the payment and add credits
             transaction = await self.purchase_one_time_credits(
                 user_id=user_id,
                 amount=credit_amount,
-                price=amount,
+                price=stripe_amount,
                 reference_id=transaction_id,
                 description=f"Verified one-time purchase from Stripe: {transaction_id}",
                 background_tasks=background_tasks
@@ -143,7 +142,7 @@ class TransactionService:
                       user_id=user_id,
                       transaction_id=transaction_id,
                       credit_transaction_id=transaction.id,
-                      amount=amount,
+                      stripe_amount=stripe_amount,
                       credit_amount=credit_amount,
                       new_balance=transaction.new_balance)
             
