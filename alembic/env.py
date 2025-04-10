@@ -9,7 +9,10 @@ from app.core.base import Base
 from app.core.config import settings
 
 # Import all models so they are registered with Base.metadata
-from app.models.user import User, PasswordResetToken
+from app.models.user import User, PasswordResetToken, EmailVerificationToken, EmailChangeRequest
+from app.models.credit import UserCredit, CreditTransaction
+from app.models.plan import Plan, Subscription
+# Ensure all models linked to Base.metadata are imported here
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

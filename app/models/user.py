@@ -35,6 +35,8 @@ class User(Base):
     verification_token = Column(String(255), nullable=True)
     verification_token_expires_at = Column(DateTime(timezone=True), nullable=True)
     stripe_customer_id = Column(String(100), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)) # Also adding updated_at for good practice
 
     # Relationships
     credits = relationship("UserCredit", back_populates="user", uselist=False, cascade="all, delete-orphan")
