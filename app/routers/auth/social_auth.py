@@ -298,7 +298,7 @@ async def login_with_google(
    """
    try:
        oauth_service = GoogleOAuthService(db)
-       user, access_token = await oauth_service.login_with_google(callback.code)
+       user, access_token = await oauth_service.login_with_google(callback.code, callback.redirect_uri)
        
        logger.info(
            "Google OAuth login successful",

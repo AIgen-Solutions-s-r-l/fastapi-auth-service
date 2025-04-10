@@ -13,6 +13,7 @@ class GoogleAuthCallback(BaseModel):
     """Callback from Google OAuth."""
     code: str
     state: Optional[str] = None
+    redirect_uri: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)
 
