@@ -47,7 +47,10 @@ class GoogleOAuthService:
         
         # Construct URL with parameters
         base_url = "https://accounts.google.com/o/oauth2/auth"
-        query_string = "&".join([f"{k}={v}" for k, v in params.items()])
+        
+        # Properly URL encode the parameters
+        from urllib.parse import urlencode
+        query_string = urlencode(params)
         
         return f"{base_url}?{query_string}"
     

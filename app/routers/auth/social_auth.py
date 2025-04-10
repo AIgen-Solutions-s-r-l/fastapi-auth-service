@@ -62,54 +62,7 @@ async def google_auth(
             detail="Error generating authorization URL"
         )
 
-@router.post(
-    "/google-callback",
-    response_model=Token,
-    responses={
-        200: {"description": "Successfully authenticated with Google"},
-        400: {"description": "Invalid or expired code"}
-    }
-)
-async def google_callback(
-    callback: GoogleAuthCallback,
-    db: AsyncSession = Depends(get_db)
-) -> Token:
-    """
-    Handle Google OAuth callback and complete authentication.
-    
-    Args:
-        callback: Authorization code from Google
-        db: Database session
-        
-    Returns:
-        Token: JWT access token
-    """
-    try:
-        oauth_service = GoogleOAuthService(db)
-        user, access_token = await oauth_service.login_with_google(callback.code)
-        
-        logger.info(
-            "Google OAuth login successful",
-            event_type="google_oauth_login",
-            user_id=user.id,
-            email=user.email
-        )
-        
-        return Token(access_token=access_token, token_type="bearer")
-    except HTTPException as http_ex:
-        # Re-raise HTTP exceptions
-        raise http_ex
-    except Exception as e:
-        logger.error(
-            "Google OAuth callback error",
-            event_type="google_oauth_callback_error",
-            error_type=type(e).__name__,
-            error_details=str(e)
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to authenticate with Google"
-        )
+# POST endpoint for Google callback removed as we only need the GET endpoint
 
 @router.post(
     "/link-google-account",
@@ -269,3 +222,103 @@ async def unlink_google_account(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Failed to unlink Google account"
         )
+
+@router.get(
+    "/google-callback",
+    responses={
+        302: {"description": "Redirect to frontend with code"},
+        400: {"description": "Error in Google OAuth flow"}
+    }
+)
+async def google_callback_redirect(
+    code: Optional[str] = None,
+    error: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Handle Google OAuth callback redirect.
+    This endpoint receives the redirect from Google OAuth and redirects to the frontend
+    with the authorization code or error.
+    
+    Args:
+        code: Authorization code from Google
+        error: Error from Google OAuth
+        db: Database session
+        
+    Returns:
+        Redirect to frontend
+    """
+    from fastapi.responses import RedirectResponse
+    from app.core.config import settings
+    
+    # Frontend URL to redirect to
+    frontend_url = f"{settings.FRONTEND_URL}/api/auth/callback"
+    
+    # If there's an error, redirect to frontend with error
+    if error:
+        logger.error(
+            "Error in Google OAuth flow",
+            event_type="google_oauth_error",
+            error=error
+        )
+        return RedirectResponse(f"{frontend_url}?error={error}")
+    
+    # If no code, redirect to frontend with error
+    if not code:
+        logger.error(
+            "No code provided in Google OAuth callback",
+            event_type="google_oauth_error"
+        )
+        return RedirectResponse(f"{frontend_url}?error=no_code")
+    
+    # Redirect to frontend with code
+    return RedirectResponse(f"{frontend_url}?code={code}")
+
+@router.post(
+   "/login-with-google",
+   response_model=Token,
+   responses={
+       200: {"description": "Successfully authenticated with Google"},
+       400: {"description": "Invalid or expired code"}
+   }
+)
+async def login_with_google(
+   callback: GoogleAuthCallback,
+   db: AsyncSession = Depends(get_db)
+) -> Token:
+   """
+   Handle Google OAuth login.
+   
+   Args:
+       callback: Authorization code from Google
+       db: Database session
+       
+   Returns:
+       Token: JWT access token
+   """
+   try:
+       oauth_service = GoogleOAuthService(db)
+       user, access_token = await oauth_service.login_with_google(callback.code)
+       
+       logger.info(
+           "Google OAuth login successful",
+           event_type="google_oauth_login",
+           user_id=user.id,
+           email=user.email
+       )
+       
+       return Token(access_token=access_token, token_type="bearer")
+   except HTTPException as http_ex:
+       # Re-raise HTTP exceptions
+       raise http_ex
+   except Exception as e:
+       logger.error(
+           "Google OAuth login error",
+           event_type="google_oauth_login_error",
+           error_type=type(e).__name__,
+           error_details=str(e)
+       )
+       raise HTTPException(
+           status_code=status.HTTP_400_BAD_REQUEST,
+           detail="Failed to authenticate with Google"
+       )

@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi_sqlalchemy import DBSessionMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.config import settings, validate_email_config, validate_stripe_config, validate_internal_api_key
+from app.core.config import settings, validate_email_config, validate_stripe_config, validate_internal_api_key, validate_oauth_config
 from app.core.exceptions import AuthException 
 from app.core.error_handlers import (validation_exception_handler, auth_exception_handler, 
                                    http_exception_handler, generic_exception_handler,
@@ -79,6 +79,23 @@ async def lifespan(app: FastAPI):
             event_type="startup_info",
             component="internal_service_auth",
             warnings=api_key_validation_details.get("warnings", [])
+        )
+    
+    # Validate OAuth configuration
+    oauth_config_valid, oauth_validation_details = validate_oauth_config()
+    if not oauth_config_valid:
+        logger.warning(
+            "OAuth configuration is invalid or incomplete",
+            event_type="startup_warning",
+            component="oauth",
+            issues=oauth_validation_details["issues"]
+        )
+    else:
+        logger.info(
+            "OAuth configuration validated successfully",
+            event_type="startup_info",
+            component="oauth",
+            warnings=oauth_validation_details.get("warnings", [])
         )
     
     yield
