@@ -126,6 +126,7 @@ class UserResponse(BaseModel):
     """Schema for user response data."""
     email: EmailStr
     is_verified: bool
+    auth_type: str
 
     model_config = ConfigDict(from_attributes=True)
 

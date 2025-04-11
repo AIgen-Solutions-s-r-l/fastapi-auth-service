@@ -44,7 +44,8 @@ async def get_current_user_profile(
     
     return UserResponse(
         email=current_user.email,
-        is_verified=current_user.is_verified
+        is_verified=current_user.is_verified,
+        auth_type=current_user.auth_type
     )
 
 @router.post(
