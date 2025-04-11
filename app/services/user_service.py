@@ -766,5 +766,13 @@ async def reset_password(db: AsyncSession, user_id: int, new_password: str) -> b
             detail="User not found"
         )
     user.hashed_password = get_password_hash(new_password)
+    # Update auth_type if user was previously Google-only
+    if user.auth_type == "google":
+        user.auth_type = "both"
+        logger.info(
+            f"Updated auth_type to 'both' for user {user.id} after password reset",
+            event_type="auth_type_updated_post_reset",
+            user_id=user.id
+        )
     await db.commit()
     return True
