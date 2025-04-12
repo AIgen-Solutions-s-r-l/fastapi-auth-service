@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "SG.REMOVED")
     SENDGRID_HOST: str = os.getenv("SENDGRID_HOST", "https://api.sendgrid.com")
     AZURE_DOMAIN: str = os.getenv("AZURE_DOMAIN", "laborolabs.com")
-    EMAIL_FROM_NAME: str = os.getenv("EMAIL_FROM_NAME", "Auth Service")
+    EMAIL_FROM_NAME: str = os.getenv("EMAIL_FROM_NAME", "Laboro Auth Service")
     EMAIL_FROM_ADDRESS: str = os.getenv("EMAIL_FROM_ADDRESS", f"noreply@{os.getenv('AZURE_DOMAIN', 'laborolabs.com')}")
 
     # Frontend URL for reset link
