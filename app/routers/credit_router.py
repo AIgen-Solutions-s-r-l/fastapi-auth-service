@@ -231,11 +231,20 @@ async def get_transaction_history(
         TransactionHistoryResponse: List of transactions and total count
     """
     credit_service = CreditService(db)
-    return await credit_service.get_transaction_history(
+    response = await credit_service.get_transaction_history(
         user_id=user_id,
         skip=skip,
         limit=limit
     )
+
+    for tx in response.transactions:
+        if tx.subscription_id:
+            subscription = await credit_service.get_subscription_by_id(tx.subscription_id)
+            tx.is_subscription_active = subscription and (subscription.status == "active")
+        else:
+            tx.is_subscription_active = None
+
+    return response
 
 @router.get("/user/transactions", response_model=TransactionHistoryResponse)
 async def get_user_transaction_history(
@@ -276,13 +285,6 @@ async def get_user_transaction_history(
         skip=skip,
         limit=limit
     )
-
-    for tx in response.transactions:
-        if tx.subscription_id:
-            subscription = await credit_service.get_subscription_by_id(tx.subscription_id)
-            tx.is_subscription_active = subscription and (subscription.status == "active")
-        else:
-            tx.is_subscription_active = None
     
     # Log response details for debugging
     logger.info(f"Transaction history response: {len(response.transactions)} transactions, Total count {response.total_count}",
