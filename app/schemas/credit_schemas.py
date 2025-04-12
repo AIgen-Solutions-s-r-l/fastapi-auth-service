@@ -48,6 +48,7 @@ class TransactionResponse(CreditTransactionBase):
     new_balance: Decimal
     plan_id: Optional[int] = None
     subscription_id: Optional[int] = None
+    is_subscription_active: Optional[bool] = None
 
     model_config = ConfigDict(from_attributes=True)
 
