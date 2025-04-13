@@ -37,13 +37,13 @@
         }
         .detail-value {
             text-align: right;
+            color: #333 !important;
         }
         .highlight {
             background-color: #f8f9fa;
             padding: 15px;
             border-radius: 4px;
             margin: 20px 0;
-user-select: none;
         }
         .button {
             display: inline-block;
@@ -67,6 +67,9 @@ user-select: none;
         .p {
             color: #333 !important;
         }
+        .div {
+            color: #333 !important;
+        }
     </style>
 </head>
 <body>
@@ -82,23 +85,23 @@ user-select: none;
         <div class="highlight">
             <h3>Purchase Details</h3>
             <div class="detail-row">
-                <div class="detail-label">Plan:</div>
+                <div class="detail-label">Plan: </div>
                 <div class="detail-value">{{ plan_name }}</div>
             </div>
             <div class="detail-row">
-                <div class="detail-label">Amount Paid:</div>
+                <div class="detail-label">Amount Paid: </div>
                 <div class="detail-value">${{ amount }}</div>
             </div>
             <div class="detail-row">
-                <div class="detail-label">Credits Added:</div>
+                <div class="detail-label">Credits Added: </div>
                 <div class="detail-value">{{ credit_amount }}</div>
             </div>
             <div class="detail-row">
-                <div class="detail-label">Purchase Date:</div>
+                <div class="detail-label">Purchase Date: </div>
                 <div class="detail-value">{{ purchase_date }}</div>
             </div>
             <div class="detail-row">
-                <div class="detail-label">Renewal Date:</div>
+                <div class="detail-label">Renewal Date: </div>
                 <div class="detail-value">{{ renewal_date }}</div>
             </div>
         </div>
