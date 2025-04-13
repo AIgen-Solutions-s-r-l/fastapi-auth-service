@@ -124,11 +124,15 @@ class StripeIntegrationService:
                     # Calculate amount from subscription items (moved outside the if/else)
                     amount = Decimal('0.00')
                     plan_id = None
-                    if subscription.items.data:
-                        item = subscription.items.data[0]
-                        if item.plan:
-                            amount = Decimal(item.plan.amount) / 100
-                            plan_id = item.plan.id
+                    
+                    # Access items data through dictionary representation
+                    # This fixes the "'builtin_function_or_method' object has no attribute 'data'" error
+                    sub_dict = subscription.to_dict()
+                    if 'items' in sub_dict and 'data' in sub_dict['items'] and sub_dict['items']['data']:
+                        item = sub_dict['items']['data'][0]
+                        if 'plan' in item and item['plan']:
+                            amount = Decimal(item['plan']['amount']) / 100
+                            plan_id = item['plan']['id']
                     
                     # Check if subscription is active
                     if subscription.status not in ['active', 'trialing']:
@@ -288,11 +292,15 @@ class StripeIntegrationService:
                 # Calculate amount from subscription items
                 amount = Decimal('0.00')
                 plan_id = None
-                if stripe_subscription.items.data:
-                    item = stripe_subscription.items.data[0]
-                    if item.plan:
-                        amount = Decimal(item.plan.amount) / 100
-                        plan_id = item.plan.id
+                
+                # Access items data through dictionary representation
+                # This fixes the "'builtin_function_or_method' object has no attribute 'data'" error
+                sub_dict = stripe_subscription.to_dict()
+                if 'items' in sub_dict and 'data' in sub_dict['items'] and sub_dict['items']['data']:
+                    item = sub_dict['items']['data'][0]
+                    if 'plan' in item and item['plan']:
+                        amount = Decimal(item['plan']['amount']) / 100
+                        plan_id = item['plan']['id']
                 
                 return {
                     "subscription_id": subscription.id,
