@@ -4,6 +4,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-13+-336791.svg?style=flat&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 [![JWT](https://img.shields.io/badge/JWT-Auth-000000.svg?style=flat&logo=json-web-tokens&logoColor=white)](https://jwt.io)
+[![Coverage](https://img.shields.io/badge/Coverage-45%25-yellow.svg?style=flat&logo=codecov&logoColor=white)](https://pytest-cov.readthedocs.io/en/latest/)
 
 ## 📋 Table of Contents
 
