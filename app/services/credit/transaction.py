@@ -291,7 +291,8 @@ class TransactionService:
         self,
         user_id: int,
         transaction_id: str,
-        background_tasks: Optional[BackgroundTasks] = None
+        background_tasks: Optional[BackgroundTasks] = None,
+        amount: Optional[Decimal] = None  # New parameter to accept credit amount from frontend
     ) -> Tuple[credit_schemas.TransactionResponse, object]:
         """
         Verify a subscription transaction with Stripe and process it if valid.
@@ -300,6 +301,7 @@ class TransactionService:
             user_id: ID of the user
             transaction_id: Stripe subscription ID
             background_tasks: Optional background tasks for sending emails
+            amount: Optional amount of credits to add (overrides the plan amount)
             
         Returns:
             Tuple[TransactionResponse, Subscription]: Transaction and subscription details
@@ -377,30 +379,31 @@ class TransactionService:
                     
                     # Continue anyway, but log the failure
             
-            # Get Stripe plan ID from verification result
+            # Get plan ID from Stripe plan ID in verification result
             stripe_plan_id = verification_result.get("plan_id")
-            
-            # Find matching plan in our system
             plan_id = await self._find_matching_plan(stripe_plan_id)
             
             if not plan_id:
-                logger.warning(f"No matching plan found for Stripe plan: {stripe_plan_id}",
-                             event_type="subscription_plan_not_found",
+                logger.warning(f"No matching plan found for Stripe plan ID: {stripe_plan_id}",
+                             event_type="no_matching_plan",
                              user_id=user_id,
                              subscription_id=transaction_id,
                              stripe_plan_id=stripe_plan_id)
-                
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"No matching plan found for this subscription"
-                )
+                # Fallback to default plan ID if no matching plan found
+                plan_id = 1
+            
+            # Log the credit amount we're going to use
+            logger.info(f"Using credit amount from frontend: {amount}",
+                      event_type="using_frontend_amount",
+                      user_id=user_id,
+                      subscription_id=transaction_id,
+                      amount=amount)
             
             logger.info(f"Processing subscription: User {user_id}, Stripe Subscription {transaction_id}, Plan {plan_id}",
                       event_type="subscription_processing",
                       user_id=user_id,
                       subscription_id=transaction_id,
-                      plan_id=plan_id,
-                      stripe_plan_id=stripe_plan_id)
+                      plan_id=plan_id)
             
             # Process the subscription and add credits
             transaction, subscription = await self.purchase_plan(
@@ -409,7 +412,8 @@ class TransactionService:
                 reference_id=transaction_id,
                 description=f"Verified subscription from Stripe: {transaction_id}",
                 background_tasks=background_tasks,
-                stripe_subscription_id=transaction_id
+                stripe_subscription_id=transaction_id,
+                credit_amount=amount  # Pass the amount from the frontend
             )
             
             # Verify subscription is active in Stripe
@@ -520,7 +524,8 @@ class TransactionService:
         reference_id: Optional[str] = None,
         description: Optional[str] = None,
         background_tasks: Optional[BackgroundTasks] = None,
-        stripe_subscription_id: Optional[str] = None
+        stripe_subscription_id: Optional[str] = None,
+        credit_amount: Optional[Decimal] = None  # New parameter to override plan credit amount
     ) -> Tuple[credit_schemas.TransactionResponse, object]:
         """
         Purchase a plan, add credits, and create subscription.
@@ -532,6 +537,7 @@ class TransactionService:
             description: Optional description of the transaction
             background_tasks: Optional background tasks for sending emails
             stripe_subscription_id: Optional Stripe subscription ID
+            credit_amount: Optional amount of credits to add (overrides the plan amount)
 
         Returns:
             Tuple with TransactionResponse and Subscription
@@ -605,9 +611,12 @@ class TransactionService:
             reference_id = str(uuid.uuid4())
         
         try:
+            # Use the provided credit amount or fallback to plan amount
+            amount_to_add = credit_amount if credit_amount is not None else plan.credit_amount
+            
             transaction = await self.base_service.add_credits(
                 user_id=user_id,
-                amount=plan.credit_amount,
+                amount=amount_to_add,  # Use the provided amount or plan amount
                 reference_id=reference_id,
                 description=description or f"Purchase of {plan.name} plan",
                 transaction_type=TransactionType.PLAN_PURCHASE,
@@ -615,12 +624,12 @@ class TransactionService:
                 subscription_id=subscription.id
             )
             
-            logger.info(f"Added credits for plan purchase: User {user_id}, Credits {plan.credit_amount}",
+            logger.info(f"Added credits for plan purchase: User {user_id}, Credits {amount_to_add}",
                       event_type="plan_credits_added",
                       user_id=user_id,
                       plan_id=plan_id,
                       subscription_id=subscription.id,
-                      credit_amount=plan.credit_amount,
+                      credit_amount=amount_to_add,
                       transaction_id=transaction.id)
         except Exception as e:
             # If credit addition fails, mark the subscription as problematic
@@ -651,13 +660,14 @@ class TransactionService:
                 credit_amount=plan.credit_amount,
                 renewal_date=renewal_date
             )
-
-        logger.info(f"Plan purchased: User {user_id}, Plan {plan_id}, Credits {plan.credit_amount}",
+        # Use the actual amount that was added in the log message
+        actual_amount = amount_to_add if credit_amount is not None else plan.credit_amount
+        logger.info(f"Plan purchased: User {user_id}, Plan {plan_id}, Credits {actual_amount}",
                   event_type="plan_purchased",
                   user_id=user_id,
                   plan_id=plan_id,
                   plan_name=plan.name,
-                  credit_amount=plan.credit_amount,
+                  credit_amount=actual_amount,
                   renewal_date=renewal_date.isoformat())
 
         return transaction, subscription

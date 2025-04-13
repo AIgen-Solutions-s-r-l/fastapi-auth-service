@@ -143,7 +143,8 @@ async def add_credits(
                 transaction, subscription = await credit_service.verify_and_process_subscription(
                     user_id=user_id,
                     transaction_id=request.reference_id,
-                    background_tasks=background_tasks
+                    background_tasks=background_tasks,
+                    amount=request.amount  # Pass the amount from the frontend request
                 )
                 
                 logger.info(f"Subscription processed successfully: {request.reference_id}",
@@ -426,7 +427,8 @@ async def add_credits_from_stripe(
             transaction, subscription = await credit_service.verify_and_process_subscription(
                 user_id=user.id,
                 transaction_id=analysis["subscription_id"],
-                background_tasks=background_tasks
+                background_tasks=background_tasks,
+                amount=request.amount  # Pass the amount from the frontend request
             )
             
             logger.info(f"Processed subscription from Stripe",
