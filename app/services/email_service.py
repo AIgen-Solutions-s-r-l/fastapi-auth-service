@@ -223,6 +223,7 @@ class EmailService:
             recipients=[str(user.email)],
             context={
                 "email": user.email,
+                "username": user.email,  # Use email as username since there's no username field
                 "plan_name": plan_name,
                 "amount": amount,
                 "credit_amount": credit_amount,
