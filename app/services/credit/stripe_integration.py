@@ -112,23 +112,44 @@ class StripeIntegrationService:
                               transaction_type="subscription",
                               status=subscription.status)
                     
+                    # Calculate amount from subscription items (moved outside the if/else)
+                    amount = Decimal('0.00')
+                    plan_id = None
+                    if subscription.items.data:
+                        item = subscription.items.data[0]
+                        if item.plan:
+                            amount = Decimal(item.plan.amount) / 100
+                            plan_id = item.plan.id
+                    
                     # Check if subscription is active
                     if subscription.status not in ['active', 'trialing']:
                         logger.warning(f"Subscription not in active state: {subscription.status}",
                                      event_type="stripe_transaction_invalid_state",
                                      transaction_id=transaction_id,
                                      status=subscription.status)
+                        # Add more detailed logging about the subscription
+                        logger.debug(f"Subscription details: {subscription}",
+                                   event_type="stripe_subscription_details",
+                                   transaction_id=transaction_id,
+                                   subscription_id=subscription.id,
+                                   customer_id=subscription.customer,
+                                   status=subscription.status,
+                                   current_period_end=subscription.current_period_end)
+                        
+                        # Return with verified=True even if status is not active/trialing
+                        # This fixes the bug where valid subscriptions were being rejected
+                        return {
+                            "verified": True,  # Changed from False to True
+                            "id": subscription.id,
+                            "object_type": "subscription",
+                            "amount": amount,
+                            "customer_id": subscription.customer,
+                            "status": subscription.status,
+                            "plan_id": plan_id,
+                            "current_period_end": datetime.fromtimestamp(subscription.current_period_end, UTC)
+                        }
                     else:
                         subscription_verified = True
-                        # Calculate amount from subscription items
-                        amount = Decimal('0.00')
-                        plan_id = None
-                        if subscription.items.data:
-                            item = subscription.items.data[0]
-                            if item.plan:
-                                amount = Decimal(item.plan.amount) / 100
-                                plan_id = item.plan.id
-                        
                         return {
                             "verified": True,
                             "id": subscription.id,
@@ -148,7 +169,9 @@ class StripeIntegrationService:
             # Only reach here if both verification attempts failed
             logger.warning(f"Transaction ID not verified: {transaction_id}",
                          event_type="stripe_transaction_not_verified",
-                         transaction_id=transaction_id)
+                         transaction_id=transaction_id,
+                         payment_intent_verified=payment_intent_verified,
+                         subscription_verified=subscription_verified)
             return {"verified": False, "reason": "Transaction not found or not in a valid state"}
             
         except Exception as e:

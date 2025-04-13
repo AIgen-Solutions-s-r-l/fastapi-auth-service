@@ -40,7 +40,20 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        loguru_logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+        # Extract extra attributes from the record
+        extra = {}
+        for key, value in record.__dict__.items():
+            if key not in {
+                'args', 'asctime', 'created', 'exc_info', 'exc_text', 'filename',
+                'funcName', 'id', 'levelname', 'levelno', 'lineno', 'module',
+                'msecs', 'message', 'msg', 'name', 'pathname', 'process',
+                'processName', 'relativeCreated', 'stack_info', 'thread', 'threadName'
+            }:
+                extra[key] = value
+
+        # Pass the extra parameters to Loguru
+        logger = loguru_logger.opt(depth=depth, exception=record.exc_info)
+        logger.bind(**extra).log(level, record.getMessage())
 
 class DatadogHandler(StreamHandler):
     def __init__(self):
