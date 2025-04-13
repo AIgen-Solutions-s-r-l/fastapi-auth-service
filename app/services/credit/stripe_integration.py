@@ -59,6 +59,9 @@ class StripeIntegrationService:
                   transaction_id=transaction_id)
         
         try:
+            payment_intent_verified = False
+            subscription_verified = False
+            
             # Try to find as PaymentIntent (one-time purchases)
             try:
                 payment_intent = await asyncio.to_thread(
@@ -79,18 +82,18 @@ class StripeIntegrationService:
                                      event_type="stripe_transaction_invalid_state",
                                      transaction_id=transaction_id,
                                      status=payment_intent.status)
-                        return {"verified": False, "reason": f"Payment not completed. Status: {payment_intent.status}"}
-                    
-                    return {
-                        "verified": True,
-                        "id": payment_intent.id,
-                        "object_type": "payment_intent",
-                        "amount": Decimal(payment_intent.amount) / 100,  # Convert cents to dollars
-                        "customer_id": payment_intent.get('customer'),
-                        "status": payment_intent.status
-                    }
+                    else:
+                        payment_intent_verified = True
+                        return {
+                            "verified": True,
+                            "id": payment_intent.id,
+                            "object_type": "payment_intent",
+                            "amount": Decimal(payment_intent.amount) / 100,  # Convert cents to dollars
+                            "customer_id": payment_intent.get('customer'),
+                            "status": payment_intent.status
+                        }
             except Exception as e:
-                logger.debug(f"Not a payment intent: {str(e)}", 
+                logger.debug(f"Not a payment intent: {str(e)}",
                            event_type="stripe_verification_debug",
                            transaction_id=transaction_id,
                            error=str(e))
@@ -115,35 +118,35 @@ class StripeIntegrationService:
                                      event_type="stripe_transaction_invalid_state",
                                      transaction_id=transaction_id,
                                      status=subscription.status)
-                        return {"verified": False, "reason": f"Subscription not active. Status: {subscription.status}"}
-                    
-                    # Calculate amount from subscription items
-                    amount = Decimal('0.00')
-                    plan_id = None
-                    if subscription.items.data:
-                        item = subscription.items.data[0]
-                        if item.plan:
-                            amount = Decimal(item.plan.amount) / 100
-                            plan_id = item.plan.id
-                    
-                    return {
-                        "verified": True,
-                        "id": subscription.id,
-                        "object_type": "subscription",
-                        "amount": amount,
-                        "customer_id": subscription.customer,
-                        "status": subscription.status,
-                        "plan_id": plan_id,
-                        "current_period_end": datetime.fromtimestamp(subscription.current_period_end, UTC)
-                    }
+                    else:
+                        subscription_verified = True
+                        # Calculate amount from subscription items
+                        amount = Decimal('0.00')
+                        plan_id = None
+                        if subscription.items.data:
+                            item = subscription.items.data[0]
+                            if item.plan:
+                                amount = Decimal(item.plan.amount) / 100
+                                plan_id = item.plan.id
+                        
+                        return {
+                            "verified": True,
+                            "id": subscription.id,
+                            "object_type": "subscription",
+                            "amount": amount,
+                            "customer_id": subscription.customer,
+                            "status": subscription.status,
+                            "plan_id": plan_id,
+                            "current_period_end": datetime.fromtimestamp(subscription.current_period_end, UTC)
+                        }
             except Exception as e:
-                logger.debug(f"Not a subscription: {str(e)}", 
+                logger.debug(f"Not a subscription: {str(e)}",
                            event_type="stripe_verification_debug",
                            transaction_id=transaction_id,
                            error=str(e))
             
-            # Transaction not found or not in a valid state
-            logger.warning(f"Transaction ID not verified: {transaction_id}", 
+            # Only reach here if both verification attempts failed
+            logger.warning(f"Transaction ID not verified: {transaction_id}",
                          event_type="stripe_transaction_not_verified",
                          transaction_id=transaction_id)
             return {"verified": False, "reason": "Transaction not found or not in a valid state"}

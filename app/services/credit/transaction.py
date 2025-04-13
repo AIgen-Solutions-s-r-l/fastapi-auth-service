@@ -312,6 +312,19 @@ class TransactionService:
                   user_id=user_id,
                   subscription_id=transaction_id)
         
+        # Check if transaction has already been processed to prevent duplicates
+        existing_transaction = await self._check_transaction_exists(transaction_id)
+        if existing_transaction:
+            logger.warning(f"Subscription already processed: {transaction_id}",
+                         event_type="subscription_already_processed",
+                         user_id=user_id,
+                         subscription_id=transaction_id)
+            
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Subscription has already been processed: {transaction_id}"
+            )
+        
         try:
             # Verify subscription with Stripe
             verification_result = await self.stripe_service.verify_transaction_id(transaction_id)
@@ -389,46 +402,72 @@ class TransactionService:
                       plan_id=plan_id,
                       stripe_plan_id=stripe_plan_id)
             
-            # Process the subscription and add credits
-            transaction, subscription = await self.purchase_plan(
-                user_id=user_id,
-                plan_id=plan_id,
-                reference_id=transaction_id,
-                description=f"Verified subscription from Stripe: {transaction_id}",
-                background_tasks=background_tasks,
-                stripe_subscription_id=transaction_id
-            )
-            
-            # Verify subscription is active in Stripe
-            is_active = await self.stripe_service.verify_subscription_active(transaction_id)
-            
-            if not is_active:
-                logger.warning(f"Subscription not active in Stripe after processing: {transaction_id}",
-                             event_type="subscription_not_active",
-                             user_id=user_id,
-                             subscription_id=subscription.id,
-                             stripe_subscription_id=transaction_id)
+            try:
+                # Start a nested transaction to allow rollback if needed
+                async with self.db.begin_nested():
+                    # Process the subscription and add credits
+                    transaction, subscription = await self.purchase_plan(
+                        user_id=user_id,
+                        plan_id=plan_id,
+                        reference_id=transaction_id,
+                        description=f"Verified subscription from Stripe: {transaction_id}",
+                        background_tasks=background_tasks,
+                        stripe_subscription_id=transaction_id
+                    )
+                    
+                    # Verify subscription is active in Stripe
+                    is_active = await self.stripe_service.verify_subscription_active(transaction_id)
+                    
+                    if not is_active:
+                        logger.warning(f"Subscription not active in Stripe after processing: {transaction_id}",
+                                     event_type="subscription_not_active",
+                                     user_id=user_id,
+                                     subscription_id=subscription.id,
+                                     stripe_subscription_id=transaction_id)
+                        
+                        # Raise exception to trigger rollback
+                        raise ValueError(f"Subscription is not active in Stripe: {transaction_id}")
                 
+                # If we get here, the nested transaction was committed successfully
+                logger.info(f"Subscription processed successfully: User {user_id}, Subscription {transaction_id}",
+                          event_type="subscription_processed",
+                          user_id=user_id,
+                          subscription_id=subscription.id,
+                          stripe_subscription_id=transaction_id,
+                          plan_id=plan_id,
+                          credit_transaction_id=transaction.id,
+                          new_balance=transaction.new_balance)
+                
+                # Send success notification if applicable
+                if background_tasks:
+                    # Get user for notification
+                    user_result = await self.db.execute(select(User).where(User.id == user_id))
+                    user = user_result.scalar_one_or_none()
+                    
+                    if user:
+                        from app.services.email_service import EmailService
+                        email_service = EmailService(background_tasks, self.db)
+                        await email_service.send_payment_confirmation(
+                            user=user,
+                            plan_name=verification_result.get("plan_name", "Subscription"),
+                            amount=verification_result.get("amount", Decimal("0.00")),
+                            credit_amount=transaction.amount
+                        )
+                
+                return transaction, subscription
+                
+            except ValueError as e:
+                # Handle the specific error we raised for inactive subscription
                 # Update subscription status
-                subscription.is_active = False
-                subscription.status = "inactive"
-                await self.db.commit()
+                if 'subscription' in locals():
+                    subscription.is_active = False
+                    subscription.status = "inactive"
+                    await self.db.commit()
                 
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Subscription is not active in Stripe: {transaction_id}"
+                    detail=str(e)
                 )
-            
-            logger.info(f"Subscription processed successfully: User {user_id}, Subscription {transaction_id}",
-                      event_type="subscription_processed",
-                      user_id=user_id,
-                      subscription_id=subscription.id,
-                      stripe_subscription_id=transaction_id,
-                      plan_id=plan_id,
-                      credit_transaction_id=transaction.id,
-                      new_balance=transaction.new_balance)
-            
-            return transaction, subscription
             
         except HTTPException:
             # Re-raise HTTP exceptions
@@ -503,55 +542,104 @@ class TransactionService:
         Raises:
             HTTPException: If the plan does not exist or is inactive
         """
-        # Get the plan using plan_service
-        plan = await self.plan_service.get_plan_by_id(plan_id)
-        if not plan:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Plan not found or inactive"
+        try:
+            # Get the plan using plan_service
+            plan = await self.plan_service.get_plan_by_id(plan_id)
+            if not plan:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Plan not found or inactive"
+                )
+    
+            # Check if user already has an active subscription
+            existing_subscription = await self.plan_service.get_active_subscription(user_id)
+            if existing_subscription:
+                # Deactivate existing subscription
+                existing_subscription.is_active = False
+                existing_subscription.status = "replaced"
+                existing_subscription.updated_at = datetime.now(UTC)
+                await self.db.commit()
+                
+                logger.info(f"Deactivated existing subscription: User {user_id}, Subscription {existing_subscription.id}",
+                          event_type="subscription_deactivated",
+                          user_id=user_id,
+                          subscription_id=existing_subscription.id,
+                          stripe_subscription_id=existing_subscription.stripe_subscription_id)
+    
+            # Calculate renewal date
+            start_date = datetime.now(UTC)
+            renewal_date = calculate_renewal_date(start_date)
+    
+            # Create subscription
+            from app.models.plan import Subscription
+            
+            subscription = Subscription(
+                user_id=user_id,
+                plan_id=plan_id,
+                start_date=start_date,
+                renewal_date=renewal_date,
+                is_active=True,
+                auto_renew=True,
+                stripe_subscription_id=stripe_subscription_id,
+                status="active" if stripe_subscription_id else None
             )
-
-        # Check if user already has an active subscription
-        existing_subscription = await self.plan_service.get_active_subscription(user_id)
-        if existing_subscription:
-            # Deactivate existing subscription
-            existing_subscription.is_active = False
+            self.db.add(subscription)
             await self.db.commit()
-
-        # Calculate renewal date
-        start_date = datetime.now(UTC)
-        renewal_date = calculate_renewal_date(start_date)
-
-        # Create subscription
-        from app.models.plan import Subscription
-        
-        subscription = Subscription(
-            user_id=user_id,
-            plan_id=plan_id,
-            start_date=start_date,
-            renewal_date=renewal_date,
-            is_active=True,
-            auto_renew=True,
-            stripe_subscription_id=stripe_subscription_id,
-            status="active" if stripe_subscription_id else None
-        )
-        self.db.add(subscription)
-        await self.db.commit()
-        await self.db.refresh(subscription)
+            await self.db.refresh(subscription)
+            
+            logger.info(f"Created new subscription: User {user_id}, Plan {plan_id}, Subscription {subscription.id}",
+                      event_type="subscription_created",
+                      user_id=user_id,
+                      plan_id=plan_id,
+                      subscription_id=subscription.id,
+                      stripe_subscription_id=stripe_subscription_id)
+        except Exception as e:
+            # Rollback transaction on error
+            await self.db.rollback()
+            logger.error(f"Error creating subscription: {str(e)}",
+                       event_type="subscription_creation_error",
+                       user_id=user_id,
+                       plan_id=plan_id,
+                       error=str(e))
+            raise
 
         # Add credits
         if not reference_id:
             reference_id = str(uuid.uuid4())
         
-        transaction = await self.base_service.add_credits(
-            user_id=user_id,
-            amount=plan.credit_amount,
-            reference_id=reference_id,
-            description=description or f"Purchase of {plan.name} plan",
-            transaction_type=TransactionType.PLAN_PURCHASE,
-            plan_id=plan_id,
-            subscription_id=subscription.id
-        )
+        try:
+            transaction = await self.base_service.add_credits(
+                user_id=user_id,
+                amount=plan.credit_amount,
+                reference_id=reference_id,
+                description=description or f"Purchase of {plan.name} plan",
+                transaction_type=TransactionType.PLAN_PURCHASE,
+                plan_id=plan_id,
+                subscription_id=subscription.id
+            )
+            
+            logger.info(f"Added credits for plan purchase: User {user_id}, Credits {plan.credit_amount}",
+                      event_type="plan_credits_added",
+                      user_id=user_id,
+                      plan_id=plan_id,
+                      subscription_id=subscription.id,
+                      credit_amount=plan.credit_amount,
+                      transaction_id=transaction.id)
+        except Exception as e:
+            # If credit addition fails, mark the subscription as problematic
+            logger.error(f"Error adding credits for subscription: {str(e)}",
+                       event_type="subscription_credit_error",
+                       user_id=user_id,
+                       plan_id=plan_id,
+                       subscription_id=subscription.id,
+                       error=str(e))
+            
+            # Update subscription status to indicate the problem
+            subscription.status = "payment_issue"
+            await self.db.commit()
+            
+            # Re-raise the exception
+            raise
 
         # Send email notification
         if background_tasks:
