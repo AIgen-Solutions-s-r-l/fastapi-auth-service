@@ -97,8 +97,8 @@ class StripeIntegrationService:
                            event_type="stripe_verification_debug",
                            transaction_id=transaction_id,
                            error=str(e))
-            
             # Try to find as Subscription
+            subscription = None  # Initialize subscription variable
             try:
                 subscription = await asyncio.to_thread(
                     stripe.Subscription.retrieve,
@@ -111,8 +111,9 @@ class StripeIntegrationService:
                            transaction_id=transaction_id)
                 
                 # Set subscription_verified to True as soon as we retrieve a valid subscription
-                # This ensures we don't hit the warning log later
+                # This ensures we don't hit the "not verified" warning
                 if subscription:
+                    # Set this flag to ensure we don't hit the "not verified" warning
                     subscription_verified = True
                     logger.info(f"Transaction verified as Subscription: {transaction_id}",
                               event_type="stripe_transaction_verified",
@@ -143,8 +144,6 @@ class StripeIntegrationService:
                                    customer_id=subscription.customer,
                                    status=subscription.status,
                                    current_period_end=subscription.current_period_end)
-                        # Set subscription_verified to True to prevent misleading log message
-                        subscription_verified = True
                         # Return with verified=True even if status is not active/trialing
                         # This fixes the bug where valid subscriptions were being rejected
                         return {
@@ -158,7 +157,6 @@ class StripeIntegrationService:
                             "current_period_end": datetime.fromtimestamp(subscription.current_period_end, UTC)
                         }
                     else:
-                        subscription_verified = True
                         return {
                             "verified": True,
                             "id": subscription.id,
@@ -175,72 +173,42 @@ class StripeIntegrationService:
                            transaction_id=transaction_id,
                            error=str(e))
             
-            # Only reach here if both verification attempts failed
-            if not payment_intent_verified and not subscription_verified:
+            # If we've reached this point, it means neither verification succeeded
+            # or we had an exception during verification
+            if subscription_verified:
+                # If subscription was verified but we didn't return early,
+                # it means we had a successful subscription verification but something went wrong
+                # Return verified=True with the subscription ID
+                logger.info(f"Subscription verified but didn't return early: {transaction_id}",
+                          event_type="stripe_subscription_verified_fallback",
+                          transaction_id=transaction_id)
+                return {
+                    "verified": True,
+                    "id": transaction_id,
+                    "object_type": "subscription",
+                    "reason": "Subscription verified but details extraction failed"
+                }
+            elif payment_intent_verified:
+                # If payment_intent was verified but we didn't return early,
+                # it means we had a successful payment_intent verification but something went wrong
+                # Return verified=True with the payment_intent ID
+                logger.info(f"Payment intent verified but didn't return early: {transaction_id}",
+                          event_type="stripe_payment_intent_verified_fallback",
+                          transaction_id=transaction_id)
+                return {
+                    "verified": True,
+                    "id": transaction_id,
+                    "object_type": "payment_intent",
+                    "reason": "Payment intent verified but details extraction failed"
+                }
+            else:
+                # If we get here, neither verification succeeded
                 logger.warning(f"Transaction ID not verified: {transaction_id}",
                              event_type="stripe_transaction_not_verified",
                              transaction_id=transaction_id,
                              payment_intent_verified=payment_intent_verified,
                              subscription_verified=subscription_verified)
                 return {"verified": False, "reason": "Transaction not found or not in a valid state"}
-            else:
-                # This should never happen if our early returns are working correctly
-                # But just in case, return verified=True if either verification succeeded
-                logger.warning(f"Unexpected code path reached with verified flags: PI={payment_intent_verified}, Sub={subscription_verified}",
-                             event_type="stripe_verification_unexpected_path",
-                             transaction_id=transaction_id,
-                             payment_intent_verified=payment_intent_verified,
-                             subscription_verified=subscription_verified)
-                
-                # If subscription was verified, return the subscription details
-                if subscription_verified and 'subscription' in locals():
-                    try:
-                        # Return the same structure as in the normal subscription verification path
-                        amount = Decimal('0.00')
-                        plan_id = None
-                        
-                        # Add more defensive checks when accessing subscription data
-                        if hasattr(subscription, 'items') and callable(getattr(subscription, 'items')):
-                            # If items is a method, call it
-                            items = subscription.items()
-                            if hasattr(items, 'data') and items.data:
-                                item = items.data[0]
-                                if hasattr(item, 'plan') and item.plan:
-                                    amount = Decimal(item.plan.amount) / 100
-                                    plan_id = item.plan.id
-                        elif hasattr(subscription, 'items') and hasattr(subscription.items, 'data'):
-                            # If items is an attribute with data property
-                            if subscription.items.data:
-                                item = subscription.items.data[0]
-                                if hasattr(item, 'plan') and item.plan:
-                                    amount = Decimal(item.plan.amount) / 100
-                                    plan_id = item.plan.id
-                        
-                        # Get current_period_end safely
-                        current_period_end = None
-                        if hasattr(subscription, 'current_period_end'):
-                            current_period_end = datetime.fromtimestamp(subscription.current_period_end, UTC)
-                        
-                        return {
-                            "verified": True,
-                            "id": subscription.id,
-                            "object_type": "subscription",
-                            "amount": amount,
-                            "customer_id": subscription.customer,
-                            "status": subscription.status,
-                            "plan_id": plan_id,
-                            "current_period_end": current_period_end
-                        }
-                    except Exception as e:
-                        logger.error(f"Error processing subscription details: {str(e)}",
-                                   event_type="subscription_details_error",
-                                   transaction_id=transaction_id,
-                                   error=str(e))
-                        # Fall back to simple response if we can't extract details
-                        return {"verified": True, "reason": f"Subscription verified but details extraction failed: {str(e)}"}
-                else:
-                    # Generic success response if we can't determine details
-                    return {"verified": True, "reason": "Verification succeeded but reached unexpected code path"}
             
         except Exception as e:
             logger.error(f"Error verifying transaction: {str(e)}",
