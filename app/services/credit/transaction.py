@@ -402,73 +402,70 @@ class TransactionService:
                       plan_id=plan_id,
                       stripe_plan_id=stripe_plan_id)
             
-            try:
-                # Start a nested transaction to allow rollback if needed
-                async with self.db.begin_nested():
-                    # Process the subscription and add credits
-                    transaction, subscription = await self.purchase_plan(
-                        user_id=user_id,
-                        plan_id=plan_id,
-                        reference_id=transaction_id,
-                        description=f"Verified subscription from Stripe: {transaction_id}",
-                        background_tasks=background_tasks,
-                        stripe_subscription_id=transaction_id
-                    )
-                    
-                    # Verify subscription is active in Stripe
-                    is_active = await self.stripe_service.verify_subscription_active(transaction_id)
-                    
-                    if not is_active:
-                        logger.warning(f"Subscription not active in Stripe after processing: {transaction_id}",
-                                     event_type="subscription_not_active",
-                                     user_id=user_id,
-                                     subscription_id=subscription.id,
-                                     stripe_subscription_id=transaction_id)
-                        
-                        # Raise exception to trigger rollback
-                        raise ValueError(f"Subscription is not active in Stripe: {transaction_id}")
-                
-                # If we get here, the nested transaction was committed successfully
-                logger.info(f"Subscription processed successfully: User {user_id}, Subscription {transaction_id}",
-                          event_type="subscription_processed",
-                          user_id=user_id,
-                          subscription_id=subscription.id,
-                          stripe_subscription_id=transaction_id,
-                          plan_id=plan_id,
-                          credit_transaction_id=transaction.id,
-                          new_balance=transaction.new_balance)
-                
-                # Send success notification if applicable
-                if background_tasks:
-                    # Get user for notification
-                    user_result = await self.db.execute(select(User).where(User.id == user_id))
-                    user = user_result.scalar_one_or_none()
-                    
-                    if user:
-                        from app.services.email_service import EmailService
-                        email_service = EmailService(background_tasks, self.db)
-                        await email_service.send_payment_confirmation(
-                            user=user,
-                            plan_name=verification_result.get("plan_name", "Subscription"),
-                            amount=verification_result.get("amount", Decimal("0.00")),
-                            credit_amount=transaction.amount
-                        )
-                
-                return transaction, subscription
-                
-            except ValueError as e:
-                # Handle the specific error we raised for inactive subscription
-                # Update subscription status
-                if 'subscription' in locals():
-                    subscription.is_active = False
-                    subscription.status = "inactive"
-                    await self.db.commit()
-                
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=str(e)
-                )
+            # Process the subscription and add credits
+            transaction, subscription = await self.purchase_plan(
+                user_id=user_id,
+                plan_id=plan_id,
+                reference_id=transaction_id,
+                description=f"Verified subscription from Stripe: {transaction_id}",
+                background_tasks=background_tasks,
+                stripe_subscription_id=transaction_id
+            )
             
+            # Verify subscription is active in Stripe
+            is_active = await self.stripe_service.verify_subscription_active(transaction_id)
+            
+            if not is_active:
+                logger.warning(f"Subscription not active in Stripe after processing: {transaction_id}",
+                             event_type="subscription_not_active",
+                             user_id=user_id,
+                             subscription_id=subscription.id,
+                             stripe_subscription_id=transaction_id)
+                
+                # Mark subscription as inactive
+                subscription.is_active = False
+                subscription.status = "inactive"
+                await self.db.commit()
+                
+                # Raise exception to indicate failure
+                raise ValueError(f"Subscription is not active in Stripe: {transaction_id}")
+            
+            # If we get here, the transaction was processed successfully
+            logger.info(f"Subscription processed successfully: User {user_id}, Subscription {transaction_id}",
+                      event_type="subscription_processed",
+                      user_id=user_id,
+                      subscription_id=subscription.id,
+                      stripe_subscription_id=transaction_id,
+                      plan_id=plan_id,
+                      credit_transaction_id=transaction.id,
+                      new_balance=transaction.new_balance)
+            
+            # Send success notification if applicable
+            if background_tasks:
+                # Get user for notification
+                user_result = await self.db.execute(select(User).where(User.id == user_id))
+                user = user_result.scalar_one_or_none()
+                
+                if user:
+                    from app.services.email_service import EmailService
+                    email_service = EmailService(background_tasks, self.db)
+                    await email_service.send_payment_confirmation(
+                        user=user,
+                        plan_name=verification_result.get("plan_name", "Subscription"),
+                        amount=verification_result.get("amount", Decimal("0.00")),
+                        credit_amount=transaction.amount,
+                        renewal_date=subscription.renewal_date  # Add the missing renewal_date parameter
+                    )
+            
+            return transaction, subscription
+            
+        except ValueError as e:
+            # Handle the specific error we raised for inactive subscription
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        
         except HTTPException:
             # Re-raise HTTP exceptions
             raise
