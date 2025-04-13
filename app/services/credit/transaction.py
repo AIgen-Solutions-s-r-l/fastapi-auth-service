@@ -28,10 +28,53 @@ class TransactionService:
         self.stripe_service = None  # Will be set by CreditService
         
     async def _send_email_notification(self, background_tasks, user_id, plan, subscription, email_type=None, plan_name=None, amount=None, credit_amount=None, renewal_date=None):
-        """Send email notification for plan purchase."""
-        # This is a stub method that doesn't actually send emails in tests
-        # In production, this would be implemented to send actual emails
-        pass
+        """Send email notification for plan purchase or one-time credit purchase."""
+        from sqlalchemy import select
+        from app.models.user import User
+        from app.services.email_service import EmailService
+        
+        # Get user for notification
+        user_result = await self.db.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        
+        if not user:
+            logger.warning(f"User not found for email notification: {user_id}",
+                         event_type="email_notification_user_not_found",
+                         user_id=user_id)
+            return
+            
+        # Create email service
+        email_service = EmailService(background_tasks, self.db)
+        
+        # Send appropriate email based on type
+        if email_type == "one_time_purchase":
+            logger.info(f"Sending one-time purchase email notification: User {user_id}",
+                      event_type="one_time_purchase_email_sending",
+                      user_id=user_id,
+                      amount=amount,
+                      credit_amount=credit_amount)
+                      
+            await email_service.send_one_time_credit_purchase(
+                user=user,
+                amount=amount,
+                credits=credit_amount
+            )
+        elif email_type == "payment_confirmation" and plan and renewal_date:
+            logger.info(f"Sending payment confirmation email notification: User {user_id}",
+                      event_type="payment_confirmation_email_sending",
+                      user_id=user_id,
+                      plan_name=plan_name or plan.name,
+                      amount=amount or plan.price,
+                      credit_amount=credit_amount or plan.credit_amount,
+                      renewal_date=renewal_date)
+                      
+            await email_service.send_payment_confirmation(
+                user=user,
+                plan_name=plan_name or plan.name,
+                amount=amount or plan.price,
+                credit_amount=credit_amount or plan.credit_amount,
+                renewal_date=renewal_date
+            )
 
     @db_error_handler()
     async def verify_and_process_one_time_payment(
@@ -444,22 +487,8 @@ class TransactionService:
                       credit_transaction_id=transaction.id,
                       new_balance=transaction.new_balance)
             
-            # Send success notification if applicable
-            if background_tasks:
-                # Get user for notification
-                user_result = await self.db.execute(select(User).where(User.id == user_id))
-                user = user_result.scalar_one_or_none()
-                
-                if user:
-                    from app.services.email_service import EmailService
-                    email_service = EmailService(background_tasks, self.db)
-                    await email_service.send_payment_confirmation(
-                        user=user,
-                        plan_name=verification_result.get("plan_name", "Subscription"),
-                        amount=verification_result.get("amount", Decimal("0.00")),
-                        credit_amount=transaction.amount,
-                        renewal_date=subscription.renewal_date  # Add the missing renewal_date parameter
-                    )
+            # Note: Email notification is already sent in the purchase_plan method,
+            # so we don't need to send it again here to avoid double-sending.
             
             return transaction, subscription
             
