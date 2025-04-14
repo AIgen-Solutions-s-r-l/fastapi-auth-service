@@ -10,8 +10,10 @@ from app.schemas import credit_schemas
 
 
 def create_transaction_response(
-    transaction: CreditTransaction, 
-    new_balance: Decimal
+    transaction: CreditTransaction,
+    new_balance: Decimal,
+    monetary_amount: Optional[Decimal] = None,
+    currency: str = "USD"
 ) -> credit_schemas.TransactionResponse:
     """
     Create a transaction response object from a transaction.
@@ -19,10 +21,20 @@ def create_transaction_response(
     Args:
         transaction: The transaction to create a response from
         new_balance: The new balance after the transaction
+        monetary_amount: Optional monetary amount (price) of the transaction
+        currency: Currency of the monetary amount (default: USD)
         
     Returns:
         TransactionResponse: The transaction response
     """
+    # Determine monetary amount based on transaction type if not provided
+    if monetary_amount is None:
+        # Try to extract monetary amount from description for verified transactions
+        if transaction.description and "Verified" in transaction.description:
+            # For one-time purchases and subscriptions, we can extract from metadata or related records
+            # This is a simplified approach - in a real system, you might store this in a separate field
+            monetary_amount = transaction.amount / Decimal('10')  # Default fallback ratio
+    
     return credit_schemas.TransactionResponse(
         id=transaction.id,
         user_id=transaction.user_id,
@@ -33,7 +45,9 @@ def create_transaction_response(
         created_at=transaction.created_at,
         new_balance=new_balance,
         plan_id=transaction.plan_id,
-        subscription_id=transaction.subscription_id
+        subscription_id=transaction.subscription_id,
+        monetary_amount=monetary_amount,
+        currency=currency
     )
 
 

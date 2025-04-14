@@ -49,6 +49,8 @@ class TransactionResponse(CreditTransactionBase):
     plan_id: Optional[int] = None
     subscription_id: Optional[int] = None
     is_subscription_active: Optional[bool] = None
+    monetary_amount: Optional[Decimal] = Field(None, description="Monetary amount (price) of the transaction")
+    currency: Optional[str] = Field("USD", description="Currency of the monetary amount")
 
     model_config = ConfigDict(from_attributes=True)
 

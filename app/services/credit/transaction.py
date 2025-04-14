@@ -306,7 +306,8 @@ class TransactionService:
             amount=amount,
             reference_id=reference_id,
             description=description or f"One-time purchase of {amount} credits",
-            transaction_type=TransactionType.ONE_TIME_PURCHASE
+            transaction_type=TransactionType.ONE_TIME_PURCHASE,
+            monetary_amount=price  # Pass the monetary amount
         )
 
         # Send email notification
@@ -650,7 +651,8 @@ class TransactionService:
                 description=description or f"Purchase of {plan.name} plan",
                 transaction_type=TransactionType.PLAN_PURCHASE,
                 plan_id=plan_id,
-                subscription_id=subscription.id
+                subscription_id=subscription.id,
+                monetary_amount=plan.price  # Pass the plan price as the monetary amount
             )
             
             logger.info(f"Added credits for plan purchase: User {user_id}, Credits {amount_to_add}",

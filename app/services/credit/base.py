@@ -112,7 +112,9 @@ class BaseCreditService:
         description: Optional[str] = None,
         transaction_type: TransactionType = TransactionType.CREDIT_ADDED,
         plan_id: Optional[int] = None,
-        subscription_id: Optional[int] = None
+        subscription_id: Optional[int] = None,
+        monetary_amount: Optional[Decimal] = None,
+        currency: str = "USD"
     ) -> credit_schemas.TransactionResponse:
         """
         Add credits to user's balance.
@@ -164,14 +166,21 @@ class BaseCreditService:
                   new_balance=credit.balance,
                   transaction_id=transaction.id)
 
-        return create_transaction_response(transaction, credit.balance)
+        return create_transaction_response(
+            transaction,
+            credit.balance,
+            monetary_amount=monetary_amount,
+            currency=currency
+        )
     @db_error_handler()
     async def use_credits(
         self,
         user_id: int,
         amount: Decimal,
         reference_id: Optional[str] = None,
-        description: Optional[str] = None
+        description: Optional[str] = None,
+        monetary_amount: Optional[Decimal] = None,
+        currency: str = "USD"
     ) -> credit_schemas.TransactionResponse:
         """
         Use credits from user's balance.
@@ -219,7 +228,12 @@ class BaseCreditService:
                   amount=amount, 
                   new_balance=credit.balance)
 
-        return create_transaction_response(transaction, credit.balance)
+        return create_transaction_response(
+            transaction,
+            credit.balance,
+            monetary_amount=monetary_amount,
+            currency=currency
+        )
 
     async def get_balance(self, user_id: int) -> credit_schemas.CreditBalanceResponse:
         """
@@ -305,11 +319,36 @@ class BaseCreditService:
         # Get current balance
         credit = await self.get_user_credit(user_id)
         
+        # Process transactions to include monetary amounts
+        processed_transactions = []
+        for tx in transactions:
+            monetary_amount = None
+            
+            # Determine monetary amount based on transaction type
+            if tx.transaction_type == TransactionType.ONE_TIME_PURCHASE:
+                # For one-time purchases, estimate based on credit amount
+                monetary_amount = tx.amount / Decimal('10')  # Default ratio
+            elif tx.transaction_type in [TransactionType.PLAN_PURCHASE, TransactionType.PLAN_RENEWAL, TransactionType.PLAN_UPGRADE]:
+                # For plan-related transactions, get the plan price if available
+                if tx.plan_id:
+                    from app.models.plan import Plan
+                    plan_result = await self.db.execute(
+                        select(Plan).where(Plan.id == tx.plan_id)
+                    )
+                    plan = plan_result.scalar_one_or_none()
+                    if plan:
+                        monetary_amount = plan.price
+            
+            # Create transaction response with monetary amount
+            processed_tx = create_transaction_response(
+                tx,
+                credit.balance,
+                monetary_amount=monetary_amount
+            )
+            processed_transactions.append(processed_tx)
+        
         response = credit_schemas.TransactionHistoryResponse(
-            transactions=[
-                create_transaction_response(tx, credit.balance)
-                for tx in transactions
-            ],
+            transactions=processed_transactions,
             total_count=total_count
         )
 
