@@ -3,6 +3,7 @@
 from datetime import datetime, UTC, timedelta
 from decimal import Decimal
 from calendar import monthrange
+from typing import Optional
 
 from app.log.logging import logger
 from app.models.credit import CreditTransaction
