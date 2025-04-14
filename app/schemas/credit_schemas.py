@@ -57,3 +57,18 @@ class TransactionHistoryResponse(BaseModel):
     """Schema for transaction history response."""
     transactions: list[TransactionResponse]
     total_count: int
+
+
+class SubscriptionCancellationRequest(BaseModel):
+    """Schema for subscription cancellation request."""
+    subscription_id: int = Field(..., description="ID of the subscription to cancel")
+    cancel_in_stripe: bool = Field(True, description="Whether to also cancel the subscription in Stripe")
+
+
+class SubscriptionCancellationResponse(BaseModel):
+    """Schema for subscription cancellation response."""
+    success: bool = Field(..., description="Whether the cancellation was successful")
+    plan_name: Optional[str] = Field(None, description="Name of the cancelled plan")
+    effective_end_date: Optional[datetime] = Field(None, description="Date when the subscription will effectively end")
+    message: str = Field(..., description="Message describing the result of the cancellation")
+    error: Optional[str] = Field(None, description="Error message if cancellation failed")

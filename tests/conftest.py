@@ -124,3 +124,21 @@ async def create_test_token(db: AsyncSession, user_id: int, token: str, expires_
     db.add(token_record)
     await db.commit()
     return token_record
+
+@pytest.fixture
+async def auth_header(db: AsyncSession) -> dict:
+    """Create an authenticated user and return the auth header."""
+    from app.core.security import create_access_token
+    from datetime import timedelta
+    
+    # Create a test user
+    user = await create_test_user(db, "auth_test@example.com", "password123", is_verified=True)
+    
+    # Create access token
+    access_token = create_access_token(
+        data={"sub": user.email},
+        expires_delta=timedelta(minutes=30)
+    )
+    
+    # Return auth header
+    return {"Authorization": f"Bearer {access_token}"}

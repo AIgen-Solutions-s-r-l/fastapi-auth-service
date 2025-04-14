@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscription Cancellation Confirmation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .header {
+            text-align: center;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 20px;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .detail-label {
+            font-weight: bold;
+            color: #555;
+        }
+        .detail-value {
+            text-align: right;
+        }
+        .highlight {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+            user-select: none;
+        }
+        .button {
+            display: inline-block;
+            background-color: #9f9cec;
+            color: white !important;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            margin: 20px 0;
+            user-select: none;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            text-align: center;
+            font-size: 0.9em;
+            color: #777;
+        }
+        .p {
+            color: #333 !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>Subscription Cancellation Confirmed</h2>
+        </div>
+        
+        <p>Hello,</p>
+        
+        <p>Your subscription has been successfully cancelled as requested.</p>
+        
+        <div class="highlight">
+            <h3>Cancellation Details</h3>
+            <div class="detail-row">
+                <div class="detail-label">Plan:</div>
+                <div class="detail-value">{{ plan_name }}</div>
+            </div>
+            
+            <div class="detail-row">
+                <div class="detail-label">Cancellation Date:</div>
+                <div class="detail-value">{{ cancellation_date }}</div>
+            </div>
+            
+            <div class="detail-row">
+                <div class="detail-label">Effective End Date:</div>
+                <div class="detail-value">{{ effective_end_date }}</div>
+            </div>
+        </div>
+        
+        <p>Your subscription has been cancelled and will no longer renew automatically. Any remaining credits in your account will still be available for use until they are depleted.</p>
+        
+        <p style="text-align: center;">
+            <a href="{{ dashboard_link }}" class="button">View Dashboard</a>
+        </p>
+        
+        <p>If you change your mind or wish to subscribe to a different plan, you can do so at any time from your dashboard.</p>
+        
+        <p>If you have any questions about your cancellation or need assistance, please contact our <a href="mailto:help@laboro.co">support team</a>.</p>
+
+        <br>
+        <p>Thank you,<br>LABORO Support Team</p>
+        
+        <div class="footer">
+            <p>This is an automated message, please do not reply to this email.</p>
+            <p>LABORO S.R.L, Via Guglielmo Marconi, 45, 40122 Bologna BO, VAT Code: 04284191204</p>
+            <p>LABORO © 2025</p>
+        </div>
+    </div>
+</body>
+</html>

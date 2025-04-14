@@ -397,21 +397,31 @@ class SubscriptionService:
     async def cancel_subscription(
         self,
         subscription_id: int,
-        cancel_in_stripe: bool = True
-    ) -> bool:
+        user_id: Optional[int] = None,
+        cancel_in_stripe: bool = True,
+        background_tasks: Optional[BackgroundTasks] = None
+    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """
         Cancel a subscription.
         
         Args:
             subscription_id: The ID of the subscription to cancel
+            user_id: Optional user ID for permission validation
             cancel_in_stripe: Whether to also cancel the subscription in Stripe
+            background_tasks: Optional background tasks for sending emails
             
         Returns:
-            bool: True if cancellation was successful, False otherwise
+            Tuple[bool, Optional[Dict[str, Any]]]:
+                - Success flag
+                - Optional dict with additional information (plan name, effective end date)
+                
+        Raises:
+            HTTPException: If user doesn't have permission to cancel this subscription
         """
         logger.info(f"Cancelling subscription: {subscription_id}",
-                  event_type="subscription_cancellation",
+                  event_type="subscription_cancellation_request",
                   subscription_id=subscription_id,
+                  user_id=user_id,
                   cancel_in_stripe=cancel_in_stripe)
         
         try:
@@ -421,37 +431,114 @@ class SubscriptionService:
                 logger.warning(f"Subscription not found for cancellation: {subscription_id}",
                              event_type="subscription_not_found",
                              subscription_id=subscription_id)
-                return False
+                return False, None
+            
+            # Validate user permission if user_id is provided
+            if user_id is not None and subscription.user_id != user_id:
+                logger.warning(f"User {user_id} attempted to cancel subscription {subscription_id} belonging to user {subscription.user_id}",
+                             event_type="subscription_cancellation_unauthorized",
+                             subscription_id=subscription_id,
+                             user_id=user_id,
+                             subscription_user_id=subscription.user_id)
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have permission to cancel this subscription"
+                )
+            
+            # Check if subscription is already canceled
+            if subscription.status == "canceled" or not subscription.is_active:
+                logger.warning(f"Attempted to cancel already inactive subscription: {subscription_id}",
+                             event_type="subscription_already_canceled",
+                             subscription_id=subscription_id,
+                             user_id=subscription.user_id)
+                return False, {"error": "Subscription is already canceled"}
+            
+            # Get the plan for email notification
+            plan = await self.plan_service.get_plan_by_id(subscription.plan_id)
+            if not plan:
+                logger.error(f"Plan not found for subscription: {subscription_id}",
+                           event_type="plan_not_found",
+                           subscription_id=subscription_id,
+                           plan_id=subscription.plan_id)
+                # Continue anyway, but log the error
+                plan_name = "Unknown Plan"
+            else:
+                plan_name = plan.name
             
             # If requested and subscription has a Stripe ID, cancel in Stripe
+            stripe_error = None
             if cancel_in_stripe and subscription.stripe_subscription_id:
-                cancelled_in_stripe = await self.stripe_service.cancel_subscription(subscription.stripe_subscription_id)
-                
-                if not cancelled_in_stripe:
-                    logger.warning(f"Failed to cancel subscription in Stripe: {subscription.stripe_subscription_id}",
-                                 event_type="stripe_subscription_cancellation_failed",
-                                 subscription_id=subscription_id,
-                                 stripe_subscription_id=subscription.stripe_subscription_id)
+                try:
+                    cancelled_in_stripe = await self.stripe_service.cancel_subscription(subscription.stripe_subscription_id)
                     
-                    # Continue anyway, but log the failure
+                    if not cancelled_in_stripe:
+                        logger.warning(f"Failed to cancel subscription in Stripe: {subscription.stripe_subscription_id}",
+                                     event_type="stripe_subscription_cancellation_failed",
+                                     subscription_id=subscription_id,
+                                     stripe_subscription_id=subscription.stripe_subscription_id)
+                        stripe_error = "Failed to cancel subscription in Stripe payment processor"
+                        # Continue anyway, but log the failure
+                except Exception as e:
+                    logger.error(f"Error cancelling subscription in Stripe: {str(e)}",
+                               event_type="stripe_subscription_cancellation_error",
+                               subscription_id=subscription_id,
+                               stripe_subscription_id=subscription.stripe_subscription_id,
+                               error=str(e))
+                    stripe_error = f"Error cancelling in payment processor: {str(e)}"
+                    # Continue anyway, but log the error
             
             # Update subscription in our database
+            effective_end_date = subscription.renewal_date
             subscription.is_active = False
             subscription.status = "canceled"
             subscription.auto_renew = False
             await self.db.commit()
             
+            # Send email notification if background_tasks is provided
+            if background_tasks and user_id is not None:
+                # Get the user for email notification
+                result = await self.db.execute(select(User).where(User.id == user_id))
+                user = result.scalar_one_or_none()
+                
+                if user:
+                    from app.services.email_service import EmailService
+                    email_service = EmailService(background_tasks, self.db)
+                    await email_service.send_subscription_cancellation(
+                        user=user,
+                        plan_name=plan_name,
+                        effective_end_date=effective_end_date
+                    )
+                    
+                    logger.info(f"Subscription cancellation email sent to user: {user_id}",
+                              event_type="subscription_cancellation_email_sent",
+                              subscription_id=subscription_id,
+                              user_id=user_id,
+                              user_email=user.email)
+            
+            # Log the successful cancellation
             logger.info(f"Subscription cancelled: {subscription_id}",
                       event_type="subscription_cancelled",
                       subscription_id=subscription_id,
                       user_id=subscription.user_id,
-                      plan_id=subscription.plan_id)
+                      plan_id=subscription.plan_id,
+                      stripe_error=stripe_error)
             
-            return True
+            # Return success and additional information
+            result = {
+                "plan_name": plan_name,
+                "effective_end_date": effective_end_date,
+                "stripe_error": stripe_error
+            }
             
+            return True, result
+            
+        except HTTPException:
+            # Re-raise HTTP exceptions for proper error handling
+            raise
         except Exception as e:
             logger.error(f"Error cancelling subscription: {str(e)}",
                        event_type="subscription_cancellation_error",
                        subscription_id=subscription_id,
+                       user_id=user_id,
                        error=str(e))
-            return False
+            return False, {"error": f"Internal error: {str(e)}"}

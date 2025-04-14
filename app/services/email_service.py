@@ -439,3 +439,30 @@ class EmailService:
                 "dashboard_link": f"{settings.FRONTEND_URL}/dashboard"
             }
         )
+    
+    async def send_subscription_cancellation(
+        self,
+        user: User,
+        plan_name: str,
+        effective_end_date: datetime
+    ) -> None:
+        """
+        Send notification of subscription cancellation.
+        
+        Args:
+            user: User model instance
+            plan_name: Name of the cancelled plan
+            effective_end_date: Date when the subscription will effectively end
+        """
+        await self._send_templated_email(
+            template_name="subscription_cancellation",
+            subject="Subscription Cancellation Confirmation",
+            recipients=[str(user.email)],
+            context={
+                "email": user.email,
+                "plan_name": plan_name,
+                "cancellation_date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
+                "effective_end_date": effective_end_date.strftime("%Y-%m-%d %H:%M"),
+                "dashboard_link": f"{settings.FRONTEND_URL}/dashboard"
+            }
+        )

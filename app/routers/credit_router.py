@@ -30,6 +30,12 @@ from app.log.logging import logger
 
 router = APIRouter(prefix="/credits", tags=["credits"])
 
+# Import schemas needed for subscription cancellation
+from app.schemas.credit_schemas import (
+    SubscriptionCancellationRequest,
+    SubscriptionCancellationResponse
+)
+
 @router.get("/balance", response_model=CreditBalanceResponse)
 async def get_credit_balance(
     user_id: int,
@@ -497,9 +503,8 @@ async def add_credits_from_stripe(
                     product_id=analysis.get("product_id")
                 ),
                 credit_transaction_id=transaction.id,
-                new_balance=transaction.new_balance
-            )
-            
+                new_balance=transaction.new_balance)
+    
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -512,4 +517,110 @@ async def add_credits_from_stripe(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing Stripe transaction: {str(e)}"
+        )
+
+
+@router.post("/subscriptions/cancel", response_model=SubscriptionCancellationResponse)
+async def cancel_subscription(
+    request: SubscriptionCancellationRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Cancel a subscription.
+    
+    This endpoint allows authenticated users to cancel their subscriptions.
+    
+    Args:
+        request: Subscription cancellation request
+        background_tasks: FastAPI background tasks for sending emails
+        current_user: Authenticated user (from JWT token)
+        db: Database session
+        
+    Returns:
+        SubscriptionCancellationResponse: Result of the cancellation operation
+        
+    Raises:
+        HTTPException: If subscription not found, user doesn't have permission, or other error occurs
+    """
+    logger.info(f"User {current_user.id} requesting to cancel subscription {request.subscription_id}",
+              event_type="subscription_cancellation_request",
+              user_id=current_user.id,
+              subscription_id=request.subscription_id)
+    
+    try:
+        # Initialize credit service
+        credit_service = CreditService(db)
+        
+        # Call the enhanced cancel_subscription method
+        success, result = await credit_service.subscription_service.cancel_subscription(
+            subscription_id=request.subscription_id,
+            user_id=current_user.id,
+            cancel_in_stripe=request.cancel_in_stripe,
+            background_tasks=background_tasks
+        )
+        
+        if not success:
+            # Handle different error cases
+            if result and "error" in result:
+                error_message = result["error"]
+                
+                if "already canceled" in error_message:
+                    return SubscriptionCancellationResponse(
+                        success=False,
+                        message="Subscription is already canceled",
+                        error=error_message
+                    )
+                else:
+                    return SubscriptionCancellationResponse(
+                        success=False,
+                        message="Failed to cancel subscription",
+                        error=error_message
+                    )
+            else:
+                return SubscriptionCancellationResponse(
+                    success=False,
+                    message="Failed to cancel subscription",
+                    error="Unknown error occurred"
+                )
+        
+        # Successful cancellation
+        plan_name = result.get("plan_name", "Unknown Plan")
+        effective_end_date = result.get("effective_end_date")
+        stripe_error = result.get("stripe_error")
+        
+        message = "Subscription successfully canceled"
+        if stripe_error:
+            message += f", but there was an issue with the payment processor: {stripe_error}"
+        
+        logger.info(f"Subscription {request.subscription_id} successfully canceled for user {current_user.id}",
+                  event_type="subscription_cancellation_success",
+                  user_id=current_user.id,
+                  subscription_id=request.subscription_id,
+                  plan_name=plan_name,
+                  effective_end_date=effective_end_date.isoformat() if effective_end_date else None,
+                  stripe_error=stripe_error)
+        
+        return SubscriptionCancellationResponse(
+            success=True,
+            plan_name=plan_name,
+            effective_end_date=effective_end_date,
+            message=message,
+            error=stripe_error
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions for proper error handling
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling subscription: {str(e)}",
+                   event_type="subscription_cancellation_error",
+                   user_id=current_user.id,
+                   subscription_id=request.subscription_id,
+                   error=str(e))
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error cancelling subscription: {str(e)}"
         )
