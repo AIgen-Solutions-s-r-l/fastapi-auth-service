@@ -507,8 +507,13 @@ async def test_cancel_subscription(credit_service: CreditService, test_subscript
             cancel_in_stripe=True
         )
         
-        # Verify the result
-        assert result is True
+        # Verify the result - it should be a tuple (success_flag, result_dict)
+        assert isinstance(result, tuple)
+        success_flag, result_dict = result
+        assert success_flag is True
+        assert "plan_name" in result_dict
+        assert "effective_end_date" in result_dict
+        assert "stripe_error" in result_dict
         
         # Verify the subscription was updated
         subscription = await credit_service.get_subscription_by_id(test_subscription.id)
