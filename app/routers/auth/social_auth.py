@@ -380,7 +380,7 @@ async def google_callback_redirect(
     client_ip = getattr(request, "client", {}).get("host", "unknown")
     
     # Frontend URL to redirect to
-    frontend_url = f"{settings.FRONTEND_URL}/api/auth/callback"
+    frontend_url = f"{settings.FRONTEND_URL}/api/auth/google-callback"
     
     logger.debug(
         "Received Google OAuth callback",
