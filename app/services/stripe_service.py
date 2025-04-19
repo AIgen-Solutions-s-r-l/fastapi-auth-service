@@ -23,13 +23,18 @@ class StripeService:
         """
         # Configure Stripe
         if not test_mode:
+            # Check if Stripe API key is available as an attribute
+            stripe_key = getattr(settings, 'STRIPE_SECRET_KEY', None)
+            stripe_version = getattr(settings, 'STRIPE_API_VERSION', None)
+            
             # Validate Stripe configuration
-            if not settings.STRIPE_SECRET_KEY:
+            if not stripe_key:
                 logger.error("Stripe API key not configured", event_type="stripe_config_error")
                 raise ValueError("Stripe API key not configured")
                 
-            stripe.api_key = settings.STRIPE_SECRET_KEY
-            stripe.api_version = settings.STRIPE_API_VERSION
+            stripe.api_key = stripe_key
+            if stripe_version:
+                stripe.api_version = stripe_version
 
     async def find_transaction_by_id(self, transaction_id: str) -> Optional[Dict[str, Any]]:
         """

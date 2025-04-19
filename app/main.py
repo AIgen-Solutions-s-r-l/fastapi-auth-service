@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi_sqlalchemy import DBSessionMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.core.config import settings, validate_email_config, validate_stripe_config, validate_internal_api_key, validate_oauth_config
+from app.core.config import settings, validate_email_config, validate_internal_api_key, validate_oauth_config
 from app.core.exceptions import AuthException 
 from app.core.error_handlers import (validation_exception_handler, auth_exception_handler, 
                                    http_exception_handler, generic_exception_handler,
@@ -46,22 +46,6 @@ async def lifespan(app: FastAPI):
             warnings=validation_details.get("warnings", [])
         )
     
-    # Validate Stripe configuration
-    stripe_config_valid, stripe_validation_details = validate_stripe_config()
-    if not stripe_config_valid:
-        logger.warning(
-            "Stripe configuration is invalid or incomplete",
-            event_type="startup_warning",
-            component="stripe",
-            issues=stripe_validation_details["issues"]
-        )
-    else:
-        logger.info(
-            "Stripe configuration validated successfully",
-            event_type="startup_info",
-            component="stripe",
-            warnings=stripe_validation_details.get("warnings", [])
-        )
     
     # Validate internal API key configuration
     internal_api_key_valid, api_key_validation_details = validate_internal_api_key()

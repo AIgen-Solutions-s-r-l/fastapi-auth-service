@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     # Frontend URL for reset link
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://pre.laboro.co")
     
+    # Stripe settings
+    STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
+    STRIPE_API_VERSION: str = os.getenv("STRIPE_API_VERSION", "2022-11-15")
     
     # Google OAuth settings
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
