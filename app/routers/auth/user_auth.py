@@ -216,6 +216,7 @@ async def get_email_by_user_id(
     This is an internal-only endpoint for service-to-service communication.
     Requires a valid INTERNAL_API_KEY header.
     """
+    logger.info("Starting email retrieval by user_id")
     try:
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
