@@ -45,10 +45,6 @@ class Settings(BaseSettings):
     # Frontend URL for reset link
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://pre.laboro.co")
     
-    # Stripe API settings
-    STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
-    STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-    STRIPE_API_VERSION: str = os.getenv("STRIPE_API_VERSION", "2023-10-16")
     
     # Google OAuth settings
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
@@ -134,45 +130,6 @@ def validate_email_config() -> Tuple[bool, Dict[str, Any]]:
     }
 
 
-def validate_stripe_config() -> Tuple[bool, Dict[str, Any]]:
-    """
-    Validate Stripe configuration and log warnings for missing or invalid settings.
-    
-    Returns:
-        Tuple[bool, Dict[str, Any]]:
-            - Boolean indicating if configuration is valid
-            - Dictionary with validation details
-    """
-    valid = True
-    issues = []
-    warnings = []
-    
-    # Check Stripe API key
-    if not settings.STRIPE_SECRET_KEY:
-        issue = "Stripe API key not configured (STRIPE_SECRET_KEY)"
-        logger.error(
-            issue,
-            event_type="config_error",
-            setting="STRIPE_SECRET_KEY"
-        )
-        issues.append(issue)
-        valid = False
-    
-    # Check Stripe webhook secret (warning only)
-    if not settings.STRIPE_WEBHOOK_SECRET:
-        warning = "Stripe webhook secret not configured (STRIPE_WEBHOOK_SECRET)"
-        logger.warning(
-            warning,
-            event_type="config_warning",
-            setting="STRIPE_WEBHOOK_SECRET"
-        )
-        warnings.append(warning)
-    
-    return valid, {
-        "valid": valid,
-        "issues": issues,
-        "warnings": warnings
-    }
 
 
 def validate_oauth_config() -> Tuple[bool, Dict[str, Any]]:
