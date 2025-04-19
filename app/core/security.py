@@ -68,5 +68,16 @@ def verify_jwt_token(token: str) -> dict:
 
     Returns:
         Decoded token data
+        
+    Raises:
+        ExpiredSignatureError: When the token has expired
+        JWTError: When the token is invalid for other reasons
     """
-    return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    try:
+        return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    except jwt.ExpiredSignatureError:
+        # Re-raise the exception to be caught by the specific handler
+        raise
+    except jwt.JWTError as e:
+        # Add more context to the error before re-raising
+        raise jwt.JWTError(f"Invalid token: {str(e)}")

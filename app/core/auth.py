@@ -42,13 +42,29 @@ async def get_current_user(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
+        context={"error_type": "AuthError"}
     )
     try:
         payload = verify_jwt_token(token)
         subject: str = payload.get("sub")
         if subject is None:
             raise credentials_exception
-    except JWTError:
+    except jwt.ExpiredSignatureError:
+        # Create a specific exception for expired tokens with a user-friendly message
+        expired_token_exception = AuthException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+            context={"error_type": "TokenExpired"}
+        )
+        raise expired_token_exception
+    except JWTError as e:
+        # Add more context to the general JWT error
+        logger.debug(
+            f"JWT validation error: {str(e)}",
+            event_type="auth_debug",
+            error_details=str(e)
+        )
         raise credentials_exception
 
     user_service = UserService(db)

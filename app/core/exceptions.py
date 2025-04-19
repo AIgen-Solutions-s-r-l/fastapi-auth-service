@@ -3,10 +3,16 @@ from fastapi import HTTPException, status
 
 
 class AuthException(HTTPException):
-    def __init__(self, detail: str, status_code: int = status.HTTP_400_BAD_REQUEST, headers: dict = None):
+    def __init__(self, detail: str, status_code: int = status.HTTP_400_BAD_REQUEST, headers: dict = None, context: dict = None):
+        self.context = context or {}
+        
+        # Store the original detail for logging and context
+        self.error_detail = detail
+        
+        # Keep the original format for compatibility with tests
         super().__init__(
             status_code=status_code,
-            detail={"detail": detail},
+            detail=detail,
             headers=headers
         )
 

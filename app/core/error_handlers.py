@@ -10,10 +10,41 @@ from app.core.db_exceptions import DatabaseException
 
 async def auth_exception_handler(request: Request, exc: AuthException) -> DecimalJSONResponse:
     """Handle authentication exceptions."""
-    logger.exception(f'Auth error on {request.url}: {exc.detail}')
+    # Extract error type from context if available
+    error_type = exc.context.get("error_type", "AuthError") if hasattr(exc, "context") else "AuthError"
+    user_id = exc.context.get("user_id", "unknown") if hasattr(exc, "context") else "unknown"
+    
+    # Determine if this is a token expiration error
+    is_token_expired = error_type == "TokenExpired"
+    
+    # Get the detail for logging
+    error_detail = getattr(exc, 'error_detail', exc.detail)
+    
+    # Use warning level for expected auth errors like token expiration, exception level for others
+    if is_token_expired:
+        logger.warning(
+            f'Auth error on {request.url}: Token expired',
+            event_type='auth_warning',
+            error_type=error_type,
+            user_id=user_id,
+            status_code=exc.status_code,
+            path=str(request.url)
+        )
+    else:
+        logger.error(
+            f'Auth error on {request.url}: {error_detail}',
+            event_type='auth_error',
+            error_type=error_type,
+            user_id=user_id,
+            status_code=exc.status_code,
+            path=str(request.url)
+        )
+    
+    # Return user-friendly response without exposing internal details
+    # Keep the original format for compatibility with tests
     return DecimalJSONResponse(
         status_code=exc.status_code,
-        content=exc.detail
+        content={"detail": error_detail}
     )
 
 async def database_exception_handler(request: Request, exc: DatabaseException) -> DecimalJSONResponse:
