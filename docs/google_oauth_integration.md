@@ -23,6 +23,112 @@ The Google OAuth 2.0 flow works as follows:
 
 This approach maintains compatibility with your microservices because the resulting JWT token is identical in structure to tokens from password-based authentication.
 
+
+## Detailed Authentication Flow
+
+This section provides a step-by-step breakdown of the Google OAuth 2.0 authentication flow, detailing the interactions between the user, frontend, Google, and the backend authentication service.
+
+### 1. Initiation and Authorization Request
+
+1.  **User Action:** The user clicks a "Sign in with Google" button on the frontend.
+2.  **Frontend Action:** The frontend makes a request to the backend authentication service's `/auth/oauth/google/login` endpoint to obtain the Google authorization URL.
+3.  **Backend Action:** The backend constructs the Google authorization URL, including the `client_id`, `redirect_uri`, `scope`, and optionally a `state` parameter for CSRF protection.
+4.  **Backend Response:** The backend returns the generated authorization URL to the frontend.
+5.  **Frontend Action:** The frontend redirects the user's browser to the Google authorization URL.
+
+### 2. User Authentication and Consent
+
+6.  **User Action:** The user is presented with Google's login page (if not already logged in) and then a consent screen asking for permission to share their information with the application.
+7.  **User Action:** The user logs in (if necessary) and grants the requested permissions.
+
+### 3. Authorization Code Grant
+
+8.  **Google Action:** Upon successful authentication and consent, Google redirects the user's browser back to the `redirect_uri` specified in the initial request. This redirect includes an `authorization code` and the `state` parameter (if used) as query parameters.
+
+### 4. Code Exchange for Tokens
+
+9.  **Frontend Action:** The frontend extracts the `authorization code` and `state` parameter from the redirect URL. It should verify the `state` parameter against the one sent in step 3 to prevent CSRF attacks.
+10. **Frontend Action:** The frontend sends a POST request to the backend authentication service's `/auth/oauth/google/callback` endpoint, including the `authorization code` in the request body.
+11. **Backend Action:** The backend receives the `authorization code`. It then makes a server-to-server request to Google's token endpoint, exchanging the `authorization code` for Google's `access_token`, `id_token`, and `refresh_token`. This request includes the `client_id` and `client_secret` for authentication with Google.
+12. **Google Action:** Google validates the code and credentials and, if valid, returns the tokens and user information (decoded from the `id_token`) to the backend.
+
+### 5. User Management and Session Creation
+
+13. **Backend Action:** The backend uses the user information obtained from Google (e.g., email, Google ID) to find an existing user in its database.
+14. **Backend Action:**
+    *   If a user with the same Google ID exists, the backend authenticates this user.
+    *   If a user with the same email exists but no Google ID is linked, the backend may link the Google ID to the existing account (depending on application logic, potentially requiring additional verification like password).
+    *   If no user exists with either the Google ID or email, the backend creates a new user account using the information from Google. The `auth_type` for this user is set to 'google' or 'both' if linked.
+15. **Backend Action:** The backend generates its own internal JWT token for the authenticated or newly created user. This token is the same format as tokens issued for password-based authentication.
+16. **Backend Response:** The backend returns its internal JWT token (and potentially user information) to the frontend.
+
+### 6. Session Management and API Access
+
+17. **Frontend Action:** The frontend receives the internal JWT token and stores it securely (e.g., in an HttpOnly cookie or local storage).
+18. **Frontend Action:** The frontend redirects the user to the application's dashboard or a relevant page.
+19. **Frontend Action:** For subsequent API calls to other microservices, the frontend includes the internal JWT token in the `Authorization: Bearer <token>` header.
+20. **Microservice Action:** Other microservices validate the internal JWT token using the authentication service's public key or validation endpoint, granting access based on the user's identity and permissions embedded in the token.
+
+### 7. Error Handling within the Flow
+
+*   **Invalid Authorization Request (Step 1-5):** If the initial request to Google is malformed or missing parameters, Google will display an error to the user. The backend should validate parameters before generating the URL.
+*   **User Denies Consent (Step 6-7):** If the user denies consent, Google redirects back to the `redirect_uri` with an error parameter. The frontend should handle this gracefully, informing the user that authentication failed because permissions were not granted.
+*   **Invalid Redirect (Step 8):** If the `redirect_uri` is not authorized in the Google Cloud Console, Google will not redirect the user.
+*   **Invalid Code Exchange (Step 10-12):** If the `authorization code` is invalid, expired, or already used, Google's token endpoint will return an error. The backend must handle this error, log it, and return an appropriate error response to the frontend (e.g., 400 Bad Request).
+*   **State Parameter Mismatch (Step 9):** If the `state` parameter returned by Google does not match the one sent by the frontend, it indicates a potential CSRF attack. The frontend should abort the process and display an error.
+*   **User Management Errors (Step 13-15):** Errors during user lookup, creation, or linking (e.g., database errors, email conflicts during linking) must be caught by the backend. The backend should log the error and return an appropriate HTTP status code and error message to the frontend (e.g., 409 Conflict for email already in use, 500 Internal Server Error).
+*   **Token Generation Errors (Step 15):** If the backend fails to generate its internal JWT token, it should return a 500 Internal Server Error.
+
+### Authentication Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Google
+    participant Backend (Auth Service)
+    participant Other Microservices
+
+    User->>Frontend: Clicks "Sign in with Google"
+    Frontend->>Backend (Auth Service): GET /auth/oauth/google/login
+    activate Backend (Auth Service)
+    Backend (Auth Service)->>Backend (Auth Service): Construct Google Auth URL (client_id, redirect_uri, scope, state)
+    Backend (Auth Service)-->>Frontend: 200 OK (auth_url)
+    deactivate Backend (Auth Service)
+
+    Frontend->>Google: Redirect browser to auth_url
+    activate Google
+    Google->>User: Display login/consent screen
+    User->>Google: Authenticate and grant permissions
+    Google-->>Frontend: Redirect browser to redirect_uri?code=...&state=...
+    deactivate Google
+
+    Frontend->>Frontend: Extract code and state, Verify state
+    Frontend->>Backend (Auth Service): POST /auth/oauth/google/callback (code, state)
+    activate Backend (Auth Service)
+    Backend (Auth Service)->>Google: POST /token (code, client_id, client_secret, redirect_uri, grant_type)
+    activate Google
+    Google-->>Backend (Auth Service): 200 OK (access_token, id_token, refresh_token, user_info)
+    deactivate Google
+
+    Backend (Auth Service)->>Backend (Auth Service): Find/Create user based on Google ID/email
+    Backend (Auth Service)->>Backend (Auth Service): Generate internal JWT token
+    Backend (Auth Service)-->>Frontend: 200 OK (internal_jwt_token)
+    deactivate Backend (Auth Service)
+
+    Frontend->>Frontend: Store internal_jwt_token
+    Frontend->>User: Redirect to dashboard
+
+    User->>Frontend: Access protected resource
+    Frontend->>Other Microservices: API Request (Authorization: Bearer internal_jwt_token)
+    activate Other Microservices
+    Other Microservices->>Backend (Auth Service): Validate internal_jwt_token (optional, depending on architecture)
+    activate Backend (Auth Service)
+    Backend (Auth Service)-->>Other Microservices: Validation Result
+    deactivate Backend (Auth Service)
+    Other Microservices-->>Frontend: API Response
+    deactivate Other Microservices
+```
 ## Setting Up Google OAuth
 
 ### 1. Create Google OAuth Credentials
