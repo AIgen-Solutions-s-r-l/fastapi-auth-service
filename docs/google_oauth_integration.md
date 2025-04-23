@@ -31,7 +31,7 @@ This section provides a step-by-step breakdown of the Google OAuth 2.0 authentic
 ### 1. Initiation and Authorization Request
 
 1.  **User Action:** The user clicks a "Sign in with Google" button on the frontend.
-2.  **Frontend Action:** The frontend makes a request to the backend authentication service's `/auth/oauth/google/login` endpoint to obtain the Google authorization URL.
+2.  **Frontend Action:** The frontend makes a POST request to the backend authentication service's `/google-auth` endpoint to obtain the Google authorization URL.
 3.  **Backend Action:** The backend constructs the Google authorization URL, including the `client_id`, `redirect_uri`, `scope`, and optionally a `state` parameter for CSRF protection.
 4.  **Backend Response:** The backend returns the generated authorization URL to the frontend.
 5.  **Frontend Action:** The frontend redirects the user's browser to the Google authorization URL.
@@ -47,18 +47,19 @@ This section provides a step-by-step breakdown of the Google OAuth 2.0 authentic
 
 ### 4. Code Exchange for Tokens
 
-9.  **Frontend Action:** The frontend extracts the `authorization code` and `state` parameter from the redirect URL. It should verify the `state` parameter against the one sent in step 3 to prevent CSRF attacks.
-10. **Frontend Action:** The frontend sends a POST request to the backend authentication service's `/auth/oauth/google/callback` endpoint, including the `authorization code` in the request body.
-11. **Backend Action:** The backend receives the `authorization code`. It then makes a server-to-server request to Google's token endpoint, exchanging the `authorization code` for Google's `access_token`, `id_token`, and `refresh_token`. This request includes the `client_id` and `client_secret` for authentication with Google.
+9.  **Frontend Action:** The frontend extracts the `authorization code` and `state` parameter from the redirect URL. It should verify the `state` parameter against the one sent in step 3 to prevent CSRF attacks. The backend generates this `state` parameter using a random 32-character string of letters and digits.
+10. **Frontend Action:** After being redirected from Google to the backend's `/google-callback` endpoint, the frontend callback handler extracts the `authorization code` and `state` parameter from the URL and sends a POST request to the backend authentication service's `/login-with-google` endpoint, including the `authorization code` in the request body.
+11. **Backend Action:** The backend receives the `authorization code`. It then makes a server-to-server request to Google's token endpoint using the `httpx` library, exchanging the `authorization code` for Google's `access_token`, `id_token`, and `refresh_token`. This request includes the `client_id` and `client_secret` for authentication with Google.
 12. **Google Action:** Google validates the code and credentials and, if valid, returns the tokens and user information (decoded from the `id_token`) to the backend.
 
 ### 5. User Management and Session Creation
 
 13. **Backend Action:** The backend uses the user information obtained from Google (e.g., email, Google ID) to find an existing user in its database.
-14. **Backend Action:**
-    *   If a user with the same Google ID exists, the backend authenticates this user.
-    *   If a user with the same email exists but no Google ID is linked, the backend may link the Google ID to the existing account (depending on application logic, potentially requiring additional verification like password).
-    *   If no user exists with either the Google ID or email, the backend creates a new user account using the information from Google. The `auth_type` for this user is set to 'google' or 'both' if linked.
+14. **Backend Action:** The backend attempts to find an existing user first by their Google ID (`profile.get('sub')`).
+    *   If a user with the matching Google ID is found, that user is authenticated.
+    *   If no user is found by Google ID, the backend then attempts to find a user by their email address (`profile.get('email')`).
+    *   If a user is found by email but does not have a Google ID linked, the backend links the Google ID to this existing account. The user's `auth_type` is updated to 'both' if they previously had a password, or 'google' otherwise. If the user's email was not previously verified, it is marked as verified during this process as Google has verified the email.
+    *   If no user is found by either Google ID or email, the backend creates a new user account using the information from the Google profile. The `google_id` is set, the `auth_type` is set to 'google', and the `is_verified` flag is set to `True` as Google has verified the email. The `hashed_password` is set to `None` for OAuth-only users.
 15. **Backend Action:** The backend generates its own internal JWT token for the authenticated or newly created user. This token is the same format as tokens issued for password-based authentication.
 16. **Backend Response:** The backend returns its internal JWT token (and potentially user information) to the frontend.
 
@@ -71,13 +72,17 @@ This section provides a step-by-step breakdown of the Google OAuth 2.0 authentic
 
 ### 7. Error Handling within the Flow
 
-*   **Invalid Authorization Request (Step 1-5):** If the initial request to Google is malformed or missing parameters, Google will display an error to the user. The backend should validate parameters before generating the URL.
+The backend service (`oauth_service.py`) implements specific error handling using `HTTPException` for various failure scenarios during the OAuth flow.
+
+*   **Invalid Authorization Request (Step 1-5):** If the initial request to Google is malformed or missing parameters, Google will display an error to the user. The backend validates parameters before generating the URL.
 *   **User Denies Consent (Step 6-7):** If the user denies consent, Google redirects back to the `redirect_uri` with an error parameter. The frontend should handle this gracefully, informing the user that authentication failed because permissions were not granted.
 *   **Invalid Redirect (Step 8):** If the `redirect_uri` is not authorized in the Google Cloud Console, Google will not redirect the user.
-*   **Invalid Code Exchange (Step 10-12):** If the `authorization code` is invalid, expired, or already used, Google's token endpoint will return an error. The backend must handle this error, log it, and return an appropriate error response to the frontend (e.g., 400 Bad Request).
+*   **Invalid Code Exchange (Step 10-12):** If the `authorization code` is invalid, expired, or already used, Google's token endpoint will return an error. The backend handles this by logging the error and raising an `HTTPException` with `status_code=400` and a detail message like "Failed to authenticate with Google".
 *   **State Parameter Mismatch (Step 9):** If the `state` parameter returned by Google does not match the one sent by the frontend, it indicates a potential CSRF attack. The frontend should abort the process and display an error.
-*   **User Management Errors (Step 13-15):** Errors during user lookup, creation, or linking (e.g., database errors, email conflicts during linking) must be caught by the backend. The backend should log the error and return an appropriate HTTP status code and error message to the frontend (e.g., 409 Conflict for email already in use, 500 Internal Server Error).
+*   **User Profile Retrieval Errors (after Step 12):** If fetching the user profile from Google using the access token fails (e.g., invalid token), the backend logs the error and raises an `HTTPException` with `status_code=400` and a detail message like "Failed to get user information from Google".
+*   **User Management Errors (Step 13-15):** Errors during user lookup, creation, or linking (e.g., database errors, email conflicts during linking) are caught by the backend. The backend logs the error and returns an appropriate HTTP status code and error message to the frontend (e.g., `HTTPException` with `status_code=409` for email already in use, `status_code=500` for internal errors).
 *   **Token Generation Errors (Step 15):** If the backend fails to generate its internal JWT token, it should return a 500 Internal Server Error.
+*   **Unlinking Account without Password:** Attempting to unlink a Google account when the user does not have a password set on their account will result in an `HTTPException` with `status_code=400` and a detail message "Cannot unlink Google account without setting a password first".
 
 ### Authentication Sequence Diagram
 
@@ -90,7 +95,7 @@ sequenceDiagram
     participant Other Microservices
 
     User->>Frontend: Clicks "Sign in with Google"
-    Frontend->>Backend (Auth Service): GET /auth/oauth/google/login
+    Frontend->>Backend (Auth Service): POST /google-auth
     activate Backend (Auth Service)
     Backend (Auth Service)->>Backend (Auth Service): Construct Google Auth URL (client_id, redirect_uri, scope, state)
     Backend (Auth Service)-->>Frontend: 200 OK (auth_url)
@@ -100,11 +105,14 @@ sequenceDiagram
     activate Google
     Google->>User: Display login/consent screen
     User->>Google: Authenticate and grant permissions
-    Google-->>Frontend: Redirect browser to redirect_uri?code=...&state=...
+    Google-->>Backend (Auth Service): Redirect browser to /google-callback?code=...&state=...
     deactivate Google
+    activate Backend (Auth Service)
+    Backend (Auth Service)->>Frontend: Redirect browser to frontend_callback_url?code=...&state=...
+    deactivate Backend (Auth Service)
 
     Frontend->>Frontend: Extract code and state, Verify state
-    Frontend->>Backend (Auth Service): POST /auth/oauth/google/callback (code, state)
+    Frontend->>Backend (Auth Service): POST /login-with-google (code, state)
     activate Backend (Auth Service)
     Backend (Auth Service)->>Google: POST /token (code, client_id, client_secret, redirect_uri, grant_type)
     activate Google
@@ -166,30 +174,54 @@ alembic upgrade head
 ### Get Google Login URL
 
 ```
-GET /auth/oauth/google/login
+POST /google-auth
 ```
 
-**Query Parameters:**
-- `redirect_uri` (optional): Custom redirect URI for this request
+This endpoint is used by the frontend to initiate the Google OAuth flow by obtaining the authorization URL.
+
+**Request Body:**
+```json
+{
+  "redirect_uri": "optional-custom-redirect-uri"
+}
+```
 
 **Response:**
 ```json
 {
-  "auth_url": "https://accounts.google.com/o/oauth2/auth?client_id=..."
+  "authorization_url": "https://accounts.google.com/o/oauth2/auth?client_id=..."
 }
 ```
 
-### Process Google Callback
+### Google Callback Redirect
 
 ```
-POST /auth/oauth/google/callback
+GET /google-callback
 ```
+
+This is the endpoint configured in the Google Cloud Console as the authorized redirect URI. Google redirects the user's browser to this endpoint after authentication and consent, including the authorization `code` or an `error` in the query parameters. This backend endpoint then redirects the user's browser to a frontend callback URL (`settings.FRONTEND_URL/api/auth/google-callback`) to complete the process on the frontend.
+
+**Query Parameters:**
+- `code` (optional): The authorization code from Google.
+- `error` (optional): An error message from Google if the authentication failed.
+- `state` (optional): The state parameter for CSRF protection.
+
+**Response:**
+- Redirects the user's browser to the configured frontend callback URL with the `code`, `error`, and `state` parameters.
+
+### Login with Google
+
+```
+POST /login-with-google
+```
+
+This endpoint is called by the frontend callback handler (after being redirected from `/google-callback`). It receives the authorization `code` from the frontend, exchanges it for Google tokens, finds or creates the user, and returns the backend's internal JWT token.
 
 **Request Body:**
 ```json
 {
   "code": "4/0AeaYSHDGS...",
-  "state": "optional-state-parameter"
+  "redirect_uri": "optional-custom-redirect-uri"
 }
 ```
 
@@ -204,13 +236,14 @@ POST /auth/oauth/google/callback
 ### Link Google Account (for existing users)
 
 ```
-POST /auth/link/google
+POST /link-google-account
 ```
+
+This endpoint allows an authenticated user to link their existing account with a Google account.
 
 **Request Body:**
 ```json
 {
-  "provider": "google",
   "code": "4/0AeaYSHDGS...",
   "password": "current-password"
 }
@@ -219,22 +252,29 @@ POST /auth/link/google
 **Response:**
 ```json
 {
-  "message": "Google account linked successfully"
+  "message": "Google account linked successfully",
+  "email": "user@example.com",
+  "auth_type": "both"
 }
 ```
 
 ### Unlink Google Account
 
+Users can unlink their Google account from their profile. **Note:** A user must have a password set on their account before they can unlink their Google account. Attempting to unlink without a password will result in an error.
+
 ```
-POST /auth/unlink/google
+POST /unlink-google-account
 ```
 
 **Response:**
 ```json
 {
-  "message": "Google account unlinked successfully"
+  "message": "Google account unlinked successfully",
+  "email": "user@example.com",
+  "auth_type": "password"
 }
 ```
+
 
 ## Frontend Integration
 
@@ -243,9 +283,16 @@ POST /auth/unlink/google
 ```javascript
 // 1. Get Google login URL
 async function getGoogleLoginUrl() {
-  const response = await fetch('http://localhost:8000/auth/oauth/google/login');
+  // Call the backend endpoint to get the Google authorization URL
+  const response = await fetch('http://localhost:8000/google-auth', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}) // Send empty body as per backend endpoint
+  });
   const data = await response.json();
-  return data.auth_url;
+  return data.authorization_url; // Use 'authorization_url' as per backend response
 }
 
 // 2. Redirect to Google
@@ -256,36 +303,81 @@ function redirectToGoogle() {
 }
 
 // 3. Handle callback from Google
+// 3. Handle the callback from Google (on your frontend callback page)
+// This function is called after the user is redirected from Google to the backend's /google-callback,
+// which then redirects to your frontend callback URL with the code.
 async function handleGoogleCallback(code) {
-  const response = await fetch('http://localhost:8000/auth/oauth/google/callback', {
+  // Send the authorization code to the backend endpoint to complete the login
+  const response = await fetch('http://localhost:8000/login-with-google', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ code })
+    body: JSON.stringify({ code: code }) // Send code in the request body
   });
   
+  if (!response.ok) {
+    // Handle errors (e.g., invalid code)
+    const errorData = await response.json();
+    console.error('Google login failed:', errorData);
+    alert('Google login failed: ' + (errorData.detail || 'Unknown error'));
+    return;
+  }
+
   const data = await response.json();
-  // Store token in local storage
+  // Store the backend's JWT token in local storage
   localStorage.setItem('token', data.access_token);
-  // Redirect to dashboard
+  // Redirect to dashboard or desired page
   window.location.href = '/dashboard';
 }
 
-// On your callback page
-function processCallback() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const code = urlParams.get('code');
+### Account Linking
+
+To allow users to link their Google account to an existing account, the backend associates the Google ID with the user's existing profile and updates their `auth_type`.
+
+```javascript
+async function linkGoogleAccount(code, password) {
+  const token = localStorage.getItem('token'); // Current JWT token
   
-  if (code) {
-    handleGoogleCallback(code);
+  const response = await fetch('http://localhost:8000/link-google-account', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}` // Include the user's current JWT token
+    },
+    body: JSON.stringify({
+      code: code, // The authorization code obtained from Google
+      password: password // The user's current password for verification
+    })
+  });
+  
+  if (!response.ok) {
+    // Handle errors (e.g., invalid password, account already linked)
+    const errorData = await response.json();
+    console.error('Account linking failed:', errorData);
+    alert('Account linking failed: ' + (errorData.detail || 'Unknown error'));
+    return;
+  }
+
+  const data = await response.json();
+  console.log('Account linked successfully:', data);
+  alert('Google account linked successfully!');
+  return data;
+}
+```
+    // Should not happen if Google redirects correctly, but handle defensively
+    console.error('Google OAuth callback received without code or error.');
+    alert('Google OAuth failed: Invalid callback.');
   }
 }
+
+// Example usage on your frontend callback page:
+// document.addEventListener('DOMContentLoaded', processGoogleCallback);
 ```
 
 ### Account Linking
 
-To allow users to link their Google account to an existing account:
+To allow users to link their Google account to an existing account, the backend associates the Google ID with the user's existing profile and updates their `auth_type`.
 
 ```javascript
 async function linkGoogleAccount(code, password) {
