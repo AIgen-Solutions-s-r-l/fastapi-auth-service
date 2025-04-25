@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from jose import jwt
 
 from app.core.config import settings
+from app.log.logging import logger # Added import
 
 
 def get_password_hash(password: str) -> str:
@@ -33,6 +34,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Returns:
         True if password matches hash
     """
+    # Added logging to check hashed_password type and value
+    logger.debug(
+        f"Verifying password. Hashed password type: {type(hashed_password)}, value: {hashed_password}"
+    )
+
     password_bytes = plain_password.encode('utf-8')
     hashed_bytes = hashed_password.encode('utf-8')
     return bcrypt.checkpw(password_bytes, hashed_bytes)
