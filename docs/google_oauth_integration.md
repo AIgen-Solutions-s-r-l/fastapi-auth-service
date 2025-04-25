@@ -434,10 +434,49 @@ The migration script adds the following changes to your database:
 2. **Redirect URI Mismatch**: The redirect URI in your code must exactly match one of the authorized redirect URIs in your Google Cloud Console
 3. **Missing Scopes**: Ensure the OAUTH_SCOPES environment variable includes at least "openid email profile"
 4. **Database Migration**: Ensure you've run the migration to add the new user fields
+5. **Cookie Setting in Next.js**: When using Next.js Route Handlers, cookies must be set directly on the NextResponse object, not using the cookies() API from next/headers
 
 ### Verifying Configuration
 
 You can verify your OAuth configuration at startup by checking the logs. The service validates the OAuth configuration and logs any issues.
+
+## Known Issues and Solutions
+
+### Cookie Setting in Next.js Route Handlers
+
+**Issue**: When implementing Google OAuth with Next.js, the accessToken cookie may not be properly set when using the `cookies()` API from `next/headers` in Route Handlers.
+
+**Symptoms**:
+- User completes Google authentication successfully
+- User gets redirected back to the application
+- No accessToken cookie is set in the browser
+- Errors like "No accessToken were found" appear in logs
+
+**Root Cause**:
+In Next.js Route Handlers (app router), the `cookies()` API from `next/headers` doesn't properly attach cookies to the HTTP response that's sent back to the client. This is particularly problematic in OAuth flows where redirects are involved.
+
+**Solution**:
+1. Create the NextResponse object first
+2. Set the cookie directly on the response object using `response.cookies.set()`
+3. Then return the response
+
+**Example**:
+```typescript
+// INCORRECT approach (doesn't work):
+const cookieStore = cookies(); // From next/headers
+cookieStore.set('accessToken', data.access_token, {...});
+return NextResponse.redirect(redirectUrl);
+
+// CORRECT approach:
+const response = NextResponse.redirect(redirectUrl);
+response.cookies.set('accessToken', data.access_token, {...});
+return response;
+```
+
+**Additional Recommendations**:
+- Implement redundant cookie-setting methods to increase reliability
+- Add detailed logging throughout the authentication flow to diagnose issues
+- Consider using both server-side cookie setting and client-side cookie setting as fallbacks
 
 ## Example Implementation
 
