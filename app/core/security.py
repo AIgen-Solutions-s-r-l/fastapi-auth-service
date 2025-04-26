@@ -122,14 +122,14 @@ def verify_jwt_token(token: str) -> dict:
         logger.debug("verify_jwt_token – unverified payload", payload=unverified)
     except Exception as e:
         logger.error("verify_jwt_token – cannot decode unverified", error=str(e))
-        raise Exception(f"Cannot parse token: {e}")
+        raise jwt.JWTError(f"Cannot parse token: {e}")
 
     # 3) Manual exp check with 30 s skew
     now_ts = int(datetime.now(timezone.utc).timestamp())
     exp_ts = unverified.get("exp")
     if exp_ts is None:
         logger.error("verify_jwt_token – missing exp claim", payload=unverified)
-        raise Exception("Missing exp claim")
+        raise jwt.JWTError("Missing exp claim")
     if now_ts > exp_ts + 30:
         logger.error(
             "verify_jwt_token – token expired",
@@ -138,7 +138,7 @@ def verify_jwt_token(token: str) -> dict:
             skew_s=30,
             token_preview=token_preview
         )
-        raise Exception("Token has expired")
+        raise jwt.ExpiredSignatureError("Token has expired")
 
     # 4) Finally, verify the signature only
     try:
@@ -151,7 +151,7 @@ def verify_jwt_token(token: str) -> dict:
         logger.debug("verify_jwt_token – signature OK", payload=payload)
         return payload
 
-    except Exception as e:
+    except jwt.JWTError as e:
         logger.error(
             "verify_jwt_token – signature invalid",
             error=str(e),
