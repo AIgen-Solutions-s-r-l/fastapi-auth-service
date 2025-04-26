@@ -525,6 +525,17 @@ class GoogleOAuthService:
         token_start = time.time()
         expires_delta = timedelta(minutes=settings.access_token_expire_minutes)
         expire_time = datetime.now(timezone.utc) + expires_delta
+
+        # log all timings
+        logger.info(
+            "Google OAuth login flow timings: {token_exchange_time_ms}ms, {profile_time_ms}ms, {user_time_ms}ms, {token_time_ms}ms / {expire_time} / {expires_delta}",
+            token_exchange_time_ms=round(token_exchange_time * 1000),
+            profile_time_ms=round(profile_time * 1000),
+            user_time_ms=round(user_time * 1000),
+            token_time_ms=round(token_start * 1000),
+            expire_time=expire_time.isoformat(),
+            expires_delta=expires_delta.total_seconds()
+        )
         
         # Use email as the subject for new tokens (same as existing system)
         access_token = create_access_token(
