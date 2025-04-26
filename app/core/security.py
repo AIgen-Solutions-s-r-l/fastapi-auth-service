@@ -62,6 +62,40 @@ def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
         expire = datetime.now(timezone.utc) + timedelta(minutes=15)  # Updated line
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+
+        # Added logging to check encoded_jwt type and value
+    logger.info(
+        f"Encoded JWT token type: {type(encoded_jwt)}, value: {encoded_jwt}"
+    )
+    # Log the expiration time
+    logger.info(
+        f"Token expiration time: {expire.isoformat()}"
+    )
+    # Log the data being encoded
+    logger.info(
+        f"Data being encoded in token: {to_encode}"
+    )
+    # Log the algorithm used
+    logger.info(
+        f"JWT algorithm used: {settings.algorithm}"
+    )
+    # Log the secret key length
+    logger.info(
+        f"Secret key length: {len(settings.secret_key)}"
+    )
+    # Log the current UTC time
+    logger.info(
+        f"Current UTC time: {datetime.now(timezone.utc).isoformat()}"
+    )
+    # Log the expiration time in UTC
+    logger.info(
+        f"Token expiration time in UTC: {expire.isoformat()}"
+    )
+    # Log the current time in UTC
+    logger.info(
+        f"Current time in UTC: {datetime.now(timezone.utc).isoformat()}"
+    )
+
     return encoded_jwt
 
 
