@@ -2,7 +2,6 @@
 import bcrypt
 from datetime import datetime, timedelta, timezone
 from jose import jwt
-from jwt import ExpiredSignatureError, PyJWTError
 
 from app.core.config import settings
 from app.log.logging import logger # Added import
@@ -156,7 +155,7 @@ def verify_jwt_token(token: str) -> dict:
         )
         return payload
 
-    except ExpiredSignatureError as e:
+    except Exception as e:
         # 4a) Expired: log now vs. exp claim
         now_ts = int(datetime.now(timezone.utc).timestamp())
         exp_ts = unverified_payload.get("exp") if unverified_payload else None
@@ -164,15 +163,6 @@ def verify_jwt_token(token: str) -> dict:
             "verify_jwt_token – token expired",
             now_ts=now_ts,
             exp_ts=exp_ts,
-            token_preview=token_preview
-        )
-        raise
-
-    except PyJWTError as e:
-        # 4b) Other JWT errors (signature, malformed, etc.)
-        logger.error(
-            "verify_jwt_token – invalid token",
-            error=str(e),
             token_preview=token_preview
         )
         raise
