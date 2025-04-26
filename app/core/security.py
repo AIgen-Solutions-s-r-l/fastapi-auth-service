@@ -101,68 +101,60 @@ def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
 
 def verify_jwt_token(token: str) -> dict:
     """
-    Verify JWT token, with full debug logging on both success and failure.
-
-    Args:
-        token: Token to verify
-
-    Returns:
-        Decoded token data
+    Verify a JWT, with manual leeway handling for exp.
 
     Raises:
-        ExpiredSignatureError: When the token has expired
-        JWTError: When the token is invalid for other reasons
+      ExpiredSignatureError if token is expired (beyond skew)
+      JWTError for any other invalidity
     """
-    # 1) Safely preview the token
+    # 1) Preview for logs
     token_preview = token[:50] + "..." if len(token) > 50 else token
-    logger.debug(
-        "verify_jwt_token – starting",
-        token_preview=token_preview
-    )
+    logger.debug("verify_jwt_token – received", token_preview=token_preview)
 
-    unverified_payload = None
-    # 2) Decode *without* signature/exp checks so we can inspect the claims
+    # 2) Decode without checks to see the raw payload
     try:
-        unverified_payload = jwt.decode(
+        unverified = jwt.decode(
             token,
             settings.secret_key,
             algorithms=[settings.algorithm],
             options={"verify_signature": False, "verify_exp": False},
         )
-        logger.debug(
-            "verify_jwt_token – unverified payload",
-            payload=unverified_payload
-        )
+        logger.debug("verify_jwt_token – unverified payload", payload=unverified)
     except Exception as e:
+        logger.error("verify_jwt_token – cannot decode unverified", error=str(e))
+        raise Exception(f"Cannot parse token: {e}")
+
+    # 3) Manual exp check with 30 s skew
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    exp_ts = unverified.get("exp")
+    if exp_ts is None:
+        logger.error("verify_jwt_token – missing exp claim", payload=unverified)
+        raise Exception("Missing exp claim")
+    if now_ts > exp_ts + 30:
         logger.error(
-            "verify_jwt_token – failed to decode unverified payload",
-            error=str(e),
+            "verify_jwt_token – token expired",
+            now_ts=now_ts,
+            exp_ts=exp_ts,
+            skew_s=30,
             token_preview=token_preview
         )
+        raise Exception("Token has expired")
 
-    # 3) Now do the real verification, with 30s of leeway
+    # 4) Finally, verify the signature only
     try:
         payload = jwt.decode(
             token,
             settings.secret_key,
             algorithms=[settings.algorithm],
-            options={"verify_signature": True, "verify_exp": True},
-            leeway=30,  # allow 30s clock skew
+            options={"verify_signature": True, "verify_exp": False},
         )
-        logger.debug(
-            "verify_jwt_token – successfully verified",
-            payload=payload
-        )
+        logger.debug("verify_jwt_token – signature OK", payload=payload)
         return payload
 
     except Exception as e:
-        # 4a) Expired: log now vs. exp claim
-        now_ts = int(datetime.now(timezone.utc).timestamp())
-        exp_ts = unverified_payload.get("exp") if unverified_payload else None
         logger.error(
-            "verify_jwt_token – token expired",
-            now_ts=now_ts,
-            exp_ts=exp_ts,
+            "verify_jwt_token – signature invalid",
+            error=str(e),
             token_preview=token_preview
         )
         raise
