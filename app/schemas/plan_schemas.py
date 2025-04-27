@@ -108,14 +108,6 @@ class PlanPurchaseRequest(BaseModel):
     reference_id: Optional[str] = None
 
 
-class PlanUpgradeRequest(BaseModel):
-    """Schema for upgrading a plan."""
-    current_subscription_id: int
-    new_plan_id: int
-    payment_method_id: Optional[str] = None
-    reference_id: Optional[str] = None
-
-
 class OneTimePurchaseRequest(BaseModel):
     """Schema for one-time credit purchase."""
     credit_amount: Decimal = Field(..., gt=0)
