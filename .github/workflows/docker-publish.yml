@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - log_poc
 
 jobs:
   test-build-and-push:
