@@ -468,7 +468,7 @@ TEST_DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/test_db
 ```env
 SECRET_KEY=your-secret-key-here
 ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
+ACCESS_TOKEN_EXPIRE_MINUTES=60
 ```
 
 ### Email Settings

@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # Authentication settings
     secret_key: str = os.getenv("SECRET_KEY", "your-secret-key-here")
     algorithm: str = os.getenv("ALGORITHM", "HS256")
-    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
     # Email settings (SendGrid via Azure)
     SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "SG.REMOVED")

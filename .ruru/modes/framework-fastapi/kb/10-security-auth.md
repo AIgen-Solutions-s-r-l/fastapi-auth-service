@@ -42,7 +42,7 @@ import os
 # Configuration (Use environment variables!)
 SECRET_KEY = os.environ.get("SECRET_KEY", "a_very_secret_key") # CHANGE THIS!
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token") # Points to the /token login endpoint
