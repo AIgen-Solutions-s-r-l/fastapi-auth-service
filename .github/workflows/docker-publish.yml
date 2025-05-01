@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - release_2025_01
 
 jobs:
   test-build-and-push:
@@ -60,3 +61,5 @@ jobs:
           tags: |
             ghcr.io/aihawk-startup/auth_service:${{ env.GITHUB_SHA_SHORT }}
             ${{ github.ref == 'refs/heads/main' && 'ghcr.io/aihawk-startup/auth_service:pre' || '' }}
+            ${{ github.ref == 'refs/heads/release_2025_01' && 'ghcr.io/aihawk-startup/auth_service:release_2025_01' || '' }}
+           
