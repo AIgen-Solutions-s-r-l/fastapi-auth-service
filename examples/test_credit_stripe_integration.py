@@ -40,7 +40,7 @@ TEST_USER_ID = 40  # This should match the user ID created in prepare_test_envir
 
 async def get_auth_token():
     """Generate an authentication token for the test user."""
-    # Create a token with a 30-minute expiry
+    # Create a token 
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
         data={"sub": TEST_USER_EMAIL, "user_id": TEST_USER_ID},
