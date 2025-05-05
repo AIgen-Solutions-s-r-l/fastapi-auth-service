@@ -4,14 +4,19 @@ from datetime import datetime, UTC
 from decimal import Decimal
 from typing import Optional, Tuple, Dict, Any
 import uuid
+import stripe # Ensure stripe is imported
+import asyncio # For async stripe calls
 
 from fastapi import HTTPException, status, BackgroundTasks
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError # For race condition handling
 
 from app.models.credit import TransactionType
 from app.models.user import User
+from app.models.plan import Plan, UsedFreePlanCard # Import Plan and UsedFreePlanCard
 from app.schemas import credit_schemas
 from app.log.logging import logger
-from sqlalchemy import select
+
 
 from app.services.credit.decorators import db_error_handler
 from app.services.credit.utils import calculate_credits_from_payment, calculate_renewal_date
@@ -436,6 +441,135 @@ class TransactionService:
                 # Fallback to default plan ID if no matching plan found
                 plan_id = 1
             
+            # <<< START CARD UNIQUENESS GATE >>>
+            plan = await self.plan_service.get_plan_by_id(plan_id)
+            if not plan:
+                 # This case should ideally be handled by the _find_matching_plan logic or earlier checks
+                 logger.error(f"Plan object not found for plan_id {plan_id} during free plan check.",
+                              event_type="free_plan_check_plan_not_found",
+                              user_id=user_id,
+                              subscription_id=transaction_id,
+                              plan_id=plan_id)
+                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error processing plan.")
+
+            if plan.is_limited_free:
+                logger.info(f"Activating card uniqueness gate for limited free plan: Plan {plan_id}",
+                            event_type="free_plan_gate_activated",
+                            user_id=user_id,
+                            subscription_id=transaction_id,
+                            plan_id=plan_id)
+
+                try:
+                    # Retrieve the full Stripe Subscription object to get the default payment method
+                    logger.debug(f"Retrieving Stripe subscription with expanded payment method: {transaction_id}",
+                                 event_type="stripe_retrieve_sub_expanded",
+                                 subscription_id=transaction_id)
+                    stripe_sub = await asyncio.to_thread(
+                        stripe.Subscription.retrieve,
+                        transaction_id, # This is the stripe_subscription_id
+                        expand=["default_payment_method"]
+                    )
+
+                    if not stripe_sub or not stripe_sub.default_payment_method:
+                        logger.error(f"Stripe subscription or default payment method not found for {transaction_id}",
+                                     event_type="stripe_sub_pm_not_found",
+                                     subscription_id=transaction_id)
+                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not retrieve payment method details for subscription.")
+
+                    payment_method_id = stripe_sub.default_payment_method.id
+                    stripe_customer_id = stripe_sub.customer # Get customer ID from subscription
+
+                    logger.debug(f"Retrieving Stripe payment method: {payment_method_id}",
+                                 event_type="stripe_retrieve_pm",
+                                 payment_method_id=payment_method_id)
+                    payment_method = await asyncio.to_thread(
+                        stripe.PaymentMethod.retrieve,
+                        payment_method_id
+                    )
+
+                    if not payment_method or not payment_method.card or not payment_method.card.fingerprint:
+                        logger.error(f"Payment method {payment_method_id} is not a card or fingerprint is missing.",
+                                     event_type="stripe_pm_invalid",
+                                     payment_method_id=payment_method_id)
+                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payment method type for free plan check.")
+
+                    fingerprint = payment_method.card.fingerprint
+                    logger.info(f"Extracted card fingerprint for check: {fingerprint}",
+                                event_type="free_plan_gate_fingerprint_extracted",
+                                user_id=user_id,
+                                subscription_id=transaction_id,
+                                fingerprint=fingerprint) # Log fingerprint for debugging
+
+                    # Perform DB check and insert within a transaction
+                    async with self.db.begin_nested(): # Use nested transaction
+                        # Check if fingerprint exists
+                        logger.debug(f"Checking database for fingerprint: {fingerprint}",
+                                     event_type="free_plan_gate_db_check",
+                                     fingerprint=fingerprint)
+                        existing_card_result = await self.db.execute(
+                            select(UsedFreePlanCard).where(UsedFreePlanCard.stripe_card_fingerprint == fingerprint)
+                        )
+                        existing_card = existing_card_result.scalar_one_or_none()
+
+                        if existing_card:
+                            logger.warning(f"Card fingerprint {fingerprint} already used for a free plan.",
+                                         event_type="free_plan_gate_rejected_exists",
+                                         user_id=user_id,
+                                         subscription_id=transaction_id,
+                                         fingerprint=fingerprint,
+                                         existing_record_id=existing_card.id)
+                            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This card has already been used for a free subscription.")
+
+                        # Insert new card record (handle race condition via UNIQUE constraint)
+                        try:
+                            logger.debug(f"Attempting to insert fingerprint {fingerprint} into used_free_plan_cards",
+                                         event_type="free_plan_gate_db_insert_attempt",
+                                         fingerprint=fingerprint)
+                            new_card_record = UsedFreePlanCard(
+                                stripe_card_fingerprint=fingerprint,
+                                stripe_payment_method_id=payment_method_id,
+                                stripe_customer_id=stripe_customer_id,
+                                stripe_subscription_id=transaction_id # Store the subscription ID
+                            )
+                            self.db.add(new_card_record)
+                            await self.db.flush() # Flush to trigger potential IntegrityError early
+                            logger.info(f"Successfully recorded fingerprint {fingerprint} for free plan subscription {transaction_id}.",
+                                        event_type="free_plan_gate_fingerprint_recorded",
+                                        user_id=user_id,
+                                        subscription_id=transaction_id,
+                                        fingerprint=fingerprint,
+                                        record_id=new_card_record.id) # Log the new record ID
+                        except IntegrityError:
+                            # This means another request inserted the same fingerprint between the check and flush
+                            await self.db.rollback() # Rollback the nested transaction
+                            logger.warning(f"Race condition detected: Card fingerprint {fingerprint} was inserted concurrently.",
+                                         event_type="free_plan_gate_rejected_race",
+                                         user_id=user_id,
+                                         subscription_id=transaction_id,
+                                         fingerprint=fingerprint)
+                            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This card has already been used for a free subscription.")
+                        except Exception as db_exc:
+                            await self.db.rollback()
+                            logger.error(f"Database error during free plan card insert: {db_exc}",
+                                         event_type="free_plan_gate_db_error",
+                                         user_id=user_id,
+                                         subscription_id=transaction_id,
+                                         fingerprint=fingerprint,
+                                         error=str(db_exc))
+                            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error during free plan check.")
+
+                except HTTPException:
+                    raise # Re-raise HTTP exceptions directly
+                except Exception as stripe_exc:
+                    logger.error(f"Error during Stripe API call for free plan check: {stripe_exc}",
+                                 event_type="free_plan_gate_stripe_error",
+                                 user_id=user_id,
+                                 subscription_id=transaction_id,
+                                 error=str(stripe_exc))
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error communicating with payment provider.")
+
+            # <<< END CARD UNIQUENESS GATE >>>
+
             # Log the credit amount we're going to use
             logger.info(f"Using credit amount from frontend: {amount}",
                       event_type="using_frontend_amount",
