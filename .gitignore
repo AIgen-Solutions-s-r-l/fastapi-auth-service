@@ -142,6 +142,7 @@ venv/*
 .clinerules*
 
 .roo
+.ruru
 .roomodes
 
 nohup.out
