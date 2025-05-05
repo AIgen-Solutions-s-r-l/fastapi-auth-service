@@ -1,7 +1,10 @@
 """Models for plan and subscription management."""
 
 from datetime import datetime, UTC
-from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, DateTime, Boolean
+from sqlalchemy import (
+    Column, Integer, String, Numeric, ForeignKey, DateTime, Boolean,
+    Index, UniqueConstraint
+)
 from sqlalchemy.orm import relationship
 from decimal import Decimal
 
@@ -34,7 +37,8 @@ class Plan(Base):
     # Stripe integration
     stripe_price_id = Column(String(100), nullable=True)
     stripe_product_id = Column(String(100), nullable=True)
-    
+    is_limited_free = Column(Boolean, default=False, nullable=False, server_default='false') # Added for Free Plan limitation
+
     # Relationships
     subscriptions = relationship("Subscription", back_populates="plan")
 
@@ -72,3 +76,26 @@ class Subscription(Base):
     # Relationships
     user = relationship("User", back_populates="subscriptions")
     plan = relationship("Plan", back_populates="subscriptions")
+
+
+class UsedFreePlanCard(Base):
+    """
+    Tracks credit card fingerprints used for limited free plans to enforce uniqueness.
+    """
+    __tablename__ = "used_free_plan_cards"
+
+    id = Column(Integer, primary_key=True, index=True)
+    stripe_card_fingerprint = Column(String(255), nullable=False)
+    stripe_payment_method_id = Column(String(100), nullable=True) # Optional reference
+    stripe_subscription_id = Column(String(100), nullable=True) # Nullable initially, filled when subscription confirmed
+    stripe_customer_id = Column(String(100), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        UniqueConstraint('stripe_card_fingerprint', name='uq_stripe_card_fingerprint'),
+        Index('ix_used_free_plan_cards_stripe_card_fingerprint', 'stripe_card_fingerprint'),
+        Index('ix_used_free_plan_cards_stripe_payment_method_id', 'stripe_payment_method_id'),
+        Index('ix_used_free_plan_cards_stripe_subscription_id', 'stripe_subscription_id'),
+        Index('ix_used_free_plan_cards_stripe_customer_id', 'stripe_customer_id'),
+    )
