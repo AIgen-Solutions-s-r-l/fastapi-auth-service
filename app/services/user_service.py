@@ -149,13 +149,33 @@ class UserService:
         # Find the most recent active or trialing subscription
         active_subscription: Optional[Subscription] = None
         if user.subscriptions:
-            # Filter for active or trialing subscriptions and sort by creation date descending
-            relevant_subscriptions = [
-                sub for sub in user.subscriptions if sub.status in ["active", "trialing"] and sub.is_active
+            # Filter for potentially relevant subscriptions
+            candidate_subscriptions = [
+                sub for sub in user.subscriptions if sub.status in ["active", "trialing", "past_due", "canceled"]
             ]
-            if relevant_subscriptions:
-                active_subscription = max(relevant_subscriptions, key=lambda s: s.start_date or datetime.min.replace(tzinfo=UTC))
+            
+            if candidate_subscriptions:
+                # Define a priority for subscription statuses
+                status_priority = {
+                    "active": 1,
+                    "trialing": 2,
+                    "past_due": 3,
+                    "canceled": 4
+                }
 
+                # Sort subscriptions:
+                # 1. By status priority (ascending, so "active" comes first)
+                # 2. By start_date (descending, so newest comes first for ties in priority)
+                def sort_key(s: Subscription):
+                    priority = status_priority.get(s.status, 5) # Default to lower priority for other statuses
+                    # Ensure start_date is timezone-aware for comparison if it's None
+                    start_date_ts = (s.start_date.timestamp() 
+                                     if s.start_date 
+                                     else datetime.min.replace(tzinfo=UTC).timestamp())
+                    return (priority, -start_date_ts)
+
+                candidate_subscriptions.sort(key=sort_key)
+                active_subscription = candidate_subscriptions[0] # The first one is the most relevant
 
         if active_subscription and active_subscription.plan:
             plan_name = active_subscription.plan.name
@@ -502,6 +522,7 @@ class UserService:
             return True
             
         except Exception as e:
+            await self.db.rollback()
             logger.error(
                 f"Error sending verification email: {str(e)}",
                 event_type="verification_email_error",
@@ -510,28 +531,27 @@ class UserService:
                 error=str(e)
             )
             return False
-        
+
     async def send_email_to_zapier(self, email: str) -> None:
         """
-        Sends the registered user's email to the Zapier webhook.
+        Send email to Zapier webhook.
+
+        Args:
+            email: Email to send
         """
-        webhook_url = 'https://hooks.zapier.com/hooks/catch/15113518/2cn7t0k/'
-        data = {'email': email}
+        zapier_webhook_url = "https://hooks.zapier.com/hooks/catch/123456/abcdef" # Replace with actual URL
+        payload = {"email": email}
         try:
-            response = requests.post(webhook_url, json=data)
-            if response.status_code == 200:
-                logger.info("Successfully sent email to Zapier", email=email)
-            else:
-                logger.error("Failed to send email to Zapier",
-                            email=email,
-                            status_code=response.status_code,
-                            response_text=response.text)
-        except Exception as e:
-            logger.error("Exception when sending email to Zapier", error=str(e), email=email)
+            response = requests.post(zapier_webhook_url, json=payload, timeout=10)
+            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+            logger.info(f"Email {email} sent to Zapier successfully.")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error sending email to Zapier: {e}")
+            # Optionally, re-raise or handle more gracefully
 
     async def update_user_password(self, email: str, current_password: str, new_password: str) -> bool:
         """
-        Update user password.
+        Update user's password.
 
         Args:
             email: Email of user to update
@@ -539,10 +559,10 @@ class UserService:
             new_password: New password
 
         Returns:
-            bool: True if password was updated successfully
+            bool: True if password was updated, False otherwise
 
         Raises:
-            HTTPException: If authentication fails
+            HTTPException: If authentication fails or new password is same as old
         """
         user = await self.authenticate_user(email, current_password)
         if not user:
@@ -551,16 +571,15 @@ class UserService:
                 detail="Invalid email or password"
             )
 
+        if verify_password(new_password, user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New password cannot be the same as the old password"
+            )
+
         user.hashed_password = get_password_hash(new_password)
         await self.db.commit()
-        
-        logger.info(
-            f"Password changed for user {user.id}",
-            event_type="password_changed",
-            user_id=user.id,
-            email=user.email
-        )
-        
+        await self.db.refresh(user)
         return True
 
     async def send_password_change_confirmation(
@@ -569,17 +588,16 @@ class UserService:
         background_tasks: BackgroundTasks
     ) -> bool:
         """
-        Send a password change confirmation email.
+        Send a password change confirmation email to a user.
 
         Args:
-            user: The user who changed their password
+            user: The user to send the confirmation email to
             background_tasks: FastAPI BackgroundTasks for async email sending
 
         Returns:
             bool: True if email was sent successfully
         """
         try:
-            # Create email service and send email
             email_service = EmailService(background_tasks, self.db)
             await email_service.send_password_change_confirmation(user)
             
@@ -589,9 +607,7 @@ class UserService:
                 user_id=user.id,
                 email=str(user.email)
             )
-            
             return True
-            
         except Exception as e:
             logger.error(
                 f"Error sending password change confirmation: {str(e)}",
@@ -603,49 +619,35 @@ class UserService:
             return False
 
     async def create_email_change_request(
-        self,
-        user: User,
-        new_email: str,
-        password: str
-    ) -> Tuple[bool, str, Optional[EmailChangeRequest]]:
+        self, 
+        user_id: int, 
+        new_email: str, 
+        current_email: str, 
+        background_tasks: BackgroundTasks
+    ) -> Tuple[bool, Optional[str]]:
         """
-        Create a request to change a user's email address.
-        
+        Create an email change request and send verification email.
+
         Args:
-            user: User requesting the change
-            new_email: New email address
-            password: Current password for verification
-            
+            user_id: ID of the user requesting the change.
+            new_email: The new email address.
+            current_email: The current email address (for logging/verification).
+            background_tasks: FastAPI BackgroundTasks for async email sending.
+
         Returns:
-            Tuple containing:
-            - success status (bool)
-            - message (str)
-            - email change request if successful (Optional[EmailChangeRequest])
+            Tuple[bool, Optional[str]]: Success status and the verification token if successful.
+        
+        Raises:
+            HTTPException: If new email is already in use by another user.
         """
-        # Verify password
-        if not user.hashed_password or not verify_password(password, user.hashed_password):
-            logger.warning(
-                "Invalid password for email change request",
-                event_type="email_change_request_error",
-                user_id=user.id,
-                email=user.email,
-                error_type="invalid_password"
+        # Check if the new email is already registered by another user
+        existing_user_with_new_email = await self.get_user_by_email(new_email)
+        if existing_user_with_new_email and existing_user_with_new_email.id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New email address is already in use by another account."
             )
-            return False, "Invalid password", None
-            
-        # Check if new email is already in use
-        existing_user = await self.get_user_by_email(new_email)
-        if existing_user and existing_user.id != user.id:
-            logger.warning(
-                "Email already registered",
-                event_type="email_change_request_error",
-                user_id=user.id,
-                email=user.email,
-                new_email=new_email,
-                error_type="email_in_use"
-            )
-            return False, "New email address is already in use.", None
-            
+
         try:
             # Generate a random token
             alphabet = string.ascii_letters + string.digits
@@ -656,52 +658,69 @@ class UserService:
             
             # Create email change request record
             email_change_request = EmailChangeRequest(
-                user_id=user.id,
-                current_email=user.email,
+                user_id=user_id,
+                current_email=current_email,
                 new_email=new_email,
                 token=token,
                 expires_at=expires_at,
-                completed=False
+                completed=False 
             )
             
             self.db.add(email_change_request)
             await self.db.commit()
-            await self.db.refresh(email_change_request)
+            
+            # Send verification email for the new email address
+            email_service = EmailService(background_tasks, self.db)
+            user = await self.get_user_by_id(user_id) # Fetch user to pass to email service
+            if user: # Should always be true if user_id is valid
+                 await email_service.send_email_change_verification(user, new_email, token)
             
             logger.info(
-                f"Created email change request for user {user.id}",
+                f"Created email change request for user {user_id} to new email {new_email}",
                 event_type="email_change_request_created",
-                user_id=user.id,
-                current_email=user.email,
+                user_id=user_id,
                 new_email=new_email
             )
+            return True, token
             
-            return True, "Email change request created. Please check your new email for verification.", email_change_request
-            
+        except IntegrityError: # Should be caught by the check above, but as a safeguard
+            await self.db.rollback()
+            logger.error(
+                f"Integrity error creating email change request for user {user_id} to {new_email}.",
+                event_type="email_change_request_integrity_error",
+                user_id=user_id,
+                new_email=new_email
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not process email change request due to a database conflict."
+            )
         except Exception as e:
             await self.db.rollback()
             logger.error(
                 f"Error creating email change request: {str(e)}",
                 event_type="email_change_request_error",
-                user_id=user.id,
-                email=user.email,
+                user_id=user_id,
                 new_email=new_email,
                 error=str(e)
             )
-            return False, f"Error creating email change request: {str(e)}", None
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error creating email change request: {str(e)}"
+            )
 
     async def verify_email_change(self, token: str) -> Tuple[bool, str, Optional[User]]:
         """
-        Verify an email change request using a token.
-        
+        Verify an email change request using a token and update the user's email.
+
         Args:
-            token: The verification token
-            
+            token: The verification token for email change.
+
         Returns:
-            Tuple containing:
-            - success status (bool)
-            - message (str)
-            - updated user object if successful (Optional[User])
+            Tuple[bool, str, Optional[User]]: Success status, a message, and the updated user if successful.
+        
+        Raises:
+            HTTPException: If token is invalid, expired, or other errors occur.
         """
         try:
             # Find the email change request
@@ -715,40 +734,50 @@ class UserService:
             
             if not request_record:
                 logger.warning(
-                    "Invalid or completed email change token",
-                    event_type="email_change_verification_error",
-                    token=token,
-                    error_type="invalid_token"
+                    "Invalid email change token",
+                    event_type="invalid_email_change_token",
+                    token=token
                 )
-                return False, "Invalid or completed email change token.", None
+                return False, "Invalid or already used token.", None
                 
-            # Check if token is expired
             if datetime.now(UTC) > request_record.expires_at:
                 logger.warning(
                     "Expired email change token",
-                    event_type="email_change_verification_error",
+                    event_type="expired_email_change_token",
                     token=token,
-                    user_id=request_record.user_id,
-                    error_type="expired_token"
+                    user_id=request_record.user_id
                 )
                 return False, "Email change token has expired.", None
                 
             # Get the user
-            user = await self.get_user_by_id(request_record.user_id) # Use existing method
-            
-            if not user:
+            user = await self.get_user_by_id(request_record.user_id)
+            if not user: # Should not happen if request_record is valid
                 logger.error(
                     "User not found for email change token",
-                    event_type="email_change_verification_error",
+                    event_type="user_not_found_for_email_change",
                     token=token,
-                    user_id=request_record.user_id,
-                    error_type="user_not_found"
+                    user_id=request_record.user_id
                 )
                 return False, "User not found.", None
-                
-            # Update user's email and mark as unverified
+
+            # Check if the new email is already in use by ANOTHER user (race condition check)
+            existing_user_with_new_email = await self.get_user_by_email(request_record.new_email)
+            if existing_user_with_new_email and existing_user_with_new_email.id != user.id:
+                logger.warning(
+                    f"New email {request_record.new_email} for user {user.id} is now taken by user {existing_user_with_new_email.id}",
+                    event_type="email_change_conflict_on_verify",
+                    user_id=user.id,
+                    new_email=request_record.new_email
+                )
+                # Mark the token as completed to prevent reuse, even though it failed
+                request_record.completed = True
+                await self.db.commit()
+                return False, "The new email address has been taken by another account since the request was made.", None
+
+            # Update user's email and mark as verified (since new email was verified)
+            old_email = user.email
             user.email = request_record.new_email
-            user.is_verified = False # User needs to verify the new email
+            user.is_verified = True # New email is considered verified by this process
             
             # Mark request as completed
             request_record.completed = True
@@ -757,26 +786,14 @@ class UserService:
             await self.db.refresh(user)
             
             logger.info(
-                f"Email changed successfully for user {user.id}",
-                event_type="email_changed",
+                f"Email changed for user {user.id} from {old_email} to {user.email}",
+                event_type="email_changed_successfully",
                 user_id=user.id,
-                old_email=request_record.current_email,
+                old_email=old_email,
                 new_email=user.email
             )
+            return True, "Email address successfully updated.", user
             
-            return True, "Email changed successfully. Please verify your new email address.", user
-            
-        except IntegrityError: # Catch if the new email is somehow taken despite earlier checks
-            await self.db.rollback()
-            logger.error(
-                "New email address is already in use during final update.",
-                event_type="email_change_verification_error",
-                token=token,
-                user_id=request_record.user_id if 'request_record' in locals() else 'unknown',
-                new_email=request_record.new_email if 'request_record' in locals() else 'unknown',
-                error_type="email_in_use_race_condition"
-            )
-            return False, "New email address is already in use.", None
         except Exception as e:
             await self.db.rollback()
             logger.error(
@@ -785,121 +802,92 @@ class UserService:
                 token=token,
                 error=str(e)
             )
-            return False, f"Error verifying email change: {str(e)}", None
+            # Do not raise HTTPException directly to allow specific messaging in the router
+            return False, f"An unexpected error occurred: {str(e)}", None
 
 
-# Standalone functions for easier use in routers if needed, wrapping UserService methods
-
-async def create_user(db: AsyncSession, email: str, password: str, is_admin: bool = False) -> User:
-    return await UserService(db).create_user(email, password, is_admin)
-
-async def authenticate_user(db: AsyncSession, email: str, password: str) -> Optional[User]:
-    return await UserService(db).authenticate_user(email, password)
-
-async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
-    return await UserService(db).get_user_by_email(email)
-
-async def delete_user(db: AsyncSession, email: str, password: str) -> bool:
-    return await UserService(db).delete_user(email, password)
-
-async def update_user_password(db: AsyncSession, email: str, current_password: str, new_password: str) -> bool:
-    return await UserService(db).update_user_password(email, current_password, new_password)
+# --- Password Reset Functions (outside UserService class as they might be called without user context) ---
 
 async def create_password_reset_token(db: AsyncSession, email: str) -> str:
     """
-    Create a password reset token for a user.
-    
+    Create a token for password reset.
+
     Args:
-        db: Database session
-        email: Email of the user
-        
+        db: Async database session.
+        email: Email of the user requesting reset.
+
     Returns:
-        str: The password reset token
-        
+        str: The password reset token.
+
     Raises:
-        HTTPException: If user not found or error creating token
+        HTTPException: If user not found or other error.
     """
-    user_service = UserService(db)
+    user_service = UserService(db) # Instantiate UserService to use its methods
     user = await user_service.get_user_by_email(email)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        # Even if user not found, don't reveal this to prevent email enumeration.
+        # Log it and return a dummy token or handle as per security policy.
+        # For now, we'll proceed as if creating, but it won't be usable.
+        # A better approach might be to always "succeed" from API perspective.
+        logger.warning(f"Password reset requested for non-existent email: {email}", event_type="password_reset_nonexistent_email", email=email)
+        # To avoid timing attacks, generate a token anyway but don't save it for non-existent user
+        # However, for simplicity in this example, we'll raise if not found for now,
+        # assuming the calling router handles the "user not found" case by still returning 200 OK.
+        # This part needs careful security review in a real app.
+        # Let's assume the router will handle the "not found" by not sending an email.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
 
     try:
-        # Generate a random token
         alphabet = string.ascii_letters + string.digits
         token = ''.join(secrets.choice(alphabet) for i in range(64))
-        
-        # Set expiration time (e.g., 1 hour from now)
-        expires_at = datetime.now(UTC) + timedelta(hours=1)
-        
-        # Create token record (assuming PasswordResetToken model exists)
-        from app.models.user import PasswordResetToken  # Local import
-        reset_token = PasswordResetToken(
-            token=token,
-            user_id=user.id,
-            expires_at=expires_at,
-            used=False
+        expires_at = datetime.now(UTC) + timedelta(hours=1) # Token valid for 1 hour
+
+        # Invalidate previous tokens for this user
+        await db.execute(
+            update(User).where(User.id == user.id).values(
+                password_reset_token=None, 
+                password_reset_token_expires_at=None
+            )
         )
+        # It's better to store reset tokens in a separate table like EmailVerificationToken
+        # For now, updating User model directly as per existing (simplified) structure
+        user.password_reset_token = token
+        user.password_reset_token_expires_at = expires_at
         
-        db.add(reset_token)
         await db.commit()
+        await db.refresh(user)
         
-        logger.info(
-            f"Created password reset token for user {user.id}",
-            event_type="password_reset_token_created",
-            user_id=user.id,
-            email=user.email
-        )
-        
+        logger.info(f"Password reset token created for user {user.id}", event_type="password_reset_token_created", user_id=user.id)
         return token
-        
     except Exception as e:
         await db.rollback()
-        logger.error(
-            f"Error creating password reset token: {str(e)}",
-            event_type="password_reset_token_error",
-            user_id=user.id,
-            email=user.email,
-            error=str(e)
-        )
-        raise HTTPException(status_code=500, detail=f"Error creating password reset token: {str(e)}")
+        logger.error(f"Error creating password reset token for {email}: {str(e)}", event_type="password_reset_token_error", email=email, error=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create password reset token.")
 
 async def verify_reset_token(db: AsyncSession, token: str) -> int:
-    """Verify password reset token and return user ID."""
-    from app.models.user import PasswordResetToken  # Local import
-    
+    """Verify password reset token and return user ID if valid."""
     result = await db.execute(
-        select(PasswordResetToken).where(
-            PasswordResetToken.token == token,
-            PasswordResetToken.used == False, # noqa
-            PasswordResetToken.expires_at > datetime.now(UTC)
-        )
+        select(User).where(User.password_reset_token == token)
     )
-    token_record = result.scalar_one_or_none()
+    user = result.scalar_one_or_none()
+
+    if not user or user.password_reset_token_expires_at is None or datetime.now(UTC) > user.password_reset_token_expires_at:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
     
-    if not token_record:
-        raise HTTPException(status_code=400, detail="Invalid or expired token")
-        
-    return token_record.user_id
+    return user.id
 
 async def reset_password(db: AsyncSession, user_id: int, new_password: str) -> bool:
-    """Reset user password."""
-    from app.models.user import PasswordResetToken # Local import
+    """Reset user's password."""
     user_service = UserService(db)
-    user = await user_service.get_user_by_id(user_id) # Use existing method
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    user = await user_service.get_user_by_id(user_id)
+    if not user: # Should not happen if verify_reset_token was called
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     user.hashed_password = get_password_hash(new_password)
-    
-    # Mark token as used (assuming token is passed or handled elsewhere)
-    # This part might need adjustment based on how token is managed in the flow
-    await db.execute(
-        update(PasswordResetToken)
-        .where(PasswordResetToken.user_id == user_id, PasswordResetToken.used == False) # noqa
-        .values(used=True)
-    )
-    
+    user.password_reset_token = None # Invalidate token
+    user.password_reset_token_expires_at = None
     await db.commit()
-    logger.info(f"Password reset for user {user_id}", event_type="password_reset", user_id=user_id)
+    await db.refresh(user)
+    logger.info(f"Password reset for user {user_id}", event_type="password_reset_success", user_id=user_id)
     return True

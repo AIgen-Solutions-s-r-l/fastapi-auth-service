@@ -9,7 +9,7 @@ from app.main import app
 from app.core.database import get_db
 from app.models.user import User
 from app.core.security import create_access_token
-from app.services.user_service import create_user
+from app.services.user_service import UserService # Changed import
 from datetime import timedelta, datetime, timezone
 
 # Create a test database
@@ -56,7 +56,8 @@ async def test_user(db):
     }
     
     # Create the user
-    user = await create_user(db, user_data["email"], user_data["password"])
+    user_service = UserService(db)
+    user = await user_service.create_user(user_data["email"], user_data["password"])
     
     # Set the user as verified
     user.is_verified = True
@@ -93,7 +94,8 @@ async def test_admin_user(db):
     }
     
     # Create the user
-    user = await create_user(db, user_data["email"], user_data["password"])
+    user_service = UserService(db)
+    user = await user_service.create_user(user_data["email"], user_data["password"])
     
     # Set the user as verified and admin
     user.is_verified = True
@@ -131,7 +133,8 @@ async def test_user_with_profile_data(db):
     }
     
     # Create the user
-    user = await create_user(db, user_data["email"], user_data["password"])
+    user_service = UserService(db)
+    user = await user_service.create_user(user_data["email"], user_data["password"])
     
     # Set the user as verified
     user.is_verified = True

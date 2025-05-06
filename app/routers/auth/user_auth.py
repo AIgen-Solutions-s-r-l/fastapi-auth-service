@@ -13,7 +13,7 @@ from app.core.exceptions import UserAlreadyExistsError, UserNotFoundError, Inval
 from app.core.security import create_access_token
 from app.core.auth import get_internal_service
 from app.schemas.auth_schemas import LoginRequest, Token, UserCreate, UserResponse, RegistrationResponse
-from app.services.user_service import UserService, authenticate_user, create_user, get_user_by_email
+from app.services.user_service import UserService
 from app.models.user import User
 from app.log.logging import logger
 
@@ -35,10 +35,11 @@ async def login(
 ) -> Token:
     """Authenticate a user and return a JWT token."""
     try:
+        user_service = UserService(db)
         # Only use email for authentication
         email = credentials.email
         
-        user = await authenticate_user(db, email, credentials.password)
+        user = await user_service.authenticate_user(email, credentials.password)
         if not user:
             logger.warning("Authentication failed", event_type="login_failed", email=email, reason="invalid_credentials")
             raise InvalidCredentialsError()
@@ -110,11 +111,11 @@ async def register_user(
         - verification_sent status
     """
     try:
+        user_service = UserService(db)
         # Create the user (initially not verified)
-        new_user = await create_user(db, str(user.email), user.password)
+        new_user = await user_service.create_user(str(user.email), user.password)
         
         # Send verification email
-        user_service = UserService(db)
         verification_sent = await user_service.send_verification_email(new_user, background_tasks)
 
         background_tasks.add_task(user_service.send_email_to_zapier, str(new_user.email))
@@ -163,7 +164,8 @@ async def get_user_details(
     Requires a valid INTERNAL_API_KEY header.
     """
     try:
-        user = await get_user_by_email(db, email)
+        user_service = UserService(db)
+        user = await user_service.get_user_by_email(email)
         logger.info(
             "User details retrieved",
             event_type="internal_endpoint_access",
