@@ -13,7 +13,7 @@ from app.models.credit import UserCredit, CreditTransaction, TransactionType # N
 from app.core.db_utils import get_or_create_subscription # Helper for subscription
 # from app.services.user_service import UserService # To update user status
 # from app.services.credit_service import CreditService # To grant credits
-# from app.services.internal_event_publisher import InternalEventPublisher # To publish events
+from app.services.internal_event_publisher import InternalEventPublisher # To publish events
 from datetime import datetime, timezone # For trial_end_date
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -24,7 +24,7 @@ class WebhookService:
         self.db = db_session
         # self.user_service = UserService(db_session)
         # self.credit_service = CreditService(db_session)
-        # self.event_publisher = InternalEventPublisher() # Assuming it doesn't need db session
+        self.event_publisher = InternalEventPublisher() # Assuming it doesn't need db session
 
     async def is_event_processed(self, event_id: str) -> bool:
         """Checks if a Stripe event has already been processed."""
@@ -160,14 +160,14 @@ class WebhookService:
 
 
             # Publish user.trial.blocked event
-            # await self.event_publisher.publish_user_trial_blocked(
-            #     user_id=user_id,
-            #     stripe_customer_id=stripe_customer_id,
-            #     stripe_subscription_id=stripe_subscription_id, # The one that was (attempted to be) created
-            #     reason="duplicate_card_fingerprint",
-            #     blocked_card_fingerprint=card_fingerprint
-            # )
-            logger.info(f"Published user.trial.blocked event for user {user_id}", user_id=user_id, event_id=event_id)
+            await self.event_publisher.publish_user_trial_blocked(
+                user_id=user_id,
+                stripe_customer_id=stripe_customer_id,
+                stripe_subscription_id=stripe_subscription_id, # The one that was (attempted to be) created
+                reason="duplicate_card_fingerprint",
+                blocked_card_fingerprint=card_fingerprint
+            )
+            # logger.info(f"Published user.trial.blocked event for user {user_id}", user_id=user_id, event_id=event_id) # Covered by publisher log
 
         else:
             logger.info(
@@ -274,8 +274,14 @@ class WebhookService:
                     user.account_status = "trial_rejected"
                     await self.db.merge(user)
                 
-                # await self.event_publisher.publish_user_trial_blocked(...)
-                logger.info(f"Published user.trial.blocked event for user {user_id} due to duplicate fingerprint on subscription creation.", user_id=user_id, event_id=event_id)
+                await self.event_publisher.publish_user_trial_blocked(
+                    user_id=user_id,
+                    stripe_customer_id=stripe_customer_id,
+                    stripe_subscription_id=stripe_subscription_id,
+                    reason="duplicate_card_fingerprint",
+                    blocked_card_fingerprint=card_fingerprint
+                )
+                # logger.info(f"Published user.trial.blocked event for user {user_id} due to duplicate fingerprint on subscription creation.", user_id=user_id, event_id=event_id) # Covered by publisher log
                 await self.db.commit() # Commit changes (user status, subscription status)
                 return # Stop processing, trial rejected
 
@@ -310,8 +316,14 @@ class WebhookService:
                 user.has_consumed_initial_trial = True
                 user.account_status = 'trialing'
                 
-                # await self.event_publisher.publish_user_trial_started(...)
-                logger.info(f"Granted 10 trial credits to user {user_id}. Account status 'trialing'. Published user.trial.started.", event_id=event_id, user_id=user_id)
+                await self.event_publisher.publish_user_trial_started(
+                    user_id=user_id,
+                    stripe_customer_id=stripe_customer_id,
+                    stripe_subscription_id=stripe_subscription_id,
+                    trial_end_date=trial_end_date.isoformat() if trial_end_date else None,
+                    credits_granted=10
+                )
+                # logger.info(f"Granted 10 trial credits to user {user_id}. Account status 'trialing'. Published user.trial.started.", event_id=event_id, user_id=user_id) # Covered by publisher log
             else:
                 logger.info(f"User {user_id} has already consumed initial trial. No credits granted for subscription {stripe_subscription_id}.", event_id=event_id, user_id=user_id)
         
@@ -405,11 +417,21 @@ class WebhookService:
 
             # Publish events based on status change
             if new_account_status == 'frozen' and previous_account_status != 'frozen':
-                # await self.event_publisher.publish_user_account_frozen(...)
-                logger.info(f"Published user.account.frozen event for user {user_id}", user_id=user_id, event_id=event_id)
+                await self.event_publisher.publish_user_account_frozen(
+                    user_id=user_id,
+                    stripe_customer_id=stripe_customer_id,
+                    stripe_subscription_id=stripe_subscription_id,
+                    reason="subscription_status_change" # Or more specific reason if available
+                )
+                # logger.info(f"Published user.account.frozen event for user {user_id}", user_id=user_id, event_id=event_id) # Covered by publisher log
             elif new_account_status == 'active' and previous_account_status == 'frozen':
-                # await self.event_publisher.publish_user_account_unfrozen(...)
-                logger.info(f"Published user.account.unfrozen event for user {user_id}", user_id=user_id, event_id=event_id)
+                await self.event_publisher.publish_user_account_unfrozen(
+                    user_id=user_id,
+                    stripe_customer_id=stripe_customer_id,
+                    stripe_subscription_id=stripe_subscription_id,
+                    reason="subscription_status_change"
+                )
+                # logger.info(f"Published user.account.unfrozen event for user {user_id}", user_id=user_id, event_id=event_id) # Covered by publisher log
         
         try:
             await self.db.commit()
@@ -467,21 +489,26 @@ class WebhookService:
                         event_id=event_id, user_id=user_id, previous_status=previous_account_status)
 
             if previous_account_status == 'frozen':
-                # await self.event_publisher.publish_user_account_unfrozen(...)
-                logger.info(f"Published user.account.unfrozen event for user {user_id}", user_id=user_id, event_id=event_id)
+                await self.event_publisher.publish_user_account_unfrozen(
+                    user_id=user_id,
+                    stripe_customer_id=stripe_customer_id,
+                    stripe_subscription_id=stripe_subscription_id,
+                    reason="invoice_paid_after_failure"
+                )
+                # logger.info(f"Published user.account.unfrozen event for user {user_id}", user_id=user_id, event_id=event_id) # Covered by publisher log
         
         # Publish user.invoice.paid event
-        # await self.event_publisher.publish_user_invoice_paid(
-        #     user_id=user_id,
-        #     stripe_customer_id=stripe_customer_id,
-        #     stripe_subscription_id=stripe_subscription_id,
-        #     stripe_invoice_id=invoice_data.id,
-        #     amount_paid=invoice_data.amount_paid,
-        #     currency=invoice_data.currency,
-        #     billing_reason=invoice_data.billing_reason,
-        #     invoice_pdf_url=invoice_data.invoice_pdf
-        # )
-        logger.info(f"Published user.invoice.paid event for user {user_id}, invoice {invoice_data.id}", user_id=user_id, event_id=event_id, stripe_invoice_id=invoice_data.id)
+        await self.event_publisher.publish_user_invoice_paid(
+            user_id=user_id,
+            stripe_customer_id=stripe_customer_id,
+            stripe_subscription_id=stripe_subscription_id,
+            stripe_invoice_id=invoice_data.id,
+            amount_paid=invoice_data.amount_paid,
+            currency=invoice_data.currency,
+            billing_reason=invoice_data.billing_reason,
+            invoice_pdf_url=invoice_data.invoice_pdf
+        )
+        # logger.info(f"Published user.invoice.paid event for user {user_id}, invoice {invoice_data.id}", user_id=user_id, event_id=event_id, stripe_invoice_id=invoice_data.id) # Covered by publisher log
 
         try:
             await self.db.commit()
@@ -548,23 +575,28 @@ class WebhookService:
                             event_id=event_id, user_id=user_id, previous_status=previous_account_status)
                 
                 # Publish user.account.frozen event
-                # await self.event_publisher.publish_user_account_frozen(...)
-                logger.info(f"Published user.account.frozen event for user {user_id}", user_id=user_id, event_id=event_id)
+                await self.event_publisher.publish_user_account_frozen(
+                    user_id=user_id,
+                    stripe_customer_id=stripe_customer_id,
+                    stripe_subscription_id=stripe_subscription_id,
+                    reason="invoice_payment_failed"
+                )
+                # logger.info(f"Published user.account.frozen event for user {user_id}", user_id=user_id, event_id=event_id) # Covered by publisher log
         else:
              logger.info(f"Invoice payment failed {invoice_data.id} not related to a subscription cycle/create/update. No account status change.", event_id=event_id, billing_reason=invoice_data.billing_reason)
 
 
         # Publish user.invoice.failed event regardless of account status change
-        # await self.event_publisher.publish_user_invoice_failed(
-        #     user_id=user_id,
-        #     stripe_customer_id=stripe_customer_id,
-        #     stripe_subscription_id=stripe_subscription_id,
-        #     stripe_invoice_id=invoice_data.id,
-        #     stripe_charge_id=invoice_data.charge,
-        #     failure_reason=invoice_data.last_payment_error.message if invoice_data.last_payment_error else None,
-        #     next_payment_attempt_date=datetime.fromtimestamp(invoice_data.next_payment_attempt, timezone.utc) if invoice_data.next_payment_attempt else None
-        # )
-        logger.info(f"Published user.invoice.failed event for user {user_id}, invoice {invoice_data.id}", user_id=user_id, event_id=event_id, stripe_invoice_id=invoice_data.id)
+        await self.event_publisher.publish_user_invoice_failed(
+            user_id=user_id,
+            stripe_customer_id=stripe_customer_id,
+            stripe_subscription_id=stripe_subscription_id,
+            stripe_invoice_id=invoice_data.id,
+            stripe_charge_id=invoice_data.charge,
+            failure_reason=invoice_data.last_payment_error.message if invoice_data.last_payment_error else None,
+            next_payment_attempt_date=datetime.fromtimestamp(invoice_data.next_payment_attempt, timezone.utc).isoformat() if invoice_data.next_payment_attempt else None
+        )
+        # logger.info(f"Published user.invoice.failed event for user {user_id}, invoice {invoice_data.id}", user_id=user_id, event_id=event_id, stripe_invoice_id=invoice_data.id) # Covered by publisher log
 
         if needs_commit:
             try:

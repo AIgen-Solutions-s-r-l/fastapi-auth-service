@@ -91,8 +91,8 @@ async def stripe_webhook_endpoint(
             await webhook_service.handle_customer_subscription_updated(event)
         elif event.type == "invoice.payment_succeeded":
             await webhook_service.handle_invoice_payment_succeeded(event)
-        # elif event.type == "invoice.payment_failed":
-        #     await webhook_service.handle_invoice_payment_failed(event)
+        elif event.type == "invoice.payment_failed":
+            await webhook_service.handle_invoice_payment_failed(event)
         else:
             logger.warning(f"Received unhandled event type: {event.type}", event_id=event.id, event_type=event.type)
             # Still mark as processed if we don't want retries for unhandled types
