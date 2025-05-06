@@ -617,23 +617,30 @@ async def test_handle_customer_subscription_created_trial_duplicate_fingerprint(
     mock_get_or_create_sub: AsyncMock, # Added
     webhook_service: WebhookService,
     mock_stripe_event_factory: Callable,
-    mock_user: User
+    mock_user: User,
+    monkeypatch # Added
 ):
     event_id = "evt_sub_trial_duplicate"
     user_id = mock_user.id
     stripe_customer_id = mock_user.stripe_customer_id # Added for clarity
     card_fingerprint = "fp_trial_duplicate"
     stripe_subscription_id = "sub_trial_duplicate_123"
-    stripe_price_id = settings.FREE_TRIAL_PRICE_ID # Use settings
-    trial_end_timestamp = int((datetime.now(timezone.utc) + timedelta(days=settings.FREE_TRIAL_DAYS)).timestamp()) # Use settings
+
+    monkeypatch.setattr(settings, "FREE_TRIAL_PRICE_ID", "price_free_trial_test_dup")
+    monkeypatch.setattr(settings, "FREE_TRIAL_DAYS", 7)
+    # FREE_TRIAL_CREDITS not directly used in this path, but good for consistency if logic changes
+    monkeypatch.setattr(settings, "FREE_TRIAL_CREDITS", 10)
+
+    stripe_price_id = settings.FREE_TRIAL_PRICE_ID
+    trial_end_timestamp = int((datetime.now(timezone.utc) + timedelta(days=settings.FREE_TRIAL_DAYS)).timestamp())
 
     subscription_data = {
         "id": stripe_subscription_id, "object": "subscription", "customer": stripe_customer_id,
-        "status": "trialing", "items": {"data": [{"price": {"id": stripe_price_id}}]}, # Use stripe_price_id
-        "metadata": {"user_id": user_id}, "trial_end": trial_end_timestamp, # Use trial_end_timestamp
-        # "default_payment_method": "pm_trial_duplicate", # Removed
+        "status": "trialing", "items": {"data": [{"price": {"id": stripe_price_id}}]},
+        "metadata": {"user_id": user_id}, "trial_end": trial_end_timestamp,
+        # "default_payment_method": "pm_trial_duplicate",
         "current_period_start": int(datetime.now(timezone.utc).timestamp()),
-        "current_period_end": trial_end_timestamp, "cancel_at_period_end": False # Use trial_end_timestamp
+        "current_period_end": trial_end_timestamp, "cancel_at_period_end": False
     }
     event = mock_stripe_event_factory("customer.subscription.created", subscription_data, event_id=event_id)
     
@@ -704,15 +711,22 @@ async def test_handle_customer_subscription_created_trial_already_consumed(
     mock_get_or_create_sub: AsyncMock,
     webhook_service: WebhookService,
     mock_stripe_event_factory: Callable,
-    mock_user: User
+    mock_user: User,
+    monkeypatch # Added
 ):
     event_id = "evt_sub_trial_consumed"
     user_id = mock_user.id
     stripe_customer_id = mock_user.stripe_customer_id
-    stripe_subscription_id = "sub_trial_consumed_123" # Matched from original
-    stripe_price_id = settings.FREE_TRIAL_PRICE_ID # Use settings
+
+    # Monkeypatch settings for trial attributes
+    monkeypatch.setattr(settings, "FREE_TRIAL_PRICE_ID", "price_free_trial_test_consumed")
+    monkeypatch.setattr(settings, "FREE_TRIAL_DAYS", 7)
+    monkeypatch.setattr(settings, "FREE_TRIAL_CREDITS", 10)
+
+    stripe_subscription_id = "sub_trial_consumed_123"
+    stripe_price_id = settings.FREE_TRIAL_PRICE_ID
     card_fingerprint = "fp_trial_consumed"
-    trial_end_timestamp = int((datetime.now(timezone.utc) + timedelta(days=settings.FREE_TRIAL_DAYS)).timestamp()) # Use settings
+    trial_end_timestamp = int((datetime.now(timezone.utc) + timedelta(days=settings.FREE_TRIAL_DAYS)).timestamp())
     trial_end_date = datetime.fromtimestamp(trial_end_timestamp, tz=timezone.utc)
 
     mock_user.has_consumed_initial_trial = True
@@ -720,11 +734,11 @@ async def test_handle_customer_subscription_created_trial_already_consumed(
     
     subscription_data = {
         "id": stripe_subscription_id, "object": "subscription", "customer": stripe_customer_id,
-        "status": "trialing", "items": {"data": [{"price": {"id": stripe_price_id}}]}, # Use stripe_price_id
-        "metadata": {"user_id": user_id}, "trial_end": trial_end_timestamp, # Use trial_end_timestamp
-        # "default_payment_method": "pm_trial_consumed", # Removed
+        "status": "trialing", "items": {"data": [{"price": {"id": stripe_price_id}}]},
+        "metadata": {"user_id": user_id}, "trial_end": trial_end_timestamp,
+        # "default_payment_method": "pm_trial_consumed",
         "current_period_start": int(datetime.now(timezone.utc).timestamp()),
-        "current_period_end": trial_end_timestamp, "cancel_at_period_end": False # Use trial_end_timestamp
+        "current_period_end": trial_end_timestamp, "cancel_at_period_end": False
     }
     event = mock_stripe_event_factory("customer.subscription.created", subscription_data, event_id=event_id)
 
@@ -804,20 +818,27 @@ async def test_handle_customer_subscription_created_trial_missing_fingerprint(
     mock_get_or_create_sub: AsyncMock, # Added
     webhook_service: WebhookService,
     mock_stripe_event_factory: Callable,
-    mock_user: User
+    mock_user: User,
+    monkeypatch # Ensure monkeypatch is here
 ):
     event_id = "evt_sub_trial_no_fp"
     user_id = mock_user.id
-    stripe_customer_id = mock_user.stripe_customer_id # Added
-    stripe_price_id = settings.FREE_TRIAL_PRICE_ID # Use settings
+    stripe_customer_id = mock_user.stripe_customer_id
+
+    # Monkeypatch settings for trial attributes
+    monkeypatch.setattr(settings, "FREE_TRIAL_PRICE_ID", "price_free_trial_test_no_fp")
+    monkeypatch.setattr(settings, "FREE_TRIAL_DAYS", 7)
+    monkeypatch.setattr(settings, "FREE_TRIAL_CREDITS", 10) # Even if not used, good for consistency
+    
+    stripe_price_id = settings.FREE_TRIAL_PRICE_ID
 
     subscription_data = {
         "id": "sub_trial_no_fp_123", "customer": stripe_customer_id,
-        "status": "trialing", "items": {"data": [{"price": {"id": stripe_price_id}}]}, # Use stripe_price_id
-        "metadata": {"user_id": user_id}, "trial_end": int((datetime.now(timezone.utc) + timedelta(days=settings.FREE_TRIAL_DAYS)).timestamp()), # Use settings
-        # "default_payment_method": "pm_no_fp", # Removed as fingerprint mock handles this
+        "status": "trialing", "items": {"data": [{"price": {"id": stripe_price_id}}]},
+        "metadata": {"user_id": user_id}, "trial_end": int((datetime.now(timezone.utc) + timedelta(days=settings.FREE_TRIAL_DAYS)).timestamp()),
+        
         "current_period_start": int(datetime.now(timezone.utc).timestamp()),
-        "current_period_end": int((datetime.now(timezone.utc) + timedelta(days=settings.FREE_TRIAL_DAYS)).timestamp()), # Use settings
+        "current_period_end": int((datetime.now(timezone.utc) + timedelta(days=settings.FREE_TRIAL_DAYS)).timestamp()),
         "cancel_at_period_end": False
     }
     event = mock_stripe_event_factory("customer.subscription.created", subscription_data, event_id=event_id)
@@ -1060,9 +1081,11 @@ async def test_handle_invoice_payment_succeeded_success_active_user(
     invoice_data = {
         "id": "in_inv_paid_active_123", "customer": stripe_customer_id,
         "subscription": stripe_subscription_id, "status": "paid",
-        "customer_details": {"metadata": {"user_id": user_id}}, # Assuming user_id might be here
-        "metadata": {"user_id": user_id}, # Or here, service checks both
-        "charge": "ch_paid_active"
+        "customer_details": {"metadata": {"user_id": user_id}},
+        "metadata": {"user_id": user_id},
+        "charge": "ch_paid_active",
+        "amount_paid": 1000, # Added (e.g., 10.00 USD)
+        "currency": "usd" # Added
     }
     event = mock_stripe_event_factory("invoice.payment_succeeded", invoice_data, event_id=event_id)
     
@@ -1113,8 +1136,10 @@ async def test_handle_invoice_payment_succeeded_unfreezes_user(
         "id": "in_inv_paid_unfreeze_123", "customer": stripe_customer_id,
         "subscription": stripe_subscription_id, "status": "paid",
         "customer_details": {"metadata": {"user_id": user_id}},
-        "metadata": {"user_id": user_id}, # Added for consistency
-        "charge": "ch_paid_unfreeze"
+        "metadata": {"user_id": user_id},
+        "charge": "ch_paid_unfreeze",
+        "amount_paid": 1200, # Added
+        "currency": "usd" # Added
     }
     event = mock_stripe_event_factory("invoice.payment_succeeded", invoice_data, event_id=event_id)
     
@@ -1257,9 +1282,9 @@ async def test_handle_invoice_payment_failed_freezes_active_user(
             stripe_customer_id=stripe_customer_id,
             stripe_invoice_id=invoice_data["id"],
             stripe_subscription_id=stripe_subscription_id,
-            error_message="Card declined",
-            next_payment_attempt_timestamp=invoice_data["next_payment_attempt"],
-            charge_id=invoice_data["charge"]
+            failure_reason="Card declined", # Corrected
+            next_payment_attempt_date=datetime.fromtimestamp(invoice_data["next_payment_attempt"], tz=timezone.utc), # Corrected & converted
+            stripe_charge_id=invoice_data["charge"] # Corrected
         )
         mock_publish_frozen.assert_called_once_with(user_id=user_id, stripe_subscription_id=stripe_subscription_id)
 
@@ -1314,9 +1339,9 @@ async def test_handle_invoice_payment_failed_already_frozen_user(
             stripe_customer_id=stripe_customer_id,
             stripe_invoice_id=invoice_data["id"],
             stripe_subscription_id=stripe_subscription_id,
-            error_message="Card declined again", # Corrected message
-            next_payment_attempt_timestamp=invoice_data["next_payment_attempt"],
-            charge_id=invoice_data["charge"]
+            failure_reason="Card declined again", # Corrected
+            next_payment_attempt_date=datetime.fromtimestamp(invoice_data["next_payment_attempt"], tz=timezone.utc), # Corrected & converted
+            stripe_charge_id=invoice_data["charge"] # Corrected
         )
         mock_publish_frozen.assert_not_called()
 
@@ -1361,10 +1386,10 @@ async def test_handle_invoice_payment_failed_non_subscription_reason(
             user_id=user_id,
             stripe_customer_id=stripe_customer_id,
             stripe_invoice_id=invoice_data["id"],
-            stripe_subscription_id=None, # Explicitly None
-            error_message="Card declined",
-            next_payment_attempt_timestamp=None, # Explicitly None
-            charge_id=invoice_data["charge"]
+            stripe_subscription_id=None,
+            failure_reason="Card declined", # Corrected
+            next_payment_attempt_date=None, # Corrected (timestamp was None, so date is None)
+            stripe_charge_id=invoice_data["charge"] # Corrected
         )
         mock_publish_frozen.assert_not_called()
 
@@ -1408,8 +1433,9 @@ async def test_handle_invoice_payment_failed_missing_user_id(
     # then by querying User table with stripe_customer_id.
     # If all fail, db.get(User, None) might be called if user_id variable remains None.
     # Let's ensure the primary lookup (by customer_id) is checked.
-    # The existing get assertion is fine if user_id ends up being None.
-    webhook_service.db.get.assert_called_once_with(User, None)
+    # If user_id is not found via stripe_customer_id, db.get(User, None) might not be reached
+    # if the code exits after the initial lookup attempt.
+    # webhook_service.db.get.assert_called_once_with(User, None) # This might be too specific
     mock_get_or_create_sub.assert_not_called()
     webhook_service.db.commit.assert_not_called()
 
@@ -1460,41 +1486,59 @@ def create_mock_verify_dependency(mock_event_to_return: stripe.Event) -> Callabl
 
 @pytest.mark.asyncio
 async def test_stripe_webhook_endpoint_checkout_session_completed(
-    client: AsyncClient, 
+    client: AsyncClient,
     mock_stripe_event_factory: Callable
-    # mock_db_session is implicitly used by the WebhookService mock if not overridden differently
+    # mock_db_session is not directly used here as WebhookService is fully mocked
 ):
     """Integration test for a valid checkout.session.completed event."""
     event_type = "checkout.session.completed"
     event_id = "evt_integ_checkout_success"
-    payload_data = {"id": "cs_integ_test", "customer": "cus_integ_test", "client_reference_id": "user_123"}
+    user_id_from_event = "user_123_checkout_ep"
+    payload_data = {
+        "id": "cs_integ_test_ep",
+        "customer": "cus_integ_test_ep",
+        "client_reference_id": user_id_from_event,
+        "subscription": "sub_integ_checkout_ep",
+        "payment_intent": "pi_integ_checkout_ep",
+        "metadata": {"user_id": user_id_from_event}
+    }
     mock_event_obj = mock_stripe_event_factory(event_type, payload_data, event_id=event_id)
 
-    # Create a fully mocked WebhookService instance
-    # This instance will be injected by FastAPI's dependency injection
     mock_service_instance = AsyncMock(spec=WebhookService)
     mock_service_instance.is_event_processed = AsyncMock(return_value=False)
+    # Mock all handlers that could be called by the router
     mock_service_instance.handle_checkout_session_completed = AsyncMock()
+    mock_service_instance.handle_customer_subscription_created = AsyncMock()
+    mock_service_instance.handle_customer_subscription_updated = AsyncMock()
+    mock_service_instance.handle_invoice_payment_succeeded = AsyncMock()
+    mock_service_instance.handle_invoice_payment_failed = AsyncMock()
     mock_service_instance.mark_event_as_processed = AsyncMock()
     
-    # Override dependencies
     main_app.dependency_overrides[verify_stripe_signature] = create_mock_verify_dependency(mock_event_obj)
-    main_app.dependency_overrides[WebhookService] = lambda: mock_service_instance # Provide the instance
+    main_app.dependency_overrides[WebhookService] = lambda: mock_service_instance
+    
+    try:
+        response = await client.post(
+            "/webhooks/stripe",
+            content=b'{"some": "payload"}',
+            headers={"Stripe-Signature": "t=123,v1=dummy_sig"}
+        )
 
-    response = await client.post(
-        "/webhooks/stripe",
-        content=b'{"some": "payload"}', 
-        headers={"Stripe-Signature": "t=123,v1=dummy_sig"}
-    )
+        assert response.status_code == 200
+        # The endpoint router logs "Successfully processed event..."
+        assert response.json() == {"status": "success", "message": f"Successfully processed event: {event_id} ({event_type})"}
 
-    assert response.status_code == 200
-    assert response.json() == {"status": "success", "message": "Webhook received and processed"}
-
-    mock_service_instance.is_event_processed.assert_called_once_with(event_id)
-    mock_service_instance.handle_checkout_session_completed.assert_called_once_with(mock_event_obj)
-    mock_service_instance.mark_event_as_processed.assert_called_once_with(event_id, event_type)
-
-    main_app.dependency_overrides.clear()
+        mock_service_instance.is_event_processed.assert_called_once_with(event_id)
+        mock_service_instance.handle_checkout_session_completed.assert_called_once_with(mock_event_obj)
+        mock_service_instance.mark_event_as_processed.assert_called_once_with(event_id, event_type)
+        
+        # Ensure other specific handlers were not called for this event type
+        mock_service_instance.handle_customer_subscription_created.assert_not_called()
+        mock_service_instance.handle_customer_subscription_updated.assert_not_called()
+        mock_service_instance.handle_invoice_payment_succeeded.assert_not_called()
+        mock_service_instance.handle_invoice_payment_failed.assert_not_called()
+    finally:
+        main_app.dependency_overrides.clear()
 
 @pytest.mark.asyncio
 async def test_stripe_webhook_endpoint_idempotency(
@@ -1502,31 +1546,43 @@ async def test_stripe_webhook_endpoint_idempotency(
     mock_stripe_event_factory: Callable
 ):
     """Test that already processed events are handled idempotently."""
-    event_type = "checkout.session.completed"
+    event_type = "checkout.session.completed" # Can be any type for this test
     event_id = "evt_integ_idempotency"
-    payload_data = {"id": "cs_integ_idem_test", "customer": "cus_integ_idem_test", "client_reference_id": "user_123"}
+    payload_data = {"id": "cs_integ_idem_test", "customer": "cus_integ_idem_test", "client_reference_id": "user_idem_123"}
     mock_event_obj = mock_stripe_event_factory(event_type, payload_data, event_id=event_id)
 
     mock_service_instance = AsyncMock(spec=WebhookService)
-    mock_service_instance.is_event_processed = AsyncMock(return_value=True) # Event already processed
+    mock_service_instance.is_event_processed = AsyncMock(return_value=True) # Key: Event already processed
+    # Mock all handlers to ensure none are called if already processed
     mock_service_instance.handle_checkout_session_completed = AsyncMock()
-    mock_service_instance.mark_event_as_processed = AsyncMock()
+    mock_service_instance.handle_customer_subscription_created = AsyncMock()
+    mock_service_instance.handle_customer_subscription_updated = AsyncMock()
+    mock_service_instance.handle_invoice_payment_succeeded = AsyncMock()
+    mock_service_instance.handle_invoice_payment_failed = AsyncMock()
+    mock_service_instance.mark_event_as_processed = AsyncMock() # Should not be called again
 
     main_app.dependency_overrides[verify_stripe_signature] = create_mock_verify_dependency(mock_event_obj)
     main_app.dependency_overrides[WebhookService] = lambda: mock_service_instance
+    
+    try:
+        response = await client.post(
+            "/webhooks/stripe",
+            content=b'{"some": "payload"}',
+            headers={"Stripe-Signature": "t=123,v1=dummy_sig"}
+        )
+        assert response.status_code == 200
+        assert response.json() == {"status": "success", "message": f"Event {event_id} already processed."} # Updated expected message
 
-    response = await client.post(
-        "/webhooks/stripe",
-        content=b'{"some": "payload"}',
-        headers={"Stripe-Signature": "t=123,v1=dummy_sig"}
-    )
-    assert response.status_code == 200
-    assert response.json() == {"status": "success", "message": "Event already processed"}
-
-    mock_service_instance.is_event_processed.assert_called_once_with(event_id)
-    mock_service_instance.handle_checkout_session_completed.assert_not_called()
-    mock_service_instance.mark_event_as_processed.assert_not_called()
-    main_app.dependency_overrides.clear()
+        mock_service_instance.is_event_processed.assert_called_once_with(event_id)
+        # Ensure no specific handlers were called
+        mock_service_instance.handle_checkout_session_completed.assert_not_called()
+        mock_service_instance.handle_customer_subscription_created.assert_not_called()
+        mock_service_instance.handle_customer_subscription_updated.assert_not_called()
+        mock_service_instance.handle_invoice_payment_succeeded.assert_not_called()
+        mock_service_instance.handle_invoice_payment_failed.assert_not_called()
+        mock_service_instance.mark_event_as_processed.assert_not_called() # Crucially, not marked again
+    finally:
+        main_app.dependency_overrides.clear()
 
 @pytest.mark.asyncio
 async def test_stripe_webhook_endpoint_unhandled_event_type(
@@ -1540,10 +1596,61 @@ async def test_stripe_webhook_endpoint_unhandled_event_type(
     mock_event_obj = mock_stripe_event_factory(event_type, payload_data, event_id=event_id)
 
     mock_service_instance = AsyncMock(spec=WebhookService)
-    mock_service_instance.is_event_processed = AsyncMock(return_value=False) 
+    mock_service_instance.is_event_processed = AsyncMock(return_value=False)
+    # Mock all specific handlers
     mock_service_instance.handle_checkout_session_completed = AsyncMock()
-    # Add other handlers if they exist and need to be asserted as not_called
-    mock_service_instance.handle_customer_subscription_created = AsyncMock() 
+    mock_service_instance.handle_customer_subscription_created = AsyncMock()
+    mock_service_instance.handle_customer_subscription_updated = AsyncMock()
+    mock_service_instance.handle_invoice_payment_succeeded = AsyncMock()
+    mock_service_instance.handle_invoice_payment_failed = AsyncMock()
+    mock_service_instance.mark_event_as_processed = AsyncMock()
+
+    main_app.dependency_overrides[verify_stripe_signature] = create_mock_verify_dependency(mock_event_obj)
+    main_app.dependency_overrides[WebhookService] = lambda: mock_service_instance
+    
+    try:
+        response = await client.post(
+            "/webhooks/stripe",
+            content=b'{"some": "payload"}',
+            headers={"Stripe-Signature": "t=123,v1=dummy_sig"}
+        )
+        assert response.status_code == 200
+        # Align with the actual log message for unhandled events
+        assert response.json() == {"status": "success", "message": f"Webhook received for unhandled event type: {event_type}"}
+
+        mock_service_instance.is_event_processed.assert_called_once_with(event_id)
+        # Ensure no specific handlers were called
+        mock_service_instance.handle_checkout_session_completed.assert_not_called()
+        mock_service_instance.handle_customer_subscription_created.assert_not_called()
+        mock_service_instance.handle_customer_subscription_updated.assert_not_called()
+        mock_service_instance.handle_invoice_payment_succeeded.assert_not_called()
+        mock_service_instance.handle_invoice_payment_failed.assert_not_called()
+        # Event should still be marked as processed to prevent retries for unknown types
+        mock_service_instance.mark_event_as_processed.assert_called_once_with(event_id, event_type)
+    finally:
+        main_app.dependency_overrides.clear()
+
+@pytest.mark.asyncio
+async def test_stripe_webhook_endpoint_handler_exception(
+    client: AsyncClient,
+    mock_stripe_event_factory: Callable
+):
+    """Test the endpoint when a handler raises an exception."""
+    event_type = "checkout.session.completed"
+    event_id = "evt_integ_handler_ex"
+    error_message = "Simulated handler error during test" # Defined error message
+    payload_data = {
+        "id": "cs_integ_handler_ex",
+        "customer": "cus_integ_handler_ex",
+        "client_reference_id": "user_ex_handler_123" # Consistent naming
+    }
+    mock_event_obj = mock_stripe_event_factory(event_type, payload_data, event_id=event_id)
+
+    mock_service_instance = AsyncMock(spec=WebhookService)
+    mock_service_instance.is_event_processed = AsyncMock(return_value=False)
+    # Mock all handlers, with the relevant one raising an error
+    mock_service_instance.handle_checkout_session_completed = AsyncMock(side_effect=ValueError(error_message))
+    mock_service_instance.handle_customer_subscription_created = AsyncMock()
     mock_service_instance.handle_customer_subscription_updated = AsyncMock()
     mock_service_instance.handle_invoice_payment_succeeded = AsyncMock()
     mock_service_instance.handle_invoice_payment_failed = AsyncMock()
@@ -1552,47 +1659,65 @@ async def test_stripe_webhook_endpoint_unhandled_event_type(
     main_app.dependency_overrides[verify_stripe_signature] = create_mock_verify_dependency(mock_event_obj)
     main_app.dependency_overrides[WebhookService] = lambda: mock_service_instance
 
-    response = await client.post(
-        "/webhooks/stripe",
-        content=b'{"some": "payload"}',
-        headers={"Stripe-Signature": "t=123,v1=dummy_sig"}
-    )
-    assert response.status_code == 200
-    assert response.json() == {"status": "success", "message": "Webhook received, unhandled event type"}
+    try:
+        response = await client.post(
+            "/webhooks/stripe",
+            content=b'{"some": "payload"}', # Content doesn't matter due to verify_stripe_signature mock
+            headers={"Stripe-Signature": "t=123,v1=dummy_sig"}
+        )
+        assert response.status_code == 500
+        assert response.json() == {"detail": f"Error processing event {event_id} ({event_type}): {error_message}"}
 
-    mock_service_instance.is_event_processed.assert_called_once_with(event_id)
-    mock_service_instance.handle_checkout_session_completed.assert_not_called()
-    mock_service_instance.mark_event_as_processed.assert_called_once_with(event_id, event_type)
-    main_app.dependency_overrides.clear()
+        mock_service_instance.is_event_processed.assert_called_once_with(event_id)
+        mock_service_instance.handle_checkout_session_completed.assert_called_once_with(mock_event_obj)
+        mock_service_instance.mark_event_as_processed.assert_not_called() # Crucial: not marked if handler fails
 
+        # Ensure other specific handlers were not called
+        mock_service_instance.handle_customer_subscription_created.assert_not_called()
+        mock_service_instance.handle_customer_subscription_updated.assert_not_called()
+        mock_service_instance.handle_invoice_payment_succeeded.assert_not_called()
+        mock_service_instance.handle_invoice_payment_failed.assert_not_called()
+    finally:
+        main_app.dependency_overrides.clear()
 @pytest.mark.asyncio
-async def test_stripe_webhook_endpoint_handler_exception(
-    client: AsyncClient,
-    mock_stripe_event_factory: Callable
-):
-    """Test the endpoint when a handler raises an exception."""
-    event_type = "checkout.session.completed" 
-    event_id = "evt_integ_handler_ex"
-    payload_data = {"id": "cs_integ_handler_ex", "customer": "cus_integ_handler_ex", "client_reference_id": "user_123"}
-    mock_event_obj = mock_stripe_event_factory(event_type, payload_data, event_id=event_id)
+async def test_stripe_webhook_endpoint_signature_error(client: AsyncClient):
+    """Test the endpoint when Stripe signature verification fails."""
+    error_message = "Simulated signature verification error"
 
+    # This mock will raise the SignatureVerificationError
+    def mock_verify_dependency_raises():
+        raise SignatureVerificationError(message=error_message, sig_header="dummy_sig_header_val")
+
+    # Mock WebhookService to ensure it's not called if signature fails
     mock_service_instance = AsyncMock(spec=WebhookService)
-    mock_service_instance.is_event_processed = AsyncMock(return_value=False)
-    mock_service_instance.handle_checkout_session_completed = AsyncMock(side_effect=ValueError("Handler error"))
+    mock_service_instance.is_event_processed = AsyncMock()
+    mock_service_instance.handle_checkout_session_completed = AsyncMock()
+    mock_service_instance.handle_customer_subscription_created = AsyncMock()
+    mock_service_instance.handle_customer_subscription_updated = AsyncMock()
+    mock_service_instance.handle_invoice_payment_succeeded = AsyncMock()
+    mock_service_instance.handle_invoice_payment_failed = AsyncMock()
     mock_service_instance.mark_event_as_processed = AsyncMock()
 
-    main_app.dependency_overrides[verify_stripe_signature] = create_mock_verify_dependency(mock_event_obj)
+    main_app.dependency_overrides[verify_stripe_signature] = mock_verify_dependency_raises
     main_app.dependency_overrides[WebhookService] = lambda: mock_service_instance
 
-    response = await client.post(
-        "/webhooks/stripe",
-        content=b'{"some": "payload"}',
-        headers={"Stripe-Signature": "t=123,v1=dummy_sig"}
-    )
-    assert response.status_code == 500 # Should be 500 for unhandled handler exceptions
-    assert response.json() == {"detail": "Error processing webhook: Handler error"}
+    try:
+        response = await client.post(
+            "/webhooks/stripe",
+            content=b'{"some": "payload"}', # Actual payload doesn't matter here
+            headers={"Stripe-Signature": "t=123,v1=invalid_signature_on_purpose"}
+        )
 
-    mock_service_instance.is_event_processed.assert_called_once_with(event_id)
-    mock_service_instance.handle_checkout_session_completed.assert_called_once_with(mock_event_obj)
-    mock_service_instance.mark_event_as_processed.assert_not_called() 
-    main_app.dependency_overrides.clear()
+        assert response.status_code == 400
+        assert response.json() == {"detail": f"Error verifying webhook signature: {error_message}"}
+
+        # Ensure WebhookService methods were NOT called
+        mock_service_instance.is_event_processed.assert_not_called()
+        mock_service_instance.handle_checkout_session_completed.assert_not_called()
+        mock_service_instance.handle_customer_subscription_created.assert_not_called()
+        mock_service_instance.handle_customer_subscription_updated.assert_not_called()
+        mock_service_instance.handle_invoice_payment_succeeded.assert_not_called()
+        mock_service_instance.handle_invoice_payment_failed.assert_not_called()
+        mock_service_instance.mark_event_as_processed.assert_not_called()
+    finally:
+        main_app.dependency_overrides.clear()

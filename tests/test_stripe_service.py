@@ -7,6 +7,10 @@ import asyncio # Ensure asyncio is imported
 from app.services.stripe_service import StripeService
 from app.core.config import settings
 import stripe  # Import stripe to potentially mock its exceptions
+from app.models.user import User as UserModel
+from app.models.plan import Subscription as SubscriptionModel
+from app.core.exceptions import NotFoundError, DatabaseError as CoreDatabaseError # Renamed to avoid clash
+from fastapi import HTTPException
 
 def create_stripe_mock(**kwargs):
     """
@@ -38,9 +42,72 @@ def stripe_service():
     """Fixture to create a StripeService instance in test mode."""
     # Patch settings to avoid actual key validation during tests
     with patch('app.services.stripe_service.settings', MagicMock(STRIPE_SECRET_KEY='test_key', STRIPE_API_VERSION='test_version')):
-        # Initialize with test_mode=True to skip API key validation if needed
+# Initialize with test_mode=True to skip API key validation if needed
         service = StripeService(test_mode=True)
         return service
+@pytest.fixture
+def mock_db_session():
+    """Fixture for a mock SQLAlchemy AsyncSession."""
+    session = AsyncMock(spec=AsyncSession)
+    session.execute = AsyncMock()
+    session.commit = AsyncMock()
+    session.refresh = AsyncMock()
+    session.scalars = AsyncMock()
+    # Mock the return value of scalars().first()
+    session.scalars.return_value.first = AsyncMock()
+    return session
+
+@pytest.fixture
+def stripe_service_with_db(mock_db_session):
+    """Fixture to create a StripeService instance with a mocked DB session."""
+    # Patch settings to avoid actual key validation during tests
+    with patch('app.services.stripe_service.settings', MagicMock(STRIPE_SECRET_KEY='test_key', STRIPE_API_VERSION='test_version')):
+        service = StripeService(db_session=mock_db_session)
+        return service
+
+def create_mock_stripe_subscription(
+    id="sub_test123",
+    status="active",
+    cancel_at_period_end=False,
+    current_period_end=int((datetime.now(timezone.utc).timestamp()) + 30 * 24 * 60 * 60), # 30 days from now
+    customer="cus_test123",
+    **kwargs
+):
+    """Helper to create a mock Stripe Subscription object."""
+    mock_sub = MagicMock(spec=stripe.Subscription)
+    mock_sub.id = id
+    mock_sub.status = status
+    mock_sub.cancel_at_period_end = cancel_at_period_end
+    mock_sub.current_period_end = current_period_end
+    mock_sub.customer = customer
+    
+    for key, value in kwargs.items():
+        setattr(mock_sub, key, value)
+    return mock_sub
+
+@pytest.fixture
+def mock_user_active_db_subscription():
+    """Fixture for an active user subscription model instance from DB."""
+    sub = MagicMock(spec=SubscriptionModel)
+    sub.id = "db_sub_1"
+    sub.user_id = "user_123"
+    sub.stripe_subscription_id = "sub_active_stripe_id"
+    sub.status = "active" # or 'trialing'
+    sub.plan_id = "plan_1"
+    sub.current_period_start = datetime.now(timezone.utc)
+    sub.current_period_end = datetime.now(timezone.utc) # Placeholder, Stripe object's value is more relevant
+    sub.created_at = datetime.now(timezone.utc)
+    sub.updated_at = datetime.now(timezone.utc)
+    return sub
+
+# Patch datetime.now for consistent timestamps in tests
+@pytest.fixture
+def mock_datetime_now(mocker):
+    """Fixture to mock datetime.now."""
+    mock_now = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    mocker.patch('app.services.stripe_service.datetime', MagicMock(now=MagicMock(return_value=mock_now)))
+    return mock_now
+        
 
 # --- Tests for find_transaction_by_id ---
 
@@ -910,3 +977,219 @@ async def test_cancel_subscription_exception(stripe_service, mocker):
 
     assert result is False # Service method catches the error
     mock_to_thread.assert_awaited_once_with(stripe.Subscription.modify, subscription_id, cancel_at_period_end=True)
+
+# --- Tests for cancel_user_subscription ---
+
+@pytest.mark.asyncio
+async def test_cancel_user_subscription_success(
+    stripe_service_with_db: StripeService, 
+    mock_db_session: AsyncMock, 
+    mock_user_active_db_subscription: MagicMock,
+    mock_datetime_now: datetime,
+    mocker: MagicMock
+):
+    """Test successful subscription cancellation at period end."""
+    user_id = "user_123"
+    stripe_sub_id = mock_user_active_db_subscription.stripe_subscription_id
+    
+    # Configure DB mock to return the active subscription
+    mock_db_session.scalars.return_value.first.return_value = mock_user_active_db_subscription
+    
+    # Mock Stripe API calls
+    mock_retrieved_stripe_sub = create_mock_stripe_subscription(
+        id=stripe_sub_id, status="active", cancel_at_period_end=False
+    )
+    mock_updated_stripe_sub = create_mock_stripe_subscription(
+        id=stripe_sub_id, status="active", cancel_at_period_end=True, current_period_end=int(mock_datetime_now.timestamp() + 3600) # e.g. 1 hour later
+    )
+    
+    mocker.patch('stripe.Subscription.retrieve', return_value=mock_retrieved_stripe_sub)
+    mocker.patch('stripe.Subscription.update', return_value=mock_updated_stripe_sub)
+    
+    result = await stripe_service_with_db.cancel_user_subscription(user_id=user_id)
+    
+    # Assertions
+    stripe.Subscription.retrieve.assert_called_once_with(stripe_sub_id)
+    stripe.Subscription.update.assert_called_once_with(stripe_sub_id, cancel_at_period_end=True)
+    
+    mock_db_session.commit.assert_called_once()
+    mock_db_session.refresh.assert_called_once_with(mock_user_active_db_subscription)
+    
+    assert mock_user_active_db_subscription.updated_at == mock_datetime_now
+    
+    expected_period_end_dt = datetime.fromtimestamp(mock_updated_stripe_sub.current_period_end, tz=timezone.utc)
+    assert result == {
+        "stripe_subscription_id": stripe_sub_id,
+        "subscription_status": "active", # Stripe status is still active
+        "period_end_date": expected_period_end_dt.isoformat()
+    }
+
+@pytest.mark.asyncio
+async def test_cancel_user_subscription_already_set_to_cancel(
+    stripe_service_with_db: StripeService, 
+    mock_db_session: AsyncMock, 
+    mock_user_active_db_subscription: MagicMock,
+    mocker: MagicMock
+):
+    """Test when subscription is already set to cancel at period end on Stripe."""
+    user_id = "user_123"
+    stripe_sub_id = mock_user_active_db_subscription.stripe_subscription_id
+    
+    mock_db_session.scalars.return_value.first.return_value = mock_user_active_db_subscription
+    
+    mock_retrieved_stripe_sub = create_mock_stripe_subscription(
+        id=stripe_sub_id, status="active", cancel_at_period_end=True, current_period_end=1234567890
+    )
+    mocker.patch('stripe.Subscription.retrieve', return_value=mock_retrieved_stripe_sub)
+    mock_stripe_update = mocker.patch('stripe.Subscription.update') # Should not be called
+    
+    result = await stripe_service_with_db.cancel_user_subscription(user_id=user_id)
+    
+    stripe.Subscription.retrieve.assert_called_once_with(stripe_sub_id)
+    mock_stripe_update.assert_not_called()
+    mock_db_session.commit.assert_not_called() # No DB change in this specific path in service
+    
+    expected_period_end_dt = datetime.fromtimestamp(mock_retrieved_stripe_sub.current_period_end, tz=timezone.utc)
+    assert result == {
+        "stripe_subscription_id": stripe_sub_id,
+        "subscription_status": "active",
+        "period_end_date": expected_period_end_dt.isoformat()
+    }
+
+@pytest.mark.asyncio
+async def test_cancel_user_subscription_already_canceled_stripe(
+    stripe_service_with_db: StripeService, 
+    mock_db_session: AsyncMock, 
+    mock_user_active_db_subscription: MagicMock,
+    mock_datetime_now: datetime,
+    mocker: MagicMock
+):
+    """Test when subscription is already 'canceled' on Stripe."""
+    user_id = "user_123"
+    stripe_sub_id = mock_user_active_db_subscription.stripe_subscription_id
+    
+    # Simulate DB subscription is 'active' initially
+    mock_user_active_db_subscription.status = "active"
+    mock_db_session.scalars.return_value.first.return_value = mock_user_active_db_subscription
+    
+    mock_retrieved_stripe_sub = create_mock_stripe_subscription(id=stripe_sub_id, status="canceled")
+    mocker.patch('stripe.Subscription.retrieve', return_value=mock_retrieved_stripe_sub)
+    
+    with pytest.raises(HTTPException) as exc_info:
+        await stripe_service_with_db.cancel_user_subscription(user_id=user_id)
+        
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Subscription is already canceled."
+    
+    stripe.Subscription.retrieve.assert_called_once_with(stripe_sub_id)
+    # Check if DB was updated to 'canceled'
+    assert mock_user_active_db_subscription.status == "canceled"
+    assert mock_user_active_db_subscription.updated_at == mock_datetime_now
+    mock_db_session.commit.assert_called_once()
+    mock_db_session.refresh.assert_called_once_with(mock_user_active_db_subscription)
+
+@pytest.mark.asyncio
+async def test_cancel_user_subscription_stripe_api_error_on_update(
+    stripe_service_with_db: StripeService, 
+    mock_db_session: AsyncMock, 
+    mock_user_active_db_subscription: MagicMock,
+    mocker: MagicMock
+):
+    """Test handling Stripe API error during Subscription.update."""
+    user_id = "user_123"
+    stripe_sub_id = mock_user_active_db_subscription.stripe_subscription_id
+    
+    mock_db_session.scalars.return_value.first.return_value = mock_user_active_db_subscription
+    
+    mock_retrieved_stripe_sub = create_mock_stripe_subscription(id=stripe_sub_id, status="active", cancel_at_period_end=False)
+    mocker.patch('stripe.Subscription.retrieve', return_value=mock_retrieved_stripe_sub)
+    mocker.patch('stripe.Subscription.update', side_effect=stripe.error.StripeError("Stripe API failed"))
+    
+    with pytest.raises(HTTPException) as exc_info:
+        await stripe_service_with_db.cancel_user_subscription(user_id=user_id)
+        
+    assert exc_info.value.status_code == 500
+    assert "Stripe API error: Stripe API failed" in exc_info.value.detail
+    
+    stripe.Subscription.retrieve.assert_called_once_with(stripe_sub_id)
+    stripe.Subscription.update.assert_called_once_with(stripe_sub_id, cancel_at_period_end=True)
+    mock_db_session.commit.assert_not_called() # Should not commit if Stripe update fails
+
+@pytest.mark.asyncio
+async def test_cancel_user_subscription_stripe_resource_missing_on_retrieve(
+    stripe_service_with_db: StripeService, 
+    mock_db_session: AsyncMock, 
+    mock_user_active_db_subscription: MagicMock,
+    mocker: MagicMock
+):
+    """Test handling Stripe resource_missing error during Subscription.retrieve."""
+    user_id = "user_123"
+    # DB subscription exists
+    mock_db_session.scalars.return_value.first.return_value = mock_user_active_db_subscription 
+    
+    # Stripe.retrieve raises resource_missing
+    mocker.patch('stripe.Subscription.retrieve', side_effect=stripe.error.InvalidRequestError("No such subscription", "id", code="resource_missing"))
+    
+    with pytest.raises(HTTPException) as exc_info:
+        await stripe_service_with_db.cancel_user_subscription(user_id=user_id)
+        
+    assert exc_info.value.status_code == 404 # Service maps this to 404
+    assert exc_info.value.detail == "Subscription not found on Stripe."
+    
+    stripe.Subscription.retrieve.assert_called_once_with(mock_user_active_db_subscription.stripe_subscription_id)
+    mock_db_session.commit.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_cancel_user_subscription_db_not_found_error(
+    stripe_service_with_db: StripeService, 
+    mock_db_session: AsyncMock
+):
+    """Test when no active subscription is found in the database."""
+    user_id = "user_non_existent_sub"
+    mock_db_session.scalars.return_value.first.return_value = None # Simulate no subscription found
+    
+    with pytest.raises(HTTPException) as exc_info:
+        await stripe_service_with_db.cancel_user_subscription(user_id=user_id)
+        
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "No active subscription found to cancel."
+    
+    # Ensure execute was called to query DB
+    mock_db_session.execute.assert_called_once() 
+
+@pytest.mark.asyncio
+async def test_cancel_user_subscription_db_subscription_missing_stripe_id(
+    stripe_service_with_db: StripeService, 
+    mock_db_session: AsyncMock,
+    mocker: MagicMock
+):
+    """Test when DB subscription record is missing stripe_subscription_id."""
+    user_id = "user_missing_stripe_id"
+    
+    # Create a mock subscription that's missing the stripe_subscription_id
+    db_sub_no_stripe_id = MagicMock(spec=SubscriptionModel)
+    db_sub_no_stripe_id.id = "db_sub_no_stripe"
+    db_sub_no_stripe_id.user_id = user_id
+    db_sub_no_stripe_id.stripe_subscription_id = None # Key part: missing Stripe ID
+    db_sub_no_stripe_id.status = "active"
+    
+    mock_db_session.scalars.return_value.first.return_value = db_sub_no_stripe_id
+    
+    # We expect the service to raise a DatabaseError, which gets mapped to HTTP 500
+    # The original DatabaseError is raised from _get_user_active_subscription_from_db
+    # and then caught and re-raised as HTTPException in cancel_user_subscription
+    
+    # Mock the logger to prevent actual logging during test
+    mocker.patch('app.services.stripe_service.logger')
+
+    with pytest.raises(HTTPException) as exc_info:
+        await stripe_service_with_db.cancel_user_subscription(user_id=user_id)
+        
+    assert exc_info.value.status_code == 500 
+    # The detail comes from the re-raised HTTPException in cancel_user_subscription
+    # which wraps the CoreDatabaseError from _get_user_active_subscription_from_db
+    assert "Database error: Subscription record is missing Stripe ID." in exc_info.value.detail
+    
+    mock_db_session.execute.assert_called_once()
+    # Stripe API should not be called if DB record is faulty
+    mocker.patch('stripe.Subscription.retrieve').assert_not_called()
