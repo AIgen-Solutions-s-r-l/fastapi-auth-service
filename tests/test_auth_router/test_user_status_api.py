@@ -96,7 +96,7 @@ async def test_get_user_status_with_active_subscription(
         raise NotImplementedError(f"Unexpected call to asyncio.to_thread with {func.__name__}")
 
     with patch("asyncio.to_thread", AsyncMock(side_effect=mock_to_thread_side_effect)) as mock_asyncio_to_thread:
-        response = await client.get("/auth/me/status", headers=headers)
+        response = client.get("/auth/me/status", headers=headers)
  
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
@@ -137,7 +137,7 @@ async def test_get_user_status_no_subscription(
     access_token = create_access_token(data=token_data)
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    response = await client.get("/auth/me/status", headers=headers)
+    response = client.get("/auth/me/status", headers=headers)
 
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
@@ -201,14 +201,14 @@ async def test_get_user_status_trialing_subscription(
     }
  
     # Mock asyncio.to_thread specifically for the stripe call
-    async def mock_to_thread_side_effect(func, *args, **kwargs):
+    def mock_to_thread_side_effect(func, *args, **kwargs):
         if func == stripe.Subscription.retrieve:
             assert args[0] == "sub_test_trialing_status" # Check subscription ID
             return mock_stripe_sub_data
         raise NotImplementedError(f"Unexpected call to asyncio.to_thread with {func.__name__}")
 
-    with patch("asyncio.to_thread", AsyncMock(side_effect=mock_to_thread_side_effect)) as mock_asyncio_to_thread:
-        response = await client.get("/auth/me/status", headers=headers)
+    with patch("asyncio.to_thread", side_effect=mock_to_thread_side_effect) as mock_asyncio_to_thread:
+        response = client.get("/auth/me/status", headers=headers)
  
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
@@ -270,14 +270,14 @@ async def test_get_user_status_stripe_api_error(
     headers = {"Authorization": f"Bearer {access_token}"}
 
     # Mock asyncio.to_thread to raise StripeError when stripe.Subscription.retrieve is called
-    async def mock_to_thread_side_effect(func, *args, **kwargs):
+    def mock_to_thread_side_effect(func, *args, **kwargs):
         if func == stripe.Subscription.retrieve:
             assert args[0] == "sub_test_stripe_error" # Check subscription ID
             raise stripe.error.APIError("Stripe API is down")
         raise NotImplementedError(f"Unexpected call to asyncio.to_thread with {func.__name__}")
  
-    with patch("app.services.user_service.asyncio.to_thread", AsyncMock(side_effect=mock_to_thread_side_effect)) as mock_asyncio_to_thread:
-        response = await client.get("/auth/me/status", headers=headers)
+    with patch("app.services.user_service.asyncio.to_thread", side_effect=mock_to_thread_side_effect) as mock_asyncio_to_thread:
+        response = client.get("/auth/me/status", headers=headers)
  
     assert response.status_code == status.HTTP_200_OK # Endpoint should still succeed, but subscription details might be from DB / defaults
     data = response.json()
@@ -352,14 +352,14 @@ async def test_get_user_status_frozen_account(
     }
  
     # Mock asyncio.to_thread specifically for the stripe call
-    async def mock_to_thread_side_effect(func, *args, **kwargs):
+    def mock_to_thread_side_effect(func, *args, **kwargs):
         if func == stripe.Subscription.retrieve:
             assert args[0] == "sub_test_frozen_status" # Check subscription ID
             return mock_stripe_sub_data
         raise NotImplementedError(f"Unexpected call to asyncio.to_thread with {func.__name__}")
 
-    with patch("asyncio.to_thread", AsyncMock(side_effect=mock_to_thread_side_effect)) as mock_asyncio_to_thread:
-        response = await client.get("/auth/me/status", headers=headers)
+    with patch("asyncio.to_thread", side_effect=mock_to_thread_side_effect) as mock_asyncio_to_thread:
+        response = client.get("/auth/me/status", headers=headers)
  
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
@@ -434,14 +434,14 @@ async def test_get_user_status_canceled_subscription(
     }
  
     # Mock asyncio.to_thread specifically for the stripe call
-    async def mock_to_thread_side_effect(func, *args, **kwargs):
+    def mock_to_thread_side_effect(func, *args, **kwargs):
         if func == stripe.Subscription.retrieve:
             assert args[0] == "sub_test_canceled_status" # Check subscription ID
             return mock_stripe_sub_data
         raise NotImplementedError(f"Unexpected call to asyncio.to_thread with {func.__name__}")
 
-    with patch("asyncio.to_thread", AsyncMock(side_effect=mock_to_thread_side_effect)) as mock_asyncio_to_thread:
-        response = await client.get("/auth/me/status", headers=headers)
+    with patch("asyncio.to_thread", side_effect=mock_to_thread_side_effect) as mock_asyncio_to_thread:
+        response = client.get("/auth/me/status", headers=headers)
  
     assert response.status_code == status.HTTP_200_OK
     data = response.json()

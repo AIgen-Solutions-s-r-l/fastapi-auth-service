@@ -4,6 +4,7 @@ from datetime import datetime, UTC, timedelta
 from typing import Optional, Dict, Any, Tuple
 import secrets
 import string
+import asyncio
 
 from fastapi import HTTPException, status, BackgroundTasks
 from sqlalchemy import select, update, text
@@ -153,7 +154,7 @@ class UserService:
                 sub for sub in user.subscriptions if sub.status in ["active", "trialing"] and sub.is_active
             ]
             if relevant_subscriptions:
-                active_subscription = max(relevant_subscriptions, key=lambda s: s.created_at or datetime.min.replace(tzinfo=UTC))
+                active_subscription = max(relevant_subscriptions, key=lambda s: s.start_date or datetime.min.replace(tzinfo=UTC))
 
 
         if active_subscription and active_subscription.plan:
@@ -180,12 +181,12 @@ class UserService:
                         stripe_sub_id_db
                     )
                     if stripe_sub:
-                        stripe_subscription_status = stripe_sub.status
-                        if stripe_sub.trial_end:
-                            trial_end_date_stripe = datetime.fromtimestamp(stripe_sub.trial_end, UTC)
-                        if stripe_sub.current_period_end:
-                            current_period_end_stripe = datetime.fromtimestamp(stripe_sub.current_period_end, UTC)
-                        cancel_at_period_end_stripe = stripe_sub.cancel_at_period_end
+                        stripe_subscription_status = stripe_sub["status"]
+                        if stripe_sub.get("trial_end"):
+                            trial_end_date_stripe = datetime.fromtimestamp(stripe_sub["trial_end"], UTC)
+                        if stripe_sub.get("current_period_end"):
+                            current_period_end_stripe = datetime.fromtimestamp(stripe_sub["current_period_end"], UTC)
+                        cancel_at_period_end_stripe = stripe_sub["cancel_at_period_end"]
                         
                         # Update local subscription status if different from Stripe
                         if active_subscription.status != stripe_subscription_status:
