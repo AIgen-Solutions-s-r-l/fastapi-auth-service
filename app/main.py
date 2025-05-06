@@ -18,6 +18,7 @@ from app.core.db_exceptions import DatabaseException
 from app.routers.auth import router as auth_router
 from app.routers.healthcheck_router import router as healthcheck_router
 from app.routers.credit_router import router as credit_router
+from app.routers.webhooks.stripe_webhooks import router as stripe_webhooks_router # Corrected import
 import logging
 
 #try to intercept standard messages toward your Loguru
@@ -131,6 +132,7 @@ async def root():
 app.include_router(auth_router, prefix="/auth")
 app.include_router(healthcheck_router)
 app.include_router(credit_router)
+app.include_router(stripe_webhooks_router, prefix="/webhooks", tags=["Webhooks"]) # New router
 
 # @app.get("/test-log")
 # async def test_log():

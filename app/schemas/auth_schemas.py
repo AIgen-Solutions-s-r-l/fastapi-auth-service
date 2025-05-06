@@ -1,6 +1,7 @@
 """Pydantic models for authentication-related request and response schemas."""
 
 from typing import Optional
+from datetime import datetime # Added for datetime type hint
 from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 
 class GoogleAuthRequest(BaseModel):
@@ -136,5 +137,27 @@ class RegistrationResponse(BaseModel):
     message: str
     email: EmailStr
     verification_sent: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+# --- Schemas for User Status API ---
+
+class SubscriptionStatusResponse(BaseModel):
+    """Pydantic model for subscription details in user status response."""
+    stripe_subscription_id: str
+    status: str
+    plan_name: str
+    trial_end_date: Optional[datetime] = None
+    current_period_end: Optional[datetime] = None
+    cancel_at_period_end: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+class UserStatusResponse(BaseModel):
+    """Pydantic model for the user status API response."""
+    user_id: str # Assuming this will be the string representation of the UUID
+    account_status: str
+    credits_remaining: int
+    subscription: Optional[SubscriptionStatusResponse] = None
 
     model_config = ConfigDict(from_attributes=True)

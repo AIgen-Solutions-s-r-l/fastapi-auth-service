@@ -38,6 +38,15 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)) # Also adding updated_at for good practice
 
+    # --- NEW FIELDS for Free Trial Feature ---
+    account_status = Column(String(20), default="active", nullable=False, index=True)
+    # Options: "trialing", "active", "frozen", "canceled". Indexed for faster queries.
+
+    has_consumed_initial_trial = Column(Boolean, default=False, nullable=False, index=True)
+    # Flag to ensure the 10 initial trial credits are granted only once per user. Indexed.
+    # This helps with FR-3 idempotency.
+    # --- END NEW FIELDS ---
+
     # Relationships
     credits = relationship("UserCredit", back_populates="user", uselist=False, cascade="all, delete-orphan")
     credit_transactions = relationship("CreditTransaction", back_populates="user", cascade="all, delete-orphan")

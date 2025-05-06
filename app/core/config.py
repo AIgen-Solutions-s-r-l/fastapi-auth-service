@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     
     # Stripe settings
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
+    STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "") # Secret for verifying webhook signatures
     STRIPE_API_VERSION: str = os.getenv("STRIPE_API_VERSION", "2022-11-15")
     
     # Google OAuth settings

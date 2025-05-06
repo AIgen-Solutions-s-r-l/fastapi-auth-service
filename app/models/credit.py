@@ -17,6 +17,7 @@ class TransactionType(str, Enum):
     PLAN_RENEWAL = "plan_renewal"
     PLAN_UPGRADE = "plan_upgrade"
     ONE_TIME_PURCHASE = "one_time_purchase"
+    TRIAL_CREDIT_GRANT = "trial_credit_grant" # For the initial 10 free trial credits (FR-3)
 
 
 class UserCredit(Base):
