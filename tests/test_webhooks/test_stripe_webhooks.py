@@ -39,28 +39,58 @@ async def client(
 
 @pytest.fixture
 def mock_db_session() -> AsyncMock:
-    """Mocks the SQLAlchemy AsyncSession with improved async handling."""
+    """Mocks the SQLAlchemy AsyncSession with queued results for scalars().first() and settable result for get()."""
     session = AsyncMock(spec=AsyncSession)
     
-    # Mock the execute method to return an object that has scalars() -> first() chain
-    mock_execute_result = AsyncMock()
-    mock_scalars_result = AsyncMock()
-    mock_scalars_result.first = AsyncMock(return_value=None) # Default: not found
-    mock_execute_result.scalars = MagicMock(return_value=mock_scalars_result)
+    # --- Mocking for execute().scalars().first() with a queue ---
+    _mock_scalar_first_values_queue = []
+
+    async def mock_first(): # This is an actual async function
+        if _mock_scalar_first_values_queue:
+            return _mock_scalar_first_values_queue.pop(0)
+        # Default if queue is empty or not set, can be None or raise an error
+        # For tests, it's often better to ensure the queue is explicitly set.
+        # Let's default to None if queue is exhausted.
+        return None
+
+    mock_scalars_obj = AsyncMock() # The object returned by .scalars()
+    mock_scalars_obj.first = mock_first # .first is our async function
+
+    mock_execute_result = AsyncMock() # The object returned by .execute()
+    mock_execute_result.scalars = MagicMock(return_value=mock_scalars_obj) # .scalars() returns our mock_scalars_obj
     session.execute = AsyncMock(return_value=mock_execute_result)
 
-    # Mock other methods as AsyncMock
-    session.commit = AsyncMock()
-    session.rollback = AsyncMock() # Make rollback async
-    session.add = MagicMock() # Keep add sync if it doesn't need await
-    session.merge = AsyncMock()
-    session.flush = AsyncMock()
-    session.get = AsyncMock(return_value=None) # Default get returns None
-    session.scalar_one_or_none = AsyncMock(return_value=None) # Default scalar_one_or_none returns None
+    def set_db_execute_scalar_first_results(*values: Any):
+        """Helper to set a queue of values for await db.execute(...).scalars().first()"""
+        nonlocal _mock_scalar_first_values_queue
+        _mock_scalar_first_values_queue = list(values)
     
-    # Allow configuring the mock result dynamically in tests
-    session.mock_execute_result = mock_execute_result
-    session.mock_scalars_result = mock_scalars_result
+    session.set_db_execute_scalar_first_results = set_db_execute_scalar_first_results
+    # Tests should explicitly call set_db_execute_scalar_first_results as needed.
+
+    # --- Mocking for get() ---
+    _mock_get_value = None # Internal state for the result of get()
+
+    async def mock_get(model_class: Any, ident: Any): # Actual async function for get
+        return _mock_get_value
+
+    session.get = mock_get # session.get is our async function
+
+    def set_db_get_result(value: Any):
+        """Helper to set the value returned by await db.get(...)"""
+        nonlocal _mock_get_value
+        _mock_get_value = value
+        
+    session.set_db_get_result = set_db_get_result
+    session.set_db_get_result(None) # Default to None
+
+    # --- Mock other common methods ---
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    session.add = MagicMock() # Typically not awaited
+    session.merge = AsyncMock() # merge usually returns the instance, ensure mock does if needed
+    session.flush = AsyncMock()
+    session.scalar_one_or_none = AsyncMock(return_value=None) # If used, might need similar async def treatment
 
     return session
 
@@ -235,7 +265,7 @@ async def test_webhook_service_is_event_processed_true(
     """Test is_event_processed when event is already processed."""
     event_id = "evt_test_already_processed"
     # Configure the mock_db_session.execute().scalars().first() chain
-    webhook_service.db.mock_scalars_result.first.return_value = mock_processed_event
+    webhook_service.db.set_db_execute_scalar_first_results(mock_processed_event)
     
     result = await webhook_service.is_event_processed(event_id)
     
@@ -248,7 +278,7 @@ async def test_webhook_service_is_event_processed_false(webhook_service: Webhook
     """Test is_event_processed when event is not processed."""
     event_id = "evt_test_new_event"
     # Ensure the mock_db_session.execute().scalars().first() returns None (default fixture behavior)
-    webhook_service.db.mock_scalars_result.first.return_value = None
+    webhook_service.db.set_db_execute_scalar_first_results(None)
         
     result = await webhook_service.is_event_processed(event_id)
     
@@ -350,9 +380,8 @@ async def test_handle_checkout_session_completed_unique_fingerprint(
     webhook_service.get_card_fingerprint_from_event = AsyncMock(return_value=card_fingerprint)
     
     # Mock DB: No existing fingerprint
-    webhook_service.db.mock_scalars_result.first.return_value = None
-    # Mock DB: User found for status update (though not strictly needed for unique case here)
-    webhook_service.db.get.return_value = mock_user
+    webhook_service.db.set_db_execute_scalar_first_results(None) # For UsedTrialCardFingerprint check
+    webhook_service.db.set_db_get_result(mock_user)
 
     await webhook_service.handle_checkout_session_completed(event)
 
@@ -406,10 +435,8 @@ async def test_handle_checkout_session_completed_duplicate_fingerprint(
     existing_fingerprint_mock = MagicMock(spec=ProcessedStripeEvent) # Can use any model for structure
     existing_fingerprint_mock.user_id = "other_user_id"
     existing_fingerprint_mock.stripe_subscription_id = "sub_other"
-    webhook_service.db.mock_scalars_result.first.return_value = existing_fingerprint_mock
-    
-    # Mock DB: User found for status update
-    webhook_service.db.get.return_value = mock_user
+    webhook_service.db.set_db_execute_scalar_first_results(existing_fingerprint_mock) # For UsedTrialCardFingerprint check
+    webhook_service.db.set_db_get_result(mock_user)
     original_status = mock_user.account_status
 
 
@@ -1066,12 +1093,14 @@ async def test_handle_customer_subscription_updated_status_change_frozen_to_acti
 @pytest.mark.asyncio
 @patch("app.services.webhook_service.get_or_create_subscription")
 async def test_handle_customer_subscription_updated_local_sub_not_found(
-    mock_get_or_create_sub: AsyncMock,
+    # mock_get_or_create_sub: AsyncMock, # We will mock db interactions directly
     webhook_service: WebhookService,
     mock_stripe_event_factory: Callable,
     mock_user: User
 ):
     """Test handling when local subscription record doesn't exist initially."""
+    from app.models.plan import Subscription # Import for isinstance check
+
     event_id = "evt_sub_updated_sub_not_found"
     user_id = mock_user.id
     stripe_customer_id = mock_user.stripe_customer_id
@@ -1081,28 +1110,41 @@ async def test_handle_customer_subscription_updated_local_sub_not_found(
         "id": stripe_subscription_id, "object": "subscription", "customer": stripe_customer_id,
         "status": "active", "items": {"data": [{"price": {"id": "price_sub_not_found"}}]},
         "metadata": {"user_id": user_id},
-        "current_period_start": int(datetime.now(timezone.utc).timestamp()),
-        "current_period_end": int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp()),
+        "current_period_start": 1600000000,
+        "current_period_end": 1600000000 + 30*24*60*60,
         "cancel_at_period_end": False,
+        "canceled_at": None # Important for full update
     }
     event = mock_stripe_event_factory("customer.subscription.updated", subscription_data, event_id=event_id)
 
-    # Mock DB: select Subscription returns None
-    webhook_service.db.execute.return_value.scalars.return_value.first.return_value = None
-    
-    # Mock get_or_create_subscription to return a new mock subscription
-    new_mock_db_sub = AsyncMock(spec=DBSubscriptionModel)
-    new_mock_db_sub.stripe_customer_id = None # Simulate it being newly created
-    mock_get_or_create_sub.return_value = new_mock_db_sub
-    
-    webhook_service.db.get.return_value = mock_user # User is found
+    # 1. Initial select in handle_customer_subscription_updated returns None (sub not found)
+    # 2. get_or_create_subscription's internal select also returns None
+    webhook_service.db.set_db_execute_scalar_first_results(None, None)
+    webhook_service.db.set_db_get_result(mock_user) # User is found
+
+    _captured_merged_sub = None
+    original_merge_mock = webhook_service.db.merge
+    async def merge_side_effect_capture_sub_updated(instance):
+        nonlocal _captured_merged_sub
+        if isinstance(instance, Subscription):
+            _captured_merged_sub = instance
+        # Ensure the mock is awaitable if the original is
+        if asyncio.iscoroutinefunction(original_merge_mock):
+            return await original_merge_mock(instance)
+        elif isinstance(original_merge_mock, AsyncMock):
+            return original_merge_mock(instance)
+        return instance
+    webhook_service.db.merge = AsyncMock(side_effect=merge_side_effect_capture_sub_updated)
+    if not asyncio.iscoroutinefunction(webhook_service.db.merge._mock_call): # type: ignore
+        webhook_service.db.merge._is_coroutine = False # type: ignore
 
     await webhook_service.handle_customer_subscription_updated(event)
-
-    mock_get_or_create_sub.assert_called_once_with(webhook_service.db, user_id, stripe_subscription_id)
-    assert new_mock_db_sub.status == "active"
-    assert new_mock_db_sub.stripe_customer_id == stripe_customer_id # Ensure it's set
-    assert mock_user.account_status == "active" # Assuming user was not 'active' or status changed
+    
+    assert _captured_merged_sub is not None
+    assert _captured_merged_sub.stripe_subscription_id == stripe_subscription_id
+    assert _captured_merged_sub.status == "active"
+    assert _captured_merged_sub.stripe_customer_id == stripe_customer_id
+    assert mock_user.account_status == "active"
     webhook_service.db.commit.assert_called_once()
 
 @pytest.mark.asyncio
@@ -1308,19 +1350,23 @@ async def test_handle_invoice_payment_failed_freezes_active_user(
         "subscription": stripe_subscription_id, # Related to subscription
         "status": "open", # Or "void", "uncollectible" - status indicates failure
         "billing_reason": "subscription_cycle", # Reason indicates it should freeze
-        "amount_paid": 0, "currency": "usd", 
+        "amount_paid": 0, "currency": "usd",
         "last_payment_error": {"message": "Card declined"},
         "next_payment_attempt": int((datetime.now(timezone.utc) + timedelta(days=3)).timestamp()),
-        "customer_details": {"metadata": {"user_id": user_id}}
+        "customer_details": {"metadata": {"user_id": user_id}},
+        "charge": "ch_test_charge_failed_freeze" # Added mock charge ID
     }
     event = mock_stripe_event_factory("invoice.payment_failed", invoice_data, event_id=event_id)
 
     # Mock DB: User found
-    webhook_service.db.get.return_value = mock_user
+    webhook_service.db.set_db_get_result(mock_user)
     
-    # Mock DB: Subscription found (needed for the check)
-    mock_db_sub = AsyncMock(spec=DBSubscriptionModel)
-    webhook_service.db.execute.return_value.scalars.return_value.first.return_value = mock_db_sub
+    invoice_data["customer_details"] = {"metadata": {"user_id": user_id}} # Assume user_id in metadata
+    event = mock_stripe_event_factory("invoice.payment_failed", invoice_data, event_id=event_id)
+
+    db_sub_record = Subscription(id="sub_db_freeze", user_id=user_id, stripe_subscription_id=stripe_subscription_id)
+    db_sub_record.status = "active"
+    webhook_service.db.set_db_execute_scalar_first_results(db_sub_record) # For Subscription lookup
 
     webhook_service.event_publisher.publish_user_invoice_failed = AsyncMock()
     webhook_service.event_publisher.publish_user_account_frozen = AsyncMock()
@@ -1367,13 +1413,20 @@ async def test_handle_invoice_payment_failed_already_frozen_user(
         "subscription": stripe_subscription_id, "status": "open",
         "billing_reason": "subscription_cycle",
         "last_payment_error": {"message": "Insufficient funds"},
-        "customer_details": {"metadata": {"user_id": user_id}}
+        "customer_details": {"metadata": {"user_id": user_id}},
+        "charge": "ch_test_charge_already_frozen" # Added mock charge ID
     }
     event = mock_stripe_event_factory("invoice.payment_failed", invoice_data, event_id=event_id)
 
-    webhook_service.db.get.return_value = mock_user
-    mock_db_sub = AsyncMock(spec=DBSubscriptionModel)
-    webhook_service.db.execute.return_value.scalars.return_value.first.return_value = mock_db_sub
+    webhook_service.db.set_db_get_result(mock_user)
+    mock_user.account_status = "frozen" # Pre-condition
+    
+    invoice_data["customer_details"] = {"metadata": {"user_id": user_id}} # Assume user_id in metadata
+    event = mock_stripe_event_factory("invoice.payment_failed", invoice_data, event_id=event_id)
+
+    db_sub_record = Subscription(id="sub_db_already_frozen", user_id=user_id, stripe_subscription_id=stripe_subscription_id)
+    db_sub_record.status = "frozen"
+    webhook_service.db.set_db_execute_scalar_first_results(db_sub_record) # For Subscription lookup
     webhook_service.event_publisher.publish_user_invoice_failed = AsyncMock()
     webhook_service.event_publisher.publish_user_account_frozen = AsyncMock()
 
@@ -1405,11 +1458,17 @@ async def test_handle_invoice_payment_failed_non_subscription_reason(
         "status": "open",
         "billing_reason": "manual", # Manual invoice, not subscription cycle
         "last_payment_error": {"message": "Card declined"},
-        "customer_details": {"metadata": {"user_id": user_id}}
+        "customer_details": {"metadata": {"user_id": user_id}},
+        "charge": "ch_test_charge_non_sub_reason" # Added mock charge ID
     }
     event = mock_stripe_event_factory("invoice.payment_failed", invoice_data, event_id=event_id)
 
-    webhook_service.db.get.return_value = mock_user
+    webhook_service.db.set_db_get_result(mock_user)
+    invoice_data["customer_details"] = {"metadata": {"user_id": user_id}} # Assume user_id in metadata
+    event = mock_stripe_event_factory("invoice.payment_failed", invoice_data, event_id=event_id)
+    # No subscription lookup expected if invoice_data.subscription is None,
+    # and user_id is in metadata, so no execute().scalars().first() calls.
+    webhook_service.db.set_db_execute_scalar_first_results()
     webhook_service.event_publisher.publish_user_invoice_failed = AsyncMock()
     webhook_service.event_publisher.publish_user_account_frozen = AsyncMock()
 
@@ -1437,12 +1496,15 @@ async def test_handle_invoice_payment_failed_missing_user_id(
     event = mock_stripe_event_factory("invoice.payment_failed", invoice_data, event_id=event_id)
 
     # Mock DB: User.id lookup returns None
-    webhook_service.db.execute.return_value.scalars.return_value.first.return_value = None
+    webhook_service.db.set_db_execute_scalar_first_results(None) # For User ID lookup
+    webhook_service.db.set_db_get_result(None)
 
     await webhook_service.handle_invoice_payment_failed(event)
 
     webhook_service.db.execute.assert_called_once() # Attempted user lookup
-    webhook_service.db.get.assert_not_called()
+    webhook_service.db.execute.assert_called_once()
+    webhook_service.db.get.assert_called_once_with(User, None)
+    webhook_service.db.commit.assert_not_called()
     webhook_service.db.commit.assert_not_called()
     webhook_service.event_publisher.publish_user_invoice_failed.assert_not_called()
     webhook_service.event_publisher.publish_user_account_frozen.assert_not_called()

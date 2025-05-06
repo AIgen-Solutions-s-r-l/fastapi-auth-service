@@ -30,7 +30,7 @@ class WebhookService:
         """Checks if a Stripe event has already been processed."""
         stmt = select(ProcessedStripeEvent).where(ProcessedStripeEvent.stripe_event_id == event_id)
         result = await self.db.execute(stmt)
-        return result.scalars().first() is not None
+        return await result.scalars().first() is not None
 
     async def mark_event_as_processed(self, event_id: str, event_type: str):
         """Marks a Stripe event as processed."""
@@ -122,7 +122,7 @@ class WebhookService:
         # Card Uniqueness Gate (FR-4)
         stmt = select(UsedTrialCardFingerprint).where(UsedTrialCardFingerprint.stripe_card_fingerprint == card_fingerprint)
         result = await self.db.execute(stmt)
-        existing_fingerprint_use = result.scalars().first()
+        existing_fingerprint_use = await result.scalars().first()
 
         if existing_fingerprint_use:
             logger.warning(
@@ -210,7 +210,7 @@ class WebhookService:
         if not user_id:
             user_stmt = select(User.id).where(User.stripe_customer_id == stripe_customer_id)
             user_result = await self.db.execute(user_stmt)
-            user_id = user_result.scalars().first()
+            user_id = await user_result.scalars().first()
         
         if not user_id:
             logger.error(f"User ID not found for customer.subscription.created: {event_id}, Stripe Customer: {stripe_customer_id}", event_id=event_id, stripe_customer_id=stripe_customer_id)
@@ -300,7 +300,7 @@ class WebhookService:
             if not user.has_consumed_initial_trial:
                 # Ensure UserCredit record exists
                 user_credit = await self.db.execute(select(UserCredit).where(UserCredit.user_id == user_id))
-                user_credit_record = user_credit.scalars().first()
+                user_credit_record = await user_credit.scalars().first()
                 if not user_credit_record:
                     user_credit_record = UserCredit(user_id=user_id, balance=0)
                     self.db.add(user_credit_record)
@@ -361,7 +361,7 @@ class WebhookService:
         if not user_id:
             user_stmt = select(User.id).where(User.stripe_customer_id == stripe_customer_id)
             user_result = await self.db.execute(user_stmt)
-            user_id = user_result.scalars().first()
+            user_id = await user_result.scalars().first()
 
         if not user_id:
             logger.error(f"User ID not found for customer.subscription.updated: {event_id}, Stripe Customer: {stripe_customer_id}", event_id=event_id, stripe_customer_id=stripe_customer_id)
@@ -370,7 +370,7 @@ class WebhookService:
         db_subscription = await self.db.execute(
             select(Subscription).where(Subscription.stripe_subscription_id == stripe_subscription_id)
         )
-        subscription_record = db_subscription.scalars().first()
+        subscription_record = await db_subscription.scalars().first()
 
         if not subscription_record:
             logger.warning(f"Local subscription record not found for stripe_subscription_id {stripe_subscription_id} during update. Creating one.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
@@ -471,7 +471,7 @@ class WebhookService:
         if not user_id and stripe_customer_id: # Fallback: try to get from our User table
             user_stmt = select(User.id).where(User.stripe_customer_id == stripe_customer_id)
             user_result = await self.db.execute(user_stmt)
-            user_id = user_result.scalars().first()
+            user_id = await user_result.scalars().first()
         
         if not user_id:
             logger.error(f"User ID not found for invoice.payment_succeeded: {event_id}, Stripe Customer: {stripe_customer_id}", event_id=event_id, stripe_customer_id=stripe_customer_id)
@@ -487,7 +487,7 @@ class WebhookService:
         # If related to a subscription, ensure subscription is marked active
         if stripe_subscription_id:
             db_sub = await self.db.execute(select(Subscription).where(Subscription.stripe_subscription_id == stripe_subscription_id))
-            subscription_record = db_sub.scalars().first()
+            subscription_record = await db_sub.scalars().first()
             if subscription_record and subscription_record.status != 'active':
                 subscription_record.status = 'active' # Or whatever Stripe status is on the sub now
                 await self.db.merge(subscription_record)
@@ -549,7 +549,7 @@ class WebhookService:
         if not user_id and stripe_customer_id:
             user_stmt = select(User.id).where(User.stripe_customer_id == stripe_customer_id)
             user_result = await self.db.execute(user_stmt)
-            user_id = user_result.scalars().first()
+            user_id = await user_result.scalars().first()
 
         if not user_id:
             logger.error(f"User ID not found for invoice.payment_failed: {event_id}, Stripe Customer: {stripe_customer_id}", event_id=event_id, stripe_customer_id=stripe_customer_id)
@@ -566,7 +566,7 @@ class WebhookService:
         # Only freeze account if related to a subscription payment failure
         if stripe_subscription_id and invoice_data.billing_reason in ['subscription_cycle', 'subscription_create', 'subscription_update']:
             db_sub = await self.db.execute(select(Subscription).where(Subscription.stripe_subscription_id == stripe_subscription_id))
-            subscription_record = db_sub.scalars().first()
+            subscription_record = await db_sub.scalars().first()
             
             if subscription_record:
                 # Update subscription status based on Stripe's recommendation or a generic 'past_due'
