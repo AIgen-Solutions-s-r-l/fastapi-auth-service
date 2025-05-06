@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from fastapi import BackgroundTasks, HTTPException, status
 
 from app.models.user import User
-from app.models.plan import Plan, Subscription, UsedFreePlanCard
+from app.models.plan import Plan, Subscription, UsedTrialCardFingerprint
 from app.models.credit import UserCredit, CreditTransaction, TransactionType
 from app.services.credit import CreditService
 from app.services.credit.transaction import TransactionService
@@ -175,10 +175,10 @@ async def test_free_plan_subscription_new_card(
                 mock_pm_retrieve.assert_called_once()
                 transaction_service.purchase_plan.assert_called_once()
                 
-                # Verify a record was added to UsedFreePlanCard
+                # Verify a record was added to UsedTrialCardFingerprint
                 from sqlalchemy import select
                 card_result = await db.execute(
-                    select(UsedFreePlanCard).where(UsedFreePlanCard.stripe_card_fingerprint == "card_fingerprint123")
+                    select(UsedTrialCardFingerprint).where(UsedTrialCardFingerprint.stripe_card_fingerprint == "card_fingerprint123")
                 )
                 card_record = card_result.scalar_one_or_none()
                 assert card_record is not None
@@ -192,8 +192,8 @@ async def test_free_plan_subscription_duplicate_card(
     db: AsyncSession
 ):
     """Test rejection when attempting to use the same card fingerprint for a second limited free plan."""
-    # First, add a record to the UsedFreePlanCard table
-    used_card = UsedFreePlanCard(
+    # First, add a record to the UsedTrialCardFingerprint table
+    used_card = UsedTrialCardFingerprint(
         stripe_card_fingerprint="card_fingerprint123",
         stripe_payment_method_id="pm_existing123",
         stripe_subscription_id="sub_existing123",
@@ -482,7 +482,7 @@ async def test_free_plan_subscription_race_condition(
                     if not race_condition_triggered and transaction_id == "sub_test123":
                         race_condition_triggered = True
                         # Add the conflicting record
-                        used_card = UsedFreePlanCard(
+                        used_card = UsedTrialCardFingerprint(
                             stripe_card_fingerprint="card_fingerprint123",
                             stripe_payment_method_id="pm_race123",
                             stripe_subscription_id="sub_race123",

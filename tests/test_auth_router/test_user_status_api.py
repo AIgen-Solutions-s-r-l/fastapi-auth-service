@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from unittest.mock import patch, AsyncMock
 from datetime import datetime, timedelta, UTC
 from decimal import Decimal
+import stripe # Add missing import
 
 from app.models.user import User
 from app.models.credit import UserCredit
@@ -262,6 +263,147 @@ async def test_get_user_status_stripe_api_error(
     assert data["subscription"]["current_period_end"] is None
     
     mock_stripe_retrieve.assert_called_once_with("sub_test_stripe_error")
+
+
+@pytest.mark.asyncio
+async def test_get_user_status_frozen_account(
+    client: AsyncClient, db_session: AsyncSession, test_user_with_profile_data: User
+):
+    """Test successfully retrieving user status for a user with a frozen account."""
+    user = test_user_with_profile_data
+    
+    plan = Plan(
+        name="Frozen Plan",
+        credit_amount=Decimal("0"),
+        price=Decimal("9.99"),
+        stripe_price_id="price_frozen_test",
+        stripe_product_id="prod_frozen_test",
+    )
+    db_session.add(plan)
+    await db_session.flush()
+
+    subscription = Subscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        stripe_subscription_id="sub_test_frozen_status",
+        status="past_due", # DB status
+        is_active=False, # A frozen/past_due subscription is typically not active
+        renewal_date=datetime.now(UTC) - timedelta(days=5), # Renewal date in the past
+        start_date=datetime.now(UTC) - timedelta(days=35),
+        current_period_end_stripe_mock=datetime.now(UTC) - timedelta(days=5),
+        trial_end_date_stripe_mock=None,
+        cancel_at_period_end_stripe_mock=False
+    )
+    db_session.add(subscription)
+
+    user_credit = UserCredit(user_id=user.id, balance=Decimal("5.00"))
+    db_session.add(user_credit)
+    
+    user.account_status = "frozen" # Key status for this test
+    db_session.add(user)
+    await db_session.commit()
+
+    token_data = {"sub": user.email, "id": user.id}
+    access_token = create_access_token(data=token_data)
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    mock_stripe_sub_data = {
+        "id": "sub_test_frozen_status",
+        "status": "past_due", # Stripe status
+        "current_period_end": int((datetime.now(UTC) - timedelta(days=5)).timestamp()),
+        "trial_end": None,
+        "cancel_at_period_end": False,
+    }
+
+    with patch("stripe.Subscription.retrieve", AsyncMock(return_value=mock_stripe_sub_data)) as mock_stripe_retrieve:
+        response = await client.get("/auth/me/status", headers=headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+
+    assert data["user_id"] == str(user.id)
+    assert data["account_status"] == "frozen"
+    assert data["credits_remaining"] == 5
+    assert data["subscription"] is not None
+    assert data["subscription"]["stripe_subscription_id"] == "sub_test_frozen_status"
+    assert data["subscription"]["status"] == "past_due"
+    assert data["subscription"]["plan_name"] == "Frozen Plan"
+    assert data["subscription"]["cancel_at_period_end"] is False
+    assert data["subscription"]["trial_end_date"] is None
+    assert datetime.fromisoformat(data["subscription"]["current_period_end"].replace("Z", "+00:00")).date() == (datetime.now(UTC) - timedelta(days=5)).date()
+    
+    mock_stripe_retrieve.assert_called_once_with("sub_test_frozen_status")
+
+
+@pytest.mark.asyncio
+async def test_get_user_status_canceled_subscription(
+    client: AsyncClient, db_session: AsyncSession, test_user_with_profile_data: User
+):
+    """Test successfully retrieving user status for a user with a canceled subscription."""
+    user = test_user_with_profile_data
+    
+    plan = Plan(
+        name="Canceled Plan",
+        credit_amount=Decimal("0"),
+        price=Decimal("9.99"),
+        stripe_price_id="price_canceled_test",
+        stripe_product_id="prod_canceled_test",
+    )
+    db_session.add(plan)
+    await db_session.flush()
+
+    # Subscription was active, then canceled
+    subscription = Subscription(
+        user_id=user.id,
+        plan_id=plan.id,
+        stripe_subscription_id="sub_test_canceled_status",
+        status="canceled", # DB status
+        is_active=False,
+        renewal_date=datetime.now(UTC) - timedelta(days=10), # Renewal would have been in past
+        start_date=datetime.now(UTC) - timedelta(days=40),
+        end_date=datetime.now(UTC) - timedelta(days=10), # Actual cancellation date
+        current_period_end_stripe_mock=datetime.now(UTC) - timedelta(days=10),
+        trial_end_date_stripe_mock=None,
+        cancel_at_period_end_stripe_mock=False # Explicitly canceled, not at period end
+    )
+    db_session.add(subscription)
+
+    user_credit = UserCredit(user_id=user.id, balance=Decimal("2.00"))
+    db_session.add(user_credit)
+    
+    user.account_status = "active" # User account might still be active, but subscription is canceled
+    db_session.add(user)
+    await db_session.commit()
+
+    token_data = {"sub": user.email, "id": user.id}
+    access_token = create_access_token(data=token_data)
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    mock_stripe_sub_data = {
+        "id": "sub_test_canceled_status",
+        "status": "canceled", # Stripe status
+        "current_period_end": int((datetime.now(UTC) - timedelta(days=10)).timestamp()),
+        "trial_end": None,
+        "cancel_at_period_end": False, # Or True if it was set to cancel at period end and period ended
+        "canceled_at": int((datetime.now(UTC) - timedelta(days=10)).timestamp()),
+    }
+
+    with patch("stripe.Subscription.retrieve", AsyncMock(return_value=mock_stripe_sub_data)) as mock_stripe_retrieve:
+        response = await client.get("/auth/me/status", headers=headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+
+    assert data["user_id"] == str(user.id)
+    assert data["account_status"] == "active" # User account can be active even if sub is canceled
+    assert data["credits_remaining"] == 2
+    assert data["subscription"] is not None # API returns the latest (canceled) subscription
+    assert data["subscription"]["stripe_subscription_id"] == "sub_test_canceled_status"
+    assert data["subscription"]["status"] == "canceled"
+    assert data["subscription"]["plan_name"] == "Canceled Plan"
+    assert datetime.fromisoformat(data["subscription"]["current_period_end"].replace("Z", "+00:00")).date() == (datetime.now(UTC) - timedelta(days=10)).date()
+    
+    mock_stripe_retrieve.assert_called_once_with("sub_test_canceled_status")
 
 # TODO: Add test for user not found (e.g., token for a deleted user, if get_current_active_user allows it)
 # This might be tricky if get_current_active_user already raises 401/404.

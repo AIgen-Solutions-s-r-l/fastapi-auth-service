@@ -1,7 +1,7 @@
 """Common test fixtures and configurations."""
 
 import pytest
-from fastapi.testclient import TestClient
+from httpx import AsyncClient # Changed from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from typing import AsyncGenerator, Generator
@@ -54,17 +54,22 @@ async def db() -> AsyncGenerator[AsyncSession, None]:
         await session.close()
 
 @pytest.fixture
-def client(db: AsyncSession) -> Generator:
-    """Create a test client with a clean database."""
+async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]: # Changed to async fixture and AsyncClient
+    """Create an async test client with a clean database."""
     
     async def override_get_db():
         try:
             yield db
         finally:
-            await db.close()
+            # The db session is managed by its own fixture's finally block,
+            # no need to explicitly close here if override_get_db is just yielding it.
+            # However, if the app expects get_db to manage the session lifecycle,
+            # then db.close() might be needed, but it could conflict with the db fixture.
+            # For now, let's assume the db fixture handles its own closure.
+            pass
 
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
+    async with AsyncClient(app=app, base_url="http://test") as test_client: # Use AsyncClient
         yield test_client
     app.dependency_overrides.clear()
 

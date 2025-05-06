@@ -9,7 +9,7 @@ from app.core.config import settings
 import stripe  # Import stripe to potentially mock its exceptions
 from app.models.user import User as UserModel
 from app.models.plan import Subscription as SubscriptionModel
-from app.core.exceptions import NotFoundError, DatabaseError as CoreDatabaseError # Renamed to avoid clash
+from app.core.exceptions import NotFoundError, DatabaseOperationError as CoreDatabaseError # Renamed to avoid clash
 from fastapi import HTTPException
 
 def create_stripe_mock(**kwargs):

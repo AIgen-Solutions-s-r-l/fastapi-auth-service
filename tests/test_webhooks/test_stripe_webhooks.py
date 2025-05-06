@@ -1,5 +1,6 @@
 import pytest
 import stripe
+from stripe.error import SignatureVerificationError # Added this line
 from unittest.mock import AsyncMock, MagicMock, patch
 from typing import AsyncGenerator, Any, Dict, Callable
 import asyncio # For iscoroutinefunction check

@@ -7,9 +7,9 @@ from datetime import datetime, timedelta, UTC
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.user_service import UserService
-from app.models.user import User, UserAccountStatusEnum
+from app.models.user import User
 from app.models.credit import UserCredit
-from app.models.plan import Subscription, Plan, SubscriptionStatusEnum
+from app.models.plan import Subscription, Plan
 from app.schemas.auth_schemas import UserStatusResponse, SubscriptionStatusResponse
 from app.core.config import settings
 
@@ -38,7 +38,7 @@ def mock_user() -> User:
         hashed_password="hashed_password",
         is_verified=True,
         is_admin=False,
-        account_status=UserAccountStatusEnum.ACTIVE,
+        account_status="active",
         auth_type="email",
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
@@ -82,7 +82,7 @@ def mock_subscription(mock_plan: Plan) -> Subscription:
         user_id=1,
         plan_id=mock_plan.id,
         stripe_subscription_id="sub_test123",
-        status=SubscriptionStatusEnum.ACTIVE,
+        status="active",
         current_period_start=datetime.now(UTC) - timedelta(days=10),
         current_period_end=datetime.now(UTC) + timedelta(days=20),
         trial_ends_at=None,
@@ -123,7 +123,7 @@ async def test_get_user_status_active_free_trial(
         user_id=mock_user.id,
         plan_id=mock_plan.id,
         stripe_subscription_id="sub_trial_active",
-        status=SubscriptionStatusEnum.TRIALING, # DB status
+        status="trialing", # DB status
         current_period_start=datetime.now(UTC) - timedelta(days=2),
         current_period_end=trial_end_datetime, # For trial, this might align with trial_ends_at
         trial_ends_at=trial_end_datetime,
@@ -163,7 +163,7 @@ async def test_get_user_status_active_free_trial(
 
     assert response is not None
     assert response.user_id == str(mock_user.id)
-    assert response.account_status == UserAccountStatusEnum.ACTIVE
+    assert response.account_status == "active"
     assert response.credits_remaining == 50
 
     assert response.subscription is not None
@@ -214,7 +214,7 @@ async def test_get_user_status_expired_trial_no_paid_subscription(
         user_id=mock_user.id,
         plan_id=mock_plan.id,
         stripe_subscription_id="sub_trial_expired_canceled",
-        status=SubscriptionStatusEnum.CANCELED, # Explicitly canceled after trial
+        status="canceled", # Explicitly canceled after trial
         current_period_start=datetime.now(UTC) - timedelta(days=12), # e.g., trial was 7 days
         current_period_end=trial_end_datetime,
         trial_ends_at=trial_end_datetime,
@@ -239,7 +239,7 @@ async def test_get_user_status_expired_trial_no_paid_subscription(
     assert response.user_id == str(mock_user.id)
     # Account status itself might still be active, depends on overall business logic
     # For this test, we assume the user account itself isn't automatically deactivated.
-    assert response.account_status == UserAccountStatusEnum.ACTIVE
+    assert response.account_status == "active"
     assert response.credits_remaining == 0
     
     # Since no active or trialing subscription is found in the DB based on the service's filter,
@@ -275,7 +275,7 @@ async def test_get_user_status_active_paid_subscription(
         user_id=mock_user.id,
         plan_id=mock_plan.id,
         stripe_subscription_id="sub_paid_active",
-        status=SubscriptionStatusEnum.ACTIVE, # DB status
+        status="active", # DB status
         current_period_start=current_period_start_dt,
         current_period_end=current_period_end_dt,
         trial_ends_at=None, # No trial or trial ended long ago
@@ -303,7 +303,7 @@ async def test_get_user_status_active_paid_subscription(
 
     assert response is not None
     assert response.user_id == str(mock_user.id)
-    assert response.account_status == UserAccountStatusEnum.ACTIVE
+    assert response.account_status == "active"
     assert response.credits_remaining == 250
 
     assert response.subscription is not None
@@ -329,7 +329,7 @@ async def test_get_user_status_frozen_subscription_past_due(
     Test get_user_status_details for a user with a 'frozen' subscription,
     represented as 'past_due' on Stripe and User.account_status = FROZEN.
     """
-    mock_user.account_status = UserAccountStatusEnum.FROZEN # User account is frozen
+    mock_user.account_status = "frozen" # User account is frozen
 
     current_period_start_dt = datetime.now(UTC) - timedelta(days=40)
     # past_due means current_period_end might be in the past, or Stripe is still trying.
@@ -342,7 +342,7 @@ async def test_get_user_status_frozen_subscription_past_due(
         user_id=mock_user.id,
         plan_id=mock_plan.id,
         stripe_subscription_id="sub_frozen_past_due",
-        status=SubscriptionStatusEnum.ACTIVE, # DB might still think it's active before sync
+        status="active", # DB might still think it's active before sync
         current_period_start=current_period_start_dt,
         current_period_end=current_period_end_dt, # DB's view of period end
         trial_ends_at=None,
@@ -372,7 +372,7 @@ async def test_get_user_status_frozen_subscription_past_due(
 
     assert response is not None
     assert response.user_id == str(mock_user.id)
-    assert response.account_status == UserAccountStatusEnum.FROZEN # Reflects user's frozen status
+    assert response.account_status == "frozen" # Reflects user's frozen status
     assert response.credits_remaining == 10
 
     assert response.subscription is not None
@@ -427,7 +427,7 @@ async def test_get_user_status_canceled_subscription(
     Test get_user_status_details for a user with a canceled subscription.
     """
     # User account might still be active, but their subscription is not.
-    mock_user.account_status = UserAccountStatusEnum.ACTIVE 
+    mock_user.account_status = "active"
 
     period_end_dt = datetime.now(UTC) - timedelta(days=10) # Subscription ended 10 days ago
 
@@ -436,7 +436,7 @@ async def test_get_user_status_canceled_subscription(
         user_id=mock_user.id,
         plan_id=mock_plan.id,
         stripe_subscription_id="sub_canceled_xyz",
-        status=SubscriptionStatusEnum.CANCELED, # DB status is canceled
+        status="canceled", # DB status is canceled
         current_period_start=datetime.now(UTC) - timedelta(days=40),
         current_period_end=period_end_dt,
         trial_ends_at=None,
@@ -457,7 +457,7 @@ async def test_get_user_status_canceled_subscription(
 
     assert response is not None
     assert response.user_id == str(mock_user.id)
-    assert response.account_status == UserAccountStatusEnum.ACTIVE
+    assert response.account_status == "active"
     assert response.credits_remaining == 5
 
     # Since the DB subscription is 'canceled' and 'is_active=False',
@@ -490,7 +490,7 @@ async def test_get_user_status_no_subscription_history(
 
     assert response is not None
     assert response.user_id == str(mock_user.id)
-    assert response.account_status == UserAccountStatusEnum.ACTIVE # Default active
+    assert response.account_status == "active" # Default active
     assert response.credits_remaining == 0
 
     assert response.subscription is None # No subscription details
