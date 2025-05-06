@@ -8,7 +8,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from decimal import Decimal
 
-from app.core.base import Base
+from app.core.base_model import Base # Import from new location
 
 
 class Plan(Base):

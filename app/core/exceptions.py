@@ -46,6 +46,13 @@ class UserNotFoundError(AuthException):
             status_code=status.HTTP_404_NOT_FOUND
         )
 
+class NotFoundError(AuthException):
+    """Generic exception for when a resource is not found."""
+    def __init__(self, resource_type: str, identifier: str):
+        super().__init__(
+            detail=f"{resource_type} with identifier '{identifier}' not found",
+            status_code=status.HTTP_404_NOT_FOUND
+        )
 
 class ResumeException(HTTPException):
     """Base exception for resume-related errors"""

@@ -6,7 +6,7 @@ from enum import Enum
 from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, DateTime, Text
 from sqlalchemy.orm import relationship
 
-from app.core.base import Base
+from app.core.base_model import Base # Import from new location
 
 
 class TransactionType(str, Enum):

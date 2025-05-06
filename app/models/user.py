@@ -4,7 +4,7 @@ from datetime import datetime, UTC, timedelta
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 
-from app.core.base import Base
+from app.core.base_model import Base # Import from new location
 
 
 class User(Base):

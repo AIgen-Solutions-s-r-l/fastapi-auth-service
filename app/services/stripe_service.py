@@ -5,12 +5,15 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from datetime import datetime, timezone
+from typing import Optional # Add missing import
 
 from app.core.config import settings
-from app.models.user import User, Subscription # Assuming Subscription model exists and is related to User
+from app.models.user import User
+from app.models.plan import Subscription # Import Subscription from plan model
 from app.models.plan import Plan # Assuming Plan model exists
 from app.log.logging import logger
-from app.core.db_exceptions import DatabaseError, NotFoundError
+from app.core.db_exceptions import DatabaseException
+from app.core.exceptions import NotFoundError # Import from correct location
 
 # Initialize Stripe API key
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -45,7 +48,7 @@ class StripeService:
                 event_type="active_subscription_not_found_db",
                 user_id=user_id
             )
-            raise NotFoundError("User does not have an active or trialing subscription.")
+            raise NotFoundError(resource_type="Active/Trialing Subscription", identifier=f"user_id:{user_id}")
         
         if not subscription.stripe_subscription_id:
             logger.error(
@@ -92,7 +95,7 @@ class StripeService:
             db_subscription = await self._get_user_active_subscription_from_db(user_id)
         except NotFoundError:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active subscription found to cancel.")
-        except DatabaseError as e:
+        except DatabaseException as e: # Catch the correct base DB exception
              raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database error: {str(e)}")
 
 

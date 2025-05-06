@@ -195,7 +195,12 @@ class WebhookService:
         stripe_customer_id = subscription_data.customer
         stripe_subscription_id = subscription_data.id
         subscription_status = subscription_data.status
-        stripe_price_id = subscription_data.items.data[0].price.id if subscription_data.items and subscription_data.items.data else None
+        stripe_price_id = None
+        items_data = subscription_data.get("items", {}).get("data")
+        if items_data and len(items_data) > 0:
+            price_data = items_data[0].get("price")
+            if price_data:
+                stripe_price_id = price_data.get("id")
         
         trial_end_ts = subscription_data.get("trial_end")
         trial_end_date = datetime.fromtimestamp(trial_end_ts, timezone.utc) if trial_end_ts else None
@@ -377,7 +382,13 @@ class WebhookService:
 
         # Update subscription record fields
         subscription_record.status = new_stripe_status
-        subscription_record.stripe_price_id = subscription_data.items.data[0].price.id if subscription_data.items and subscription_data.items.data else subscription_record.stripe_price_id
+        new_stripe_price_id = None
+        items_data_updated = subscription_data.get("items", {}).get("data")
+        if items_data_updated and len(items_data_updated) > 0:
+            price_data_updated = items_data_updated[0].get("price")
+            if price_data_updated:
+                 new_stripe_price_id = price_data_updated.get("id")
+        subscription_record.stripe_price_id = new_stripe_price_id if new_stripe_price_id else subscription_record.stripe_price_id
         
         trial_end_ts = subscription_data.get("trial_end")
         subscription_record.trial_end_date = datetime.fromtimestamp(trial_end_ts, timezone.utc) if trial_end_ts else subscription_record.trial_end_date

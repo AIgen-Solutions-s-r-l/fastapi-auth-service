@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, DateTime
 from sqlalchemy.sql import func
-from app.core.database import Base
+from app.core.base_model import Base # Import from new location
 from datetime import datetime, timezone
 
 class ProcessedStripeEvent(Base):
