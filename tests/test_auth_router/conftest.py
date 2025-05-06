@@ -121,3 +121,25 @@ def test_admin_token(test_admin_user):
     )
     
     return access_token
+
+@pytest.fixture
+async def test_user_with_profile_data(db):
+    """Create a test user with profile data for status API tests."""
+    user_data = {
+        "email": "statususer@example.com",
+        "password": "statuspassword"
+    }
+    
+    # Create the user
+    user = await create_user(db, user_data["email"], user_data["password"])
+    
+    # Set the user as verified
+    user.is_verified = True
+    user.account_status = "active"
+    user.has_consumed_initial_trial = False
+    user.stripe_customer_id = "cus_test_status"
+    
+    await db.commit()
+    await db.refresh(user)
+    
+    return user

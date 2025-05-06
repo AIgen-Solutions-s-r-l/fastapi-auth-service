@@ -30,7 +30,7 @@ class UserService:
     def __init__(self, db: AsyncSession):
         """Initialize with database session."""
         self.db = db
-        self.stripe_service = StripeService() # Initialize StripeService
+        self.stripe_service = StripeService(db_session=self.db) # Pass db session
 
     async def get_user_by_id(self, user_id: int) -> Optional[User]:
         """

@@ -33,14 +33,10 @@ TestingSessionLocal = sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False
 )
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
+ 
+# Removed custom event_loop fixture to let pytest-asyncio handle it,
+# as asyncio_mode = auto is set in pytest.ini.
+ 
 @pytest.fixture
 async def db() -> AsyncGenerator[AsyncSession, None]:
     """Create a clean database session for a test."""
@@ -58,16 +54,8 @@ async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]: # Chang
     """Create an async test client with a clean database."""
     
     async def override_get_db():
-        try:
-            yield db
-        finally:
-            # The db session is managed by its own fixture's finally block,
-            # no need to explicitly close here if override_get_db is just yielding it.
-            # However, if the app expects get_db to manage the session lifecycle,
-            # then db.close() might be needed, but it could conflict with the db fixture.
-            # For now, let's assume the db fixture handles its own closure.
-            pass
-
+        yield db # Simplified: db fixture manages its own lifecycle
+ 
     app.dependency_overrides[get_db] = override_get_db
     async with AsyncClient(app=app, base_url="http://test") as test_client: # Use AsyncClient
         yield test_client
