@@ -85,12 +85,12 @@ async def stripe_webhook_endpoint(
     try:
         if event.type == "checkout.session.completed":
             await webhook_service.handle_checkout_session_completed(event)
-        # elif event.type == "customer.subscription.created":
-        #     await webhook_service.handle_customer_subscription_created(event)
-        # elif event.type == "customer.subscription.updated":
-        #     await webhook_service.handle_customer_subscription_updated(event)
-        # elif event.type == "invoice.payment_succeeded":
-        #     await webhook_service.handle_invoice_payment_succeeded(event)
+        elif event.type == "customer.subscription.created":
+            await webhook_service.handle_customer_subscription_created(event)
+        elif event.type == "customer.subscription.updated":
+            await webhook_service.handle_customer_subscription_updated(event)
+        elif event.type == "invoice.payment_succeeded":
+            await webhook_service.handle_invoice_payment_succeeded(event)
         # elif event.type == "invoice.payment_failed":
         #     await webhook_service.handle_invoice_payment_failed(event)
         else:
