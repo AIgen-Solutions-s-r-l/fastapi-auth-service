@@ -53,16 +53,21 @@ async def verify_stripe_signature(
     except stripe.error.SignatureVerificationError as e:
         # Invalid signature
         logger.error(f"Invalid Stripe webhook signature: {e}", exc_info=True)
-        raise HTTPException(status_code=400, detail=f"Invalid signature: {e}")
+        raise HTTPException(status_code=400, detail=f"Error verifying webhook signature: {e}")
     except Exception as e:
         logger.error(f"Unexpected error during webhook signature verification: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error verifying webhook signature.")
 
 
+# Dependency to provide WebhookService
+def get_webhook_service(db: AsyncSession = Depends(get_db)) -> WebhookService:
+    """Dependency to provide WebhookService instance."""
+    return WebhookService(db)
+
 @router.post("/stripe", summary="Handle Stripe Webhooks")
 async def stripe_webhook_endpoint(
     event: stripe.Event = Depends(verify_stripe_signature),
-    db: AsyncSession = Depends(get_db)
+    webhook_service: WebhookService = Depends(get_webhook_service)
 ):
     """
     Endpoint to receive and process Stripe webhooks.
@@ -74,12 +79,10 @@ async def stripe_webhook_endpoint(
         event_type=event.type
     )
 
-    webhook_service = WebhookService(db)
-
     # Idempotency check
     if await webhook_service.is_event_processed(event.id):
         logger.info(f"Event {event.id} ({event.type}) already processed. Skipping.", event_id=event.id, event_type=event.type)
-        return {"status": "success", "message": "Event already processed"}
+        return {"status": "success", "message": f"Event {event.id} already processed."}
 
     # Dispatch event to specific handlers based on event.type
     try:
@@ -102,6 +105,7 @@ async def stripe_webhook_endpoint(
         # Mark event as processed after successful handling
         await webhook_service.mark_event_as_processed(event.id, event.type)
         logger.info(f"Successfully processed event: {event.id} ({event.type})", event_id=event.id, event_type=event.type)
+        return {"status": "success", "message": f"Successfully processed event: {event.id} ({event.type})"}
     except HTTPException: # Re-raise HTTPExceptions from service layer
         raise
     except Exception as e: # Catch-all for unexpected errors in handlers
@@ -112,9 +116,7 @@ async def stripe_webhook_endpoint(
             exc_info=True
         )
         # Do NOT mark as processed here, so Stripe can retry for server-side errors
-        raise HTTPException(status_code=500, detail="Internal server error processing webhook.")
-
-    return {"status": "success", "message": "Webhook received and processed"}
+        raise HTTPException(status_code=500, detail=f"Error processing event {event.id} ({event.type}): {e}")
 
 # Placeholder for actual event handler functions/methods
 # These would typically reside in a service layer (e.g., StripeWebhookService)

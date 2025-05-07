@@ -517,11 +517,14 @@ async def test_handle_customer_subscription_created_trial_unique_fingerprint(
     stripe_subscription_id = "sub_trial_unique_123"
 
     # Monkeypatch settings for trial attributes
-    monkeypatch.setattr(settings, "FREE_TRIAL_PRICE_ID", "price_free_trial_test")
-    monkeypatch.setattr(settings, "FREE_TRIAL_DAYS", 7)
-    monkeypatch.setattr(settings, "FREE_TRIAL_CREDITS", 10)
+    monkeypatch.setattr(settings, "STRIPE_FREE_TRIAL_PRICE_ID", "price_free_trial_test")
+    # Add these settings if they don't exist
+    if not hasattr(settings, "FREE_TRIAL_DAYS"):
+        monkeypatch.setattr(settings, "FREE_TRIAL_DAYS", 7)
+    if not hasattr(settings, "FREE_TRIAL_CREDITS"):
+        monkeypatch.setattr(settings, "FREE_TRIAL_CREDITS", 10)
 
-    stripe_price_id = settings.FREE_TRIAL_PRICE_ID
+    stripe_price_id = settings.STRIPE_FREE_TRIAL_PRICE_ID
     trial_end_timestamp = int((datetime.now(timezone.utc) + timedelta(days=settings.FREE_TRIAL_DAYS)).timestamp())
     trial_end_date = datetime.fromtimestamp(trial_end_timestamp, tz=timezone.utc)
 
@@ -573,7 +576,7 @@ async def test_handle_customer_subscription_created_trial_unique_fingerprint(
     fingerprint_add_call = next((c for c in webhook_service.db.add.call_args_list if isinstance(c.args[0], UsedTrialCardFingerprint)), None)
     assert fingerprint_add_call is not None
     added_fingerprint_obj = fingerprint_add_call.args[0]
-    assert added_fingerprint_obj.fingerprint == card_fingerprint
+    assert added_fingerprint_obj.stripe_card_fingerprint == card_fingerprint
     assert added_fingerprint_obj.user_id == user_id
     assert added_fingerprint_obj.stripe_subscription_id == stripe_subscription_id
 
@@ -582,9 +585,9 @@ async def test_handle_customer_subscription_created_trial_unique_fingerprint(
     assert credit_tx_add_call is not None
     added_tx_obj = credit_tx_add_call.args[0]
     assert added_tx_obj.user_id == user_id
-    assert added_tx_obj.credits_change == settings.FREE_TRIAL_CREDITS
-    assert added_tx_obj.type == "trial_grant"
-    assert added_tx_obj.stripe_subscription_id == stripe_subscription_id
+    assert added_tx_obj.amount == settings.FREE_TRIAL_CREDITS
+    assert added_tx_obj.transaction_type == "trial_credit_grant"
+    assert added_tx_obj.reference_id == stripe_subscription_id
     
     # Check UserCredit was added or merged
     # This part is tricky without knowing if UserCredit is always new or can be existing.
@@ -602,7 +605,7 @@ async def test_handle_customer_subscription_created_trial_unique_fingerprint(
     
     assert mock_db_subscription.status == "trialing"
     assert mock_db_subscription.stripe_price_id == stripe_price_id
-    assert mock_db_subscription.trial_ends_at == trial_end_date
+    assert mock_db_subscription.trial_end_date == trial_end_date
     assert mock_db_subscription.current_period_start.date() == datetime.fromtimestamp(subscription_data["current_period_start"], tz=timezone.utc).date()
     assert mock_db_subscription.current_period_end.date() == trial_end_date.date()
     assert mock_db_subscription.cancel_at_period_end is False
@@ -627,12 +630,15 @@ async def test_handle_customer_subscription_created_trial_duplicate_fingerprint(
     card_fingerprint = "fp_trial_duplicate"
     stripe_subscription_id = "sub_trial_duplicate_123"
 
-    monkeypatch.setattr(settings, "FREE_TRIAL_PRICE_ID", "price_free_trial_test_dup")
-    monkeypatch.setattr(settings, "FREE_TRIAL_DAYS", 7)
+    monkeypatch.setattr(settings, "STRIPE_FREE_TRIAL_PRICE_ID", "price_free_trial_test_dup")
+    # Add these settings if they don't exist
+    if not hasattr(settings, "FREE_TRIAL_DAYS"):
+        monkeypatch.setattr(settings, "FREE_TRIAL_DAYS", 7)
     # FREE_TRIAL_CREDITS not directly used in this path, but good for consistency if logic changes
-    monkeypatch.setattr(settings, "FREE_TRIAL_CREDITS", 10)
+    if not hasattr(settings, "FREE_TRIAL_CREDITS"):
+        monkeypatch.setattr(settings, "FREE_TRIAL_CREDITS", 10)
 
-    stripe_price_id = settings.FREE_TRIAL_PRICE_ID
+    stripe_price_id = settings.STRIPE_FREE_TRIAL_PRICE_ID
     trial_end_timestamp = int((datetime.now(timezone.utc) + timedelta(days=settings.FREE_TRIAL_DAYS)).timestamp())
 
     subscription_data = {
@@ -698,8 +704,8 @@ async def test_handle_customer_subscription_created_trial_duplicate_fingerprint(
     mock_stripe_sub_delete.assert_called_once_with(stripe_subscription_id)
     assert mock_user.account_status == "trial_rejected"
     # UserCredit and CreditTransaction should not have been created/added
-    assert not any(isinstance(call_args[0], UserCredit) for call_args_list in webhook_service.db.add.call_args_list for call_args in call_args_list)
-    assert not any(isinstance(call_args[0], CreditTransaction) for call_args_list in webhook_service.db.add.call_args_list for call_args in call_args_list)
+    assert not any(isinstance(call.args[0], UserCredit) for call in webhook_service.db.add.call_args_list)
+    assert not any(isinstance(call.args[0], CreditTransaction) for call in webhook_service.db.add.call_args_list)
     
     webhook_service.db.commit.assert_called_once() # Commit happens for user status update
     webhook_service.db.rollback.assert_called_once() # Rollback due to IntegrityError
@@ -720,12 +726,15 @@ async def test_handle_customer_subscription_created_trial_already_consumed(
     stripe_customer_id = mock_user.stripe_customer_id
 
     # Monkeypatch settings for trial attributes
-    monkeypatch.setattr(settings, "FREE_TRIAL_PRICE_ID", "price_free_trial_test_consumed")
-    monkeypatch.setattr(settings, "FREE_TRIAL_DAYS", 7)
-    monkeypatch.setattr(settings, "FREE_TRIAL_CREDITS", 10)
+    monkeypatch.setattr(settings, "STRIPE_FREE_TRIAL_PRICE_ID", "price_free_trial_test_consumed")
+    # Add these settings if they don't exist
+    if not hasattr(settings, "FREE_TRIAL_DAYS"):
+        monkeypatch.setattr(settings, "FREE_TRIAL_DAYS", 7)
+    if not hasattr(settings, "FREE_TRIAL_CREDITS"):
+        monkeypatch.setattr(settings, "FREE_TRIAL_CREDITS", 10)
 
     stripe_subscription_id = "sub_trial_consumed_123"
-    stripe_price_id = settings.FREE_TRIAL_PRICE_ID
+    stripe_price_id = settings.STRIPE_FREE_TRIAL_PRICE_ID
     card_fingerprint = "fp_trial_consumed"
     trial_end_timestamp = int((datetime.now(timezone.utc) + timedelta(days=settings.FREE_TRIAL_DAYS)).timestamp())
     trial_end_date = datetime.fromtimestamp(trial_end_timestamp, tz=timezone.utc)
@@ -762,15 +771,15 @@ async def test_handle_customer_subscription_created_trial_already_consumed(
         mock_trial_blocked.assert_not_called()
 
     # No credits should be granted
-    assert not any(isinstance(c.args[0], UserCredit) for c_list in webhook_service.db.add.call_args_list for c in c_list if c_list)
-    assert not any(isinstance(c.args[0], CreditTransaction) for c_list in webhook_service.db.add.call_args_list for c in c_list if c_list)
+    assert not any(isinstance(call.args[0], UserCredit) for call in webhook_service.db.add.call_args_list)
+    assert not any(isinstance(call.args[0], CreditTransaction) for call in webhook_service.db.add.call_args_list)
     # Fingerprint should not be added in this "already consumed" path
-    assert not any(isinstance(c.args[0], UsedTrialCardFingerprint) for c_list in webhook_service.db.add.call_args_list for c in c_list if c_list)
+    assert not any(isinstance(call.args[0], UsedTrialCardFingerprint) for call in webhook_service.db.add.call_args_list)
 
     mock_get_or_create_sub.assert_called_once_with(webhook_service.db, user_id, stripe_subscription_id)
     assert mock_db_subscription.status == "trialing"
     assert mock_db_subscription.stripe_price_id == stripe_price_id
-    assert mock_db_subscription.trial_ends_at == trial_end_date
+    assert mock_db_subscription.trial_end_date == trial_end_date
     assert mock_db_subscription.current_period_start.date() == datetime.fromtimestamp(subscription_data["current_period_start"], tz=timezone.utc).date()
     assert mock_db_subscription.current_period_end.date() == trial_end_date.date()
     assert mock_db_subscription.cancel_at_period_end is False
@@ -827,11 +836,14 @@ async def test_handle_customer_subscription_created_trial_missing_fingerprint(
     stripe_customer_id = mock_user.stripe_customer_id
 
     # Monkeypatch settings for trial attributes
-    monkeypatch.setattr(settings, "FREE_TRIAL_PRICE_ID", "price_free_trial_test_no_fp")
-    monkeypatch.setattr(settings, "FREE_TRIAL_DAYS", 7)
-    monkeypatch.setattr(settings, "FREE_TRIAL_CREDITS", 10) # Even if not used, good for consistency
+    monkeypatch.setattr(settings, "STRIPE_FREE_TRIAL_PRICE_ID", "price_free_trial_test_no_fp")
+    # Add these settings if they don't exist
+    if not hasattr(settings, "FREE_TRIAL_DAYS"):
+        monkeypatch.setattr(settings, "FREE_TRIAL_DAYS", 7)
+    if not hasattr(settings, "FREE_TRIAL_CREDITS"):
+        monkeypatch.setattr(settings, "FREE_TRIAL_CREDITS", 10) # Even if not used, good for consistency
     
-    stripe_price_id = settings.FREE_TRIAL_PRICE_ID
+    stripe_price_id = settings.STRIPE_FREE_TRIAL_PRICE_ID
 
     subscription_data = {
         "id": "sub_trial_no_fp_123", "customer": stripe_customer_id,
@@ -891,13 +903,20 @@ async def test_handle_customer_subscription_updated_status_change_active_to_froz
     mock_db_subscription.stripe_subscription_id = stripe_subscription_id
     mock_db_subscription.status = "active" # Initial status of the DB record
     mock_db_subscription.stripe_price_id = "some_old_price" # Can be different
+    mock_db_subscription.canceled_at = None # Initialize to None
+    mock_db_subscription.trial_end_date = None # Initialize to None (for trial_ends_at assertion)
     mock_get_or_create_sub.return_value = mock_db_subscription
     
     webhook_service.db.set_db_get_result(mock_user) # For User retrieval
 
     with patch.object(webhook_service.event_publisher, 'publish_user_account_frozen', new_callable=AsyncMock) as mock_publish_frozen:
         await webhook_service.handle_customer_subscription_updated(event)
-        mock_publish_frozen.assert_called_once_with(user_id=user_id, stripe_subscription_id=stripe_subscription_id)
+        mock_publish_frozen.assert_called_once_with(
+            user_id=user_id,
+            stripe_customer_id=stripe_customer_id,
+            stripe_subscription_id=stripe_subscription_id,
+            reason="subscription_status_change"
+        )
     
     mock_get_or_create_sub.assert_called_once_with(webhook_service.db, user_id, stripe_subscription_id)
     assert mock_db_subscription.status == "past_due" # Updated by the handler
@@ -907,7 +926,7 @@ async def test_handle_customer_subscription_updated_status_change_active_to_froz
     assert mock_db_subscription.current_period_end.date() == datetime.fromtimestamp(subscription_data["current_period_end"], tz=timezone.utc).date()
     assert mock_db_subscription.cancel_at_period_end is False
     assert mock_db_subscription.canceled_at is None
-    assert mock_db_subscription.trial_ends_at is None
+    assert mock_db_subscription.trial_end_date is None # Corrected attribute name
 
 
     assert mock_user.account_status == "frozen"
@@ -948,13 +967,20 @@ async def test_handle_customer_subscription_updated_status_change_frozen_to_acti
     mock_db_subscription.stripe_subscription_id = stripe_subscription_id
     mock_db_subscription.status = "past_due" # Initial status of the DB record
     mock_db_subscription.stripe_price_id = "some_old_price"
+    mock_db_subscription.canceled_at = None # Initialize
+    mock_db_subscription.trial_end_date = None # Initialize
     mock_get_or_create_sub.return_value = mock_db_subscription
     
     webhook_service.db.set_db_get_result(mock_user) # For User retrieval
 
     with patch.object(webhook_service.event_publisher, 'publish_user_account_unfrozen', new_callable=AsyncMock) as mock_publish_unfrozen:
         await webhook_service.handle_customer_subscription_updated(event)
-        mock_publish_unfrozen.assert_called_once_with(user_id=user_id, stripe_subscription_id=stripe_subscription_id)
+        mock_publish_unfrozen.assert_called_once_with(
+            user_id=user_id,
+            stripe_customer_id=stripe_customer_id,
+            stripe_subscription_id=stripe_subscription_id,
+            reason="subscription_status_change"
+        )
 
     mock_get_or_create_sub.assert_called_once_with(webhook_service.db, user_id, stripe_subscription_id)
     assert mock_db_subscription.status == "active"
@@ -963,7 +989,7 @@ async def test_handle_customer_subscription_updated_status_change_frozen_to_acti
     assert mock_db_subscription.current_period_end.date() == datetime.fromtimestamp(subscription_data["current_period_end"], tz=timezone.utc).date()
     assert mock_db_subscription.cancel_at_period_end is False
     assert mock_db_subscription.canceled_at is None
-    assert mock_db_subscription.trial_ends_at is None
+    assert mock_db_subscription.trial_end_date is None # Corrected attribute
 
     assert mock_user.account_status == "active"
     webhook_service.db.commit.assert_called_once()
@@ -1004,6 +1030,9 @@ async def test_handle_customer_subscription_updated_local_sub_not_found(
     # The handler should populate them.
     mock_db_subscription.user_id = user_id
     mock_db_subscription.stripe_subscription_id = stripe_subscription_id
+    mock_db_subscription.canceled_at = None  # Initialize
+    mock_db_subscription.trial_end_date = None  # Initialize
+    # Other fields like status, stripe_price_id will be set by the handler
     mock_get_or_create_sub.return_value = mock_db_subscription
         
     webhook_service.db.set_db_get_result(mock_user)
@@ -1024,7 +1053,7 @@ async def test_handle_customer_subscription_updated_local_sub_not_found(
     assert mock_db_subscription.current_period_end.date() == datetime.fromtimestamp(subscription_data["current_period_end"], tz=timezone.utc).date()
     assert mock_db_subscription.cancel_at_period_end is False
     assert mock_db_subscription.canceled_at is None
-    assert mock_db_subscription.trial_ends_at is None
+    assert mock_db_subscription.trial_end_date is None # Corrected attribute name
 
     assert mock_user.account_status == "active"
     webhook_service.db.commit.assert_called_once()
@@ -1086,7 +1115,9 @@ async def test_handle_invoice_payment_succeeded_success_active_user(
         "metadata": {"user_id": user_id},
         "charge": "ch_paid_active",
         "amount_paid": 1000, # Added (e.g., 10.00 USD)
-        "currency": "usd" # Added
+        "currency": "usd", # Added
+        "billing_reason": "subscription_cycle", # Added missing field
+        "invoice_pdf": "https://example.com/invoice.pdf" # Added missing field
     }
     event = mock_stripe_event_factory("invoice.payment_succeeded", invoice_data, event_id=event_id)
     
@@ -1098,8 +1129,8 @@ async def test_handle_invoice_payment_succeeded_success_active_user(
     mock_db_subscription.user_id = user_id
     mock_db_subscription.stripe_subscription_id = stripe_subscription_id
     mock_db_subscription.status = "active" # Initial status
-    mock_get_or_create_sub.return_value = mock_db_subscription
-
+    # mock_get_or_create_sub.return_value = mock_db_subscription # Not strictly needed
+    webhook_service.db.set_db_execute_scalar_first_results(mock_db_subscription) # Ensure select query returns our mock
 
     with patch.object(webhook_service.event_publisher, 'publish_user_invoice_paid', new_callable=AsyncMock) as mock_publish_paid, \
          patch.object(webhook_service.event_publisher, 'publish_user_account_unfrozen', new_callable=AsyncMock) as mock_publish_unfrozen:
@@ -1109,12 +1140,15 @@ async def test_handle_invoice_payment_succeeded_success_active_user(
             stripe_customer_id=stripe_customer_id,
             stripe_invoice_id=invoice_data["id"],
             stripe_subscription_id=stripe_subscription_id,
-            charge_id=invoice_data["charge"]
+            amount_paid=invoice_data["amount_paid"],
+            currency=invoice_data["currency"],
+            billing_reason=invoice_data["billing_reason"],
+            invoice_pdf_url=invoice_data["invoice_pdf"]
             )
         mock_publish_unfrozen.assert_not_called()
 
-    mock_get_or_create_sub.assert_called_once_with(webhook_service.db, user_id, stripe_subscription_id)
-    assert mock_db_subscription.status == "active" # Should be updated to active by handler
+    mock_get_or_create_sub.assert_not_called() # get_or_create_subscription is not called in this handler
+    assert mock_db_subscription.status == "active" # Status should remain active
     assert mock_user.account_status == "active"
     webhook_service.db.commit.assert_called_once()
 
@@ -1140,7 +1174,9 @@ async def test_handle_invoice_payment_succeeded_unfreezes_user(
         "metadata": {"user_id": user_id},
         "charge": "ch_paid_unfreeze",
         "amount_paid": 1200, # Added
-        "currency": "usd" # Added
+        "currency": "usd", # Added
+        "billing_reason": "subscription_cycle", # Added missing field
+        "invoice_pdf": "https://example.com/invoice.pdf" # Added missing field
     }
     event = mock_stripe_event_factory("invoice.payment_succeeded", invoice_data, event_id=event_id)
     
@@ -1153,7 +1189,8 @@ async def test_handle_invoice_payment_succeeded_unfreezes_user(
     mock_db_subscription.user_id = user_id
     mock_db_subscription.stripe_subscription_id = stripe_subscription_id
     mock_db_subscription.status = "past_due" # Initial status before handler updates it
-    mock_get_or_create_sub.return_value = mock_db_subscription
+    # mock_get_or_create_sub.return_value = mock_db_subscription # Not strictly needed as it won't be called
+    webhook_service.db.set_db_execute_scalar_first_results(mock_db_subscription) # Ensure select query returns our mock
 
     with patch.object(webhook_service.event_publisher, 'publish_user_invoice_paid', new_callable=AsyncMock) as mock_publish_paid, \
          patch.object(webhook_service.event_publisher, 'publish_user_account_unfrozen', new_callable=AsyncMock) as mock_publish_unfrozen:
@@ -1163,15 +1200,22 @@ async def test_handle_invoice_payment_succeeded_unfreezes_user(
             stripe_customer_id=stripe_customer_id,
             stripe_invoice_id=invoice_data["id"],
             stripe_subscription_id=stripe_subscription_id,
-            charge_id=invoice_data["charge"]
+            amount_paid=invoice_data["amount_paid"],
+            currency=invoice_data["currency"],
+            billing_reason=invoice_data["billing_reason"],
+            invoice_pdf_url=invoice_data["invoice_pdf"]
         )
-        mock_publish_unfrozen.assert_called_once_with(user_id=user_id, stripe_subscription_id=stripe_subscription_id)
+        mock_publish_unfrozen.assert_called_once_with(
+            user_id=user_id,
+            stripe_customer_id=stripe_customer_id,
+            stripe_subscription_id=stripe_subscription_id,
+            reason="invoice_paid_after_failure"
+        )
 
-    mock_get_or_create_sub.assert_called_once_with(webhook_service.db, user_id, stripe_subscription_id)
+    mock_get_or_create_sub.assert_not_called() # get_or_create_subscription is not called in this handler
     assert mock_user.account_status == "active"
     assert mock_db_subscription.status == "active" # Status of the subscription object updated by handler
     webhook_service.db.commit.assert_called_once()
-
     mock_user.account_status = original_user_status
 
 @pytest.mark.asyncio
@@ -1287,12 +1331,17 @@ async def test_handle_invoice_payment_failed_freezes_active_user(
             next_payment_attempt_date=datetime.fromtimestamp(invoice_data["next_payment_attempt"], tz=timezone.utc), # Corrected & converted
             stripe_charge_id=invoice_data["charge"] # Corrected
         )
-        mock_publish_frozen.assert_called_once_with(user_id=user_id, stripe_subscription_id=stripe_subscription_id)
+        mock_publish_frozen.assert_called_once_with(
+            user_id=user_id,
+            stripe_customer_id=stripe_customer_id,
+            stripe_subscription_id=stripe_subscription_id,
+            reason="invoice_payment_failed"
+        )
 
     mock_get_or_create_sub.assert_called_once_with(webhook_service.db, user_id, stripe_subscription_id)
     assert mock_user.account_status == "frozen"
-    # The service updates the local subscription status based on the invoice's status field.
-    assert mock_db_subscription.status == "open"
+    # The service updates the local subscription status to 'past_due' after invoice payment failure.
+    assert mock_db_subscription.status == "past_due"
     webhook_service.db.commit.assert_called_once()
 
     mock_user.account_status = original_user_status
@@ -1348,7 +1397,7 @@ async def test_handle_invoice_payment_failed_already_frozen_user(
 
     mock_get_or_create_sub.assert_called_once_with(webhook_service.db, user_id, stripe_subscription_id)
     assert mock_user.account_status == "frozen"
-    assert mock_db_subscription.status == "open" # Updated from invoice event
+    assert mock_db_subscription.status == "past_due" # Should remain/be set to past_due
     webhook_service.db.commit.assert_called_once()
 
     mock_user.account_status = original_user_status
@@ -1396,7 +1445,7 @@ async def test_handle_invoice_payment_failed_non_subscription_reason(
 
     mock_get_or_create_sub.assert_not_called() # Should not be called if invoice.subscription is None
     assert mock_user.account_status == "active"
-    webhook_service.db.commit.assert_called_once()
+    webhook_service.db.commit.assert_not_called() # No DB changes should be committed in this scenario
 
     mock_user.account_status = original_user_status
 
@@ -1515,8 +1564,12 @@ async def test_stripe_webhook_endpoint_checkout_session_completed(
     mock_service_instance.handle_invoice_payment_failed = AsyncMock()
     mock_service_instance.mark_event_as_processed = AsyncMock()
     
+    # Import the get_webhook_service function from the module
+    from app.routers.webhooks.stripe_webhooks import get_webhook_service, verify_stripe_signature
+    
+    # Override the dependencies correctly
     main_app.dependency_overrides[verify_stripe_signature] = create_mock_verify_dependency(mock_event_obj)
-    main_app.dependency_overrides[WebhookService] = lambda: mock_service_instance
+    main_app.dependency_overrides[get_webhook_service] = lambda: mock_service_instance
     
     try:
         response = await client.post(
@@ -1552,6 +1605,7 @@ async def test_stripe_webhook_endpoint_idempotency(
     payload_data = {"id": "cs_integ_idem_test", "customer": "cus_integ_idem_test", "client_reference_id": "user_idem_123"}
     mock_event_obj = mock_stripe_event_factory(event_type, payload_data, event_id=event_id)
 
+    # Create a mock that will actually be called
     mock_service_instance = AsyncMock(spec=WebhookService)
     mock_service_instance.is_event_processed = AsyncMock(return_value=True) # Key: Event already processed
     # Mock all handlers to ensure none are called if already processed
@@ -1562,8 +1616,12 @@ async def test_stripe_webhook_endpoint_idempotency(
     mock_service_instance.handle_invoice_payment_failed = AsyncMock()
     mock_service_instance.mark_event_as_processed = AsyncMock() # Should not be called again
 
+    # Import the get_webhook_service function from the module
+    from app.routers.webhooks.stripe_webhooks import get_webhook_service, verify_stripe_signature
+    
+    # Override the dependencies correctly
     main_app.dependency_overrides[verify_stripe_signature] = create_mock_verify_dependency(mock_event_obj)
-    main_app.dependency_overrides[WebhookService] = lambda: mock_service_instance
+    main_app.dependency_overrides[get_webhook_service] = lambda: mock_service_instance
     
     try:
         response = await client.post(
@@ -1606,8 +1664,12 @@ async def test_stripe_webhook_endpoint_unhandled_event_type(
     mock_service_instance.handle_invoice_payment_failed = AsyncMock()
     mock_service_instance.mark_event_as_processed = AsyncMock()
 
+    # Import the get_webhook_service function from the module
+    from app.routers.webhooks.stripe_webhooks import get_webhook_service, verify_stripe_signature
+    
+    # Override the dependencies correctly
     main_app.dependency_overrides[verify_stripe_signature] = create_mock_verify_dependency(mock_event_obj)
-    main_app.dependency_overrides[WebhookService] = lambda: mock_service_instance
+    main_app.dependency_overrides[get_webhook_service] = lambda: mock_service_instance
     
     try:
         response = await client.post(
@@ -1657,8 +1719,12 @@ async def test_stripe_webhook_endpoint_handler_exception(
     mock_service_instance.handle_invoice_payment_failed = AsyncMock()
     mock_service_instance.mark_event_as_processed = AsyncMock()
 
+    # Import the get_webhook_service function from the module
+    from app.routers.webhooks.stripe_webhooks import get_webhook_service, verify_stripe_signature
+    
+    # Override the dependencies correctly
     main_app.dependency_overrides[verify_stripe_signature] = create_mock_verify_dependency(mock_event_obj)
-    main_app.dependency_overrides[WebhookService] = lambda: mock_service_instance
+    main_app.dependency_overrides[get_webhook_service] = lambda: mock_service_instance
 
     try:
         response = await client.post(
@@ -1685,9 +1751,15 @@ async def test_stripe_webhook_endpoint_signature_error(client: AsyncClient):
     """Test the endpoint when Stripe signature verification fails."""
     error_message = "Simulated signature verification error"
 
-    # This mock will raise the SignatureVerificationError
-    def mock_verify_dependency_raises():
-        raise SignatureVerificationError(message=error_message, sig_header="dummy_sig_header_val")
+    # Create a proper async mock for the verify_stripe_signature dependency
+    # that raises an HTTPException instead of a SignatureVerificationError
+    async def mock_verify_dependency_raises(request: Request, stripe_signature: str = None):
+        # Convert the SignatureVerificationError to an HTTPException with status_code 400
+        # This matches what the real verify_stripe_signature function does
+        raise HTTPException(
+            status_code=400,
+            detail=f"Error verifying webhook signature: {error_message}"
+        )
 
     # Mock WebhookService to ensure it's not called if signature fails
     mock_service_instance = AsyncMock(spec=WebhookService)
@@ -1699,8 +1771,12 @@ async def test_stripe_webhook_endpoint_signature_error(client: AsyncClient):
     mock_service_instance.handle_invoice_payment_failed = AsyncMock()
     mock_service_instance.mark_event_as_processed = AsyncMock()
 
+    # Import the get_webhook_service function from the module
+    from app.routers.webhooks.stripe_webhooks import get_webhook_service, verify_stripe_signature
+    
+    # Override the dependencies correctly
     main_app.dependency_overrides[verify_stripe_signature] = mock_verify_dependency_raises
-    main_app.dependency_overrides[WebhookService] = lambda: mock_service_instance
+    main_app.dependency_overrides[get_webhook_service] = lambda: mock_service_instance
 
     try:
         response = await client.post(
@@ -1708,7 +1784,7 @@ async def test_stripe_webhook_endpoint_signature_error(client: AsyncClient):
             content=b'{"some": "payload"}', # Actual payload doesn't matter here
             headers={"Stripe-Signature": "t=123,v1=invalid_signature_on_purpose"}
         )
-
+        
         assert response.status_code == 400
         assert response.json() == {"detail": f"Error verifying webhook signature: {error_message}"}
 

@@ -31,7 +31,7 @@ class WebhookService:
         stmt = select(ProcessedStripeEvent).where(ProcessedStripeEvent.stripe_event_id == event_id)
         result = await self.db.execute(stmt)
         scalars_result = result.scalars()
-        processed_event = scalars_result.first()
+        processed_event = await scalars_result.first()
         return processed_event is not None
 
     async def mark_event_as_processed(self, event_id: str, event_type: str):
@@ -221,6 +221,20 @@ class WebhookService:
             logger.error(f"User ID not found for customer.subscription.created: {event_id}, Stripe Customer: {stripe_customer_id}", event_id=event_id, stripe_customer_id=stripe_customer_id)
             return # Cannot proceed without user context
 
+        if subscription_status == 'trialing':
+            card_fingerprint = await self.get_card_fingerprint_from_event(subscription_data, event_id)
+
+            if not card_fingerprint:
+                logger.error(f"Card fingerprint not found for trialing subscription {stripe_subscription_id}. Critical for trial logic.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
+                # This is a severe issue. We might need to cancel the trial if we can't verify/store fingerprint.
+                # For now, log and alert. Consider raising an exception to let Stripe retry, hoping fingerprint becomes available.
+                # However, if it's persistently missing, manual intervention or a different strategy is needed.
+                # Let's assume for now we cannot proceed with trial credit grant without fingerprint.
+                # To prevent retries on a permanent issue, we might return 200 after logging.
+                # For this implementation, let's raise to signal an issue.
+                await self.db.rollback()
+                raise ValueError(f"Card fingerprint missing for trial subscription {stripe_subscription_id}")
+
         # Update/Create local Subscription record
         db_subscription = await get_or_create_subscription(self.db, user_id, stripe_subscription_id)
         db_subscription.stripe_customer_id = stripe_customer_id # Ensure this is set/updated
@@ -240,69 +254,65 @@ class WebhookService:
             raise
 
         if subscription_status == 'trialing':
-            card_fingerprint = await self.get_card_fingerprint_from_event(subscription_data, event_id)
 
-            if not card_fingerprint:
-                logger.error(f"Card fingerprint not found for trialing subscription {stripe_subscription_id}. Critical for trial logic.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
-                # This is a severe issue. We might need to cancel the trial if we can't verify/store fingerprint.
-                # For now, log and alert. Consider raising an exception to let Stripe retry, hoping fingerprint becomes available.
-                # However, if it's persistently missing, manual intervention or a different strategy is needed.
-                # Let's assume for now we cannot proceed with trial credit grant without fingerprint.
-                # To prevent retries on a permanent issue, we might return 200 after logging.
-                # For this implementation, let's raise to signal an issue.
-                raise ValueError(f"Card fingerprint missing for trial subscription {stripe_subscription_id}")
-
-            # Store Card Fingerprint (FR-4)
-            new_fingerprint_record = UsedTrialCardFingerprint(
-                user_id=user_id,
-                stripe_card_fingerprint=card_fingerprint,
-                stripe_payment_method_id=subscription_data.default_payment_method,
-                stripe_subscription_id=stripe_subscription_id,
-                stripe_customer_id=stripe_customer_id
-            )
-            try:
-                self.db.add(new_fingerprint_record)
-                await self.db.flush() # Try to flush to catch unique constraint violation early
-                logger.info(f"Stored unique card fingerprint {card_fingerprint} for trial subscription {stripe_subscription_id}.", event_id=event_id, card_fingerprint=card_fingerprint)
-            except IntegrityError: # uq_trial_card_fingerprint violation
-                await self.db.rollback()
-                logger.warning(
-                    f"Duplicate card fingerprint {card_fingerprint} detected during customer.subscription.created for trial. User ID {user_id}.",
-                    event_id=event_id, user_id=user_id, card_fingerprint=card_fingerprint
-                )
-                try:
-                    logger.info(f"Attempting to cancel Stripe trial subscription {stripe_subscription_id} due to duplicate fingerprint.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
-                    stripe.Subscription.delete(stripe_subscription_id)
-                    logger.info(f"Successfully canceled Stripe trial subscription {stripe_subscription_id}.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
-                    db_subscription.status = "canceled" # Update local subscription status
-                    await self.db.merge(db_subscription)
-                except stripe.error.StripeError as e:
-                    logger.error(f"Stripe API error canceling trial subscription {stripe_subscription_id} due to duplicate fingerprint: {e}", event_id=event_id, exc_info=True)
-                
-                user = await self.db.get(User, user_id)
-                if user:
-                    user.account_status = "trial_rejected"
-                    await self.db.merge(user)
-                
-                await self.event_publisher.publish_user_trial_blocked(
-                    user_id=user_id,
-                    stripe_customer_id=stripe_customer_id,
-                    stripe_subscription_id=stripe_subscription_id,
-                    reason="duplicate_card_fingerprint",
-                    blocked_card_fingerprint=card_fingerprint
-                )
-                # logger.info(f"Published user.trial.blocked event for user {user_id} due to duplicate fingerprint on subscription creation.", user_id=user_id, event_id=event_id) # Covered by publisher log
-                await self.db.commit() # Commit changes (user status, subscription status)
-                return # Stop processing, trial rejected
-
-            # Grant Initial Credits & Update User (if fingerprint was unique)
+            # Get user to check if they've already consumed their trial
             user = await self.db.get(User, user_id)
             if not user: # Should not happen if user_id was resolved
-                logger.error(f"User {user_id} not found when attempting to grant trial credits.", event_id=event_id, user_id=user_id)
-                await self.db.rollback() # Rollback fingerprint storage if user is missing
+                logger.error(f"User {user_id} not found when checking trial eligibility.", event_id=event_id, user_id=user_id)
                 return
-
+                
+            # Only store fingerprint and check for duplicates if user hasn't consumed trial
             if not user.has_consumed_initial_trial:
+                # Store Card Fingerprint (FR-4)
+                # Get default_payment_method if it exists, otherwise use None
+                default_payment_method = getattr(subscription_data, 'default_payment_method', None)
+                
+                new_fingerprint_record = UsedTrialCardFingerprint(
+                    user_id=user_id,
+                    stripe_card_fingerprint=card_fingerprint,
+                    stripe_payment_method_id=default_payment_method,
+                    stripe_subscription_id=stripe_subscription_id,
+                    stripe_customer_id=stripe_customer_id
+                )
+                try:
+                    self.db.add(new_fingerprint_record)
+                    await self.db.flush() # Try to flush to catch unique constraint violation early
+                    logger.info(f"Stored unique card fingerprint {card_fingerprint} for trial subscription {stripe_subscription_id}.", event_id=event_id, card_fingerprint=card_fingerprint)
+                except IntegrityError: # uq_trial_card_fingerprint violation
+                    await self.db.rollback()
+                    logger.warning(
+                        f"Duplicate card fingerprint {card_fingerprint} detected during customer.subscription.created for trial. User ID {user_id}.",
+                        event_id=event_id, user_id=user_id, card_fingerprint=card_fingerprint
+                    )
+                    try:
+                        logger.info(f"Attempting to cancel Stripe trial subscription {stripe_subscription_id} due to duplicate fingerprint.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
+                        stripe.Subscription.delete(stripe_subscription_id)
+                        logger.info(f"Successfully canceled Stripe trial subscription {stripe_subscription_id}.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
+                        db_subscription.status = "canceled" # Update local subscription status
+                        await self.db.merge(db_subscription)
+                    except stripe.error.StripeError as e:
+                        logger.error(f"Stripe API error canceling trial subscription {stripe_subscription_id} due to duplicate fingerprint: {e}", event_id=event_id, exc_info=True)
+                
+                    user = await self.db.get(User, user_id)
+                    if user:
+                        user.account_status = "trial_rejected"
+                        await self.db.merge(user)
+                    
+                    await self.event_publisher.publish_user_trial_blocked(
+                        user_id=user_id,
+                        stripe_customer_id=stripe_customer_id,
+                        stripe_subscription_id=stripe_subscription_id,
+                        reason="duplicate_card_fingerprint",
+                        blocked_card_fingerprint=card_fingerprint
+                    )
+                    # logger.info(f"Published user.trial.blocked event for user {user_id} due to duplicate fingerprint on subscription creation.", user_id=user_id, event_id=event_id) # Covered by publisher log
+                    await self.db.commit() # Commit changes (user status, subscription status)
+                    return # Stop processing, trial rejected
+
+                # Grant Initial Credits & Update User (if fingerprint was unique)
+                # We already have the user object from earlier check
+                
+                # We only reach this point if user hasn't consumed trial and fingerprint is unique
                 # Ensure UserCredit record exists
                 user_credit = await self.db.execute(select(UserCredit).where(UserCredit.user_id == user_id))
                 user_credit_record = await user_credit.scalars().first()
@@ -311,15 +321,15 @@ class WebhookService:
                     self.db.add(user_credit_record)
                     await self.db.flush() # Get ID if new
 
-                user_credit_record.balance += 10
+                user_credit_record.balance += settings.FREE_TRIAL_CREDITS
                 
                 credit_tx = CreditTransaction(
                     user_id=user_id,
                     user_credit_id=user_credit_record.id,
                     transaction_type=TransactionType.TRIAL_CREDIT_GRANT,
-                    amount=10,
+                    amount=settings.FREE_TRIAL_CREDITS,
                     reference_id=stripe_subscription_id,
-                    description="Initial 10 free trial credits"
+                    description=f"Initial {settings.FREE_TRIAL_CREDITS} free trial credits"
                 )
                 self.db.add(credit_tx)
                 
@@ -330,11 +340,14 @@ class WebhookService:
                     user_id=user_id,
                     stripe_customer_id=stripe_customer_id,
                     stripe_subscription_id=stripe_subscription_id,
-                    trial_end_date=trial_end_date.isoformat() if trial_end_date else None,
-                    credits_granted=10
+                    trial_end_date=trial_end_date,
+                    credits_granted=settings.FREE_TRIAL_CREDITS
                 )
                 # logger.info(f"Granted 10 trial credits to user {user_id}. Account status 'trialing'. Published user.trial.started.", event_id=event_id, user_id=user_id) # Covered by publisher log
             else:
+                # Even if user has already consumed trial, we still set account status to trialing
+                user.account_status = "trialing"
+                await self.db.merge(user)
                 logger.info(f"User {user_id} has already consumed initial trial. No credits granted for subscription {stripe_subscription_id}.", event_id=event_id, user_id=user_id)
         
         try:
@@ -580,8 +593,19 @@ class WebhookService:
                 # For now, let's assume Stripe's `customer.subscription.updated` handles the definitive sub status.
                 logger.info(f"Invoice payment failed for subscription {stripe_subscription_id}. Relying on subscription.updated for final status.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
             else:
-                 logger.warning(f"Subscription record {stripe_subscription_id} not found for failed invoice {invoice_data.id}.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
-
+                 logger.warning(f"Subscription record {stripe_subscription_id} not found for failed invoice {invoice_data.id}. Attempting to create/retrieve.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
+                 subscription_record = await get_or_create_subscription(self.db, user_id, stripe_subscription_id)
+                 if subscription_record:
+                     if not subscription_record.stripe_customer_id:
+                         subscription_record.stripe_customer_id = stripe_customer_id
+                     # Set status to past_due or similar, as payment failed
+                     subscription_record.status = "past_due" # Or a more specific status from Stripe if available on invoice
+                     await self.db.merge(subscription_record)
+                     needs_commit = True # Ensure this change is committed
+                 else:
+                     logger.error(f"Failed to get or create subscription {stripe_subscription_id} for user {user_id} after invoice payment failure.", event_id=event_id, user_id=user_id)
+                     # If we still don't have a subscription record, we might not be able to proceed with freezing logic tied to it.
+                     # However, the user account itself might still be frozen based on the invoice failure.
 
             # Freeze the user account status if not already frozen
             if user.account_status != 'frozen':
@@ -610,7 +634,7 @@ class WebhookService:
             stripe_invoice_id=invoice_data.id,
             stripe_charge_id=invoice_data.charge,
             failure_reason=invoice_data.last_payment_error.message if invoice_data.last_payment_error else None,
-            next_payment_attempt_date=datetime.fromtimestamp(invoice_data.next_payment_attempt, timezone.utc).isoformat() if invoice_data.next_payment_attempt else None
+            next_payment_attempt_date=datetime.fromtimestamp(invoice_data.next_payment_attempt, timezone.utc) if invoice_data.next_payment_attempt else None
         )
         # logger.info(f"Published user.invoice.failed event for user {user_id}, invoice {invoice_data.id}", user_id=user_id, event_id=event_id, stripe_invoice_id=invoice_data.id) # Covered by publisher log
 
