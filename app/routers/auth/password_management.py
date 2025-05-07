@@ -131,9 +131,9 @@ async def request_password_reset(
         )
 
         return {"message": "Password reset link sent to email if account exists"}
-    except (UserNotFoundError, ValueError, jwt.JWTError) as e:
+    except (UserNotFoundError, ValueError, jwt.JWTError, HTTPException) as e:
         logger.error("Password reset request failed", event_type="password_reset_request_error", email=request.email, error=str(e))
-        # Return same message to prevent email enumeration
+        # Return same message to prevent email enumeration, even on HTTPException
         return {"message": "Password reset link sent to email if account exists"}
 
 

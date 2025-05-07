@@ -38,6 +38,13 @@ class Plan(Base):
     stripe_price_id = Column(String(100), nullable=True)
     stripe_product_id = Column(String(100), nullable=True)
     is_limited_free = Column(Boolean, default=False, nullable=False, server_default='false') # Added for Free Plan limitation
+    
+    # Additional fields for testing
+    is_trial_eligible = Column(Boolean, default=False, nullable=False)
+    is_public = Column(Boolean, default=True, nullable=False)
+    price_cents = Column(Integer, nullable=True)  # Alternative price representation
+    credits_awarded = Column(Integer, nullable=True)  # Alternative credit amount representation
+    trial_days = Column(Integer, nullable=True)  # Number of trial days
 
     # Relationships
     subscriptions = relationship("Subscription", back_populates="plan")
@@ -68,10 +75,20 @@ class Subscription(Base):
     auto_renew = Column(Boolean, default=True, nullable=False)
     last_renewal_date = Column(DateTime(timezone=True), nullable=True)
     status = Column(String(50), default="active", nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # Stripe integration
     stripe_subscription_id = Column(String(100), nullable=True)
     stripe_customer_id = Column(String(100), nullable=True)
+    stripe_price_id = Column(String(100), nullable=True)
+    
+    # Additional fields for subscription management
+    trial_end_date = Column(DateTime(timezone=True), nullable=True)
+    current_period_start = Column(DateTime(timezone=True), nullable=True)
+    current_period_end = Column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end = Column(Boolean, default=False, nullable=False)
+    canceled_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
     user = relationship("User", back_populates="subscriptions")

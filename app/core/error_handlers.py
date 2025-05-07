@@ -84,10 +84,10 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> Decima
             status_code=exc.status_code,
             content={"detail": exc.detail}
         )
-    # Otherwise wrap the string detail in a dict with message field
+    # Otherwise return the string detail directly
     return DecimalJSONResponse(
         status_code=exc.status_code,
-        content={"detail": {"message": str(exc.detail)}}
+        content={"detail": str(exc.detail)}
     )
 
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError) -> DecimalJSONResponse:

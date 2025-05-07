@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import AsyncMock, patch
-from fastapi import status
+from fastapi import status, HTTPException
 from httpx import AsyncClient
 
 from app.main import app # Assuming your FastAPI app instance is named 'app' in main.py
@@ -11,7 +11,7 @@ from app.schemas.subscription_schemas import SubscriptionCancelRequest, Subscrip
 from app.core.auth import get_current_active_user # Added import
 
 # Base URL for the endpoint
-BASE_URL = "/api/v1/users/me/subscription/cancel"
+BASE_URL = "/auth/me/subscription/cancel"
 
 @pytest.mark.asyncio
 async def test_cancel_subscription_success(async_client: AsyncClient):

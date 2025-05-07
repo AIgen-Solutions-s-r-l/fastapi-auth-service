@@ -30,7 +30,9 @@ class WebhookService:
         """Checks if a Stripe event has already been processed."""
         stmt = select(ProcessedStripeEvent).where(ProcessedStripeEvent.stripe_event_id == event_id)
         result = await self.db.execute(stmt)
-        return await result.scalars().first() is not None
+        scalars_result = result.scalars()
+        processed_event = scalars_result.first()
+        return processed_event is not None
 
     async def mark_event_as_processed(self, event_id: str, event_type: str):
         """Marks a Stripe event as processed."""
@@ -75,8 +77,11 @@ class WebhookService:
                     fingerprint = payment_method.card.fingerprint
             
             # Fallback: check if fingerprint is directly on the event data object
-            if not fingerprint and event_data_object.get("payment_method_details", {}).get("card", {}).get("fingerprint"):
-                 fingerprint = event_data_object.get("payment_method_details").get("card").get("fingerprint")
+            payment_method_details = event_data_object.get("payment_method_details")
+            if not fingerprint and payment_method_details:
+                card_details = payment_method_details.get("card", {})
+                if card_details and card_details.get("fingerprint"):
+                    fingerprint = card_details.get("fingerprint")
 
         except stripe.error.StripeError as e:
             logger.error(

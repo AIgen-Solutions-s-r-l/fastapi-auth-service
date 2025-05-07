@@ -4,7 +4,7 @@ import pytest
 from fastapi import status
 from sqlalchemy import select
 from app.models.user import User
-from app.services.user_service import get_user_by_email
+from app.services.user_service import UserService
 
 pytestmark = pytest.mark.asyncio
 
@@ -23,7 +23,8 @@ async def test_successful_registration(client, db, test_user_data):
     assert "registered successfully" in data["message"]
 
     # Verify user exists in database
-    user = await get_user_by_email(db, test_user_data["email"])
+    user_service = UserService(db)
+    user = await user_service.get_user_by_email(test_user_data["email"])
     assert user is not None
     assert user.email == test_user_data["email"]
     assert user.is_verified is False
@@ -133,7 +134,8 @@ async def test_register_verify_background_task(client, db, test_user_data, mock_
     assert response.json()["verification_sent"] is True
 
     # Verify user was created
-    user = await get_user_by_email(db, test_user_data["email"])
+    user_service = UserService(db)
+    user = await user_service.get_user_by_email(test_user_data["email"])
     assert user is not None
 
     # Verify email service was called

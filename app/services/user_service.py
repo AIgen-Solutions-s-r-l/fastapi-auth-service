@@ -15,7 +15,9 @@ import requests
 import stripe # Added for Stripe direct calls if needed
 
 from app.core.security import get_password_hash, verify_password
-from app.models.user import User, EmailVerificationToken, EmailChangeRequest
+
+
+from app.models.user import User, EmailVerificationToken, EmailChangeRequest, PasswordResetToken
 from app.models.credit import UserCredit # Added
 from app.models.plan import Subscription, Plan # Added
 from app.schemas.auth_schemas import UserStatusResponse, SubscriptionStatusResponse # Added
@@ -805,8 +807,30 @@ class UserService:
             # Do not raise HTTPException directly to allow specific messaging in the router
             return False, f"An unexpected error occurred: {str(e)}", None
 
+# --- Standalone functions for testing and external use ---
+
+async def create_user(db: AsyncSession, email: str, password: str, is_admin: bool = False, auto_verify: bool = False) -> User:
+    """
+    Create a new user. Standalone function for use in tests and external modules.
+
+    Args:
+        db: Database session
+        email: Email for new user
+        password: Plain text password
+        is_admin: Whether user is admin
+        auto_verify: Whether to auto-verify the email
+
+    Returns:
+        User: Created user
+
+    Raises:
+        HTTPException: If email already exists
+    """
+    user_service = UserService(db)
+    return await user_service.create_user(email, password, is_admin, auto_verify)
 
 # --- Password Reset Functions (outside UserService class as they might be called without user context) ---
+
 
 async def create_password_reset_token(db: AsyncSession, email: str) -> str:
     """
@@ -865,17 +889,31 @@ async def create_password_reset_token(db: AsyncSession, email: str) -> str:
         logger.error(f"Error creating password reset token for {email}: {str(e)}", event_type="password_reset_token_error", email=email, error=str(e))
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create password reset token.")
 
+
+
+
+
 async def verify_reset_token(db: AsyncSession, token: str) -> int:
     """Verify password reset token and return user ID if valid."""
     result = await db.execute(
-        select(User).where(User.password_reset_token == token)
+        select(PasswordResetToken).where(
+            PasswordResetToken.token == token,
+            PasswordResetToken.used == False # noqa: E712
+        )
     )
-    user = result.scalar_one_or_none()
+    token_record = result.scalar_one_or_none()
 
-    if not user or user.password_reset_token_expires_at is None or datetime.now(UTC) > user.password_reset_token_expires_at:
+    if not token_record:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
     
-    return user.id
+    if datetime.now(UTC) > token_record.expires_at:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
+
+    # Mark token as used
+    token_record.used = True
+    await db.commit()
+
+    return token_record.user_id
 
 async def reset_password(db: AsyncSession, user_id: int, new_password: str) -> bool:
     """Reset user's password."""

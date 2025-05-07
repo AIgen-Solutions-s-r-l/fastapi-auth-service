@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
     STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "") # Secret for verifying webhook signatures
     STRIPE_API_VERSION: str = os.getenv("STRIPE_API_VERSION", "2022-11-15")
+    STRIPE_FREE_TRIAL_PRICE_ID: str = os.getenv("STRIPE_FREE_TRIAL_PRICE_ID", "price_free_trial")
     
     # Google OAuth settings
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")

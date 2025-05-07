@@ -54,7 +54,8 @@ def mock_user_credit() -> UserCredit:
         id=1,
         user_id=1,
         balance=100,
-        last_updated_at=datetime.now(UTC)
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC)
     )
     return credit
 
@@ -65,12 +66,12 @@ def mock_plan() -> Plan:
         id=1,
         name="Test Plan",
         stripe_price_id="price_test123",
-        credits_awarded=100,
-        price_cents=1000,
+        credit_amount=100,
+        price=1000,
         is_active=True,
-        is_public=True,
-        is_trial_eligible=True,
-        trial_days=7
+        description="Test Plan Description",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC)
     )
     return plan
 
@@ -83,10 +84,11 @@ def mock_subscription(mock_plan: Plan) -> Subscription:
         plan_id=mock_plan.id,
         stripe_subscription_id="sub_test123",
         status="active",
-        current_period_start=datetime.now(UTC) - timedelta(days=10),
-        current_period_end=datetime.now(UTC) + timedelta(days=20),
-        trial_ends_at=None,
+        start_date=datetime.now(UTC) - timedelta(days=10),
+        renewal_date=datetime.now(UTC) + timedelta(days=20),
         is_active=True,
+        auto_renew=True,
+        last_renewal_date=datetime.now(UTC) - timedelta(days=10),
         created_at=datetime.now(UTC) - timedelta(days=10),
         updated_at=datetime.now(UTC),
         plan=mock_plan
@@ -124,10 +126,11 @@ async def test_get_user_status_active_free_trial(
         plan_id=mock_plan.id,
         stripe_subscription_id="sub_trial_active",
         status="trialing", # DB status
-        current_period_start=datetime.now(UTC) - timedelta(days=2),
-        current_period_end=trial_end_datetime, # For trial, this might align with trial_ends_at
-        trial_ends_at=trial_end_datetime,
+        start_date=datetime.now(UTC) - timedelta(days=2),
+        renewal_date=trial_end_datetime, # For trial, this is when trial ends
         is_active=True,
+        auto_renew=True,
+        last_renewal_date=None,
         created_at=datetime.now(UTC) - timedelta(days=2),
         updated_at=datetime.now(UTC),
         plan=mock_plan
@@ -215,10 +218,11 @@ async def test_get_user_status_expired_trial_no_paid_subscription(
         plan_id=mock_plan.id,
         stripe_subscription_id="sub_trial_expired_canceled",
         status="canceled", # Explicitly canceled after trial
-        current_period_start=datetime.now(UTC) - timedelta(days=12), # e.g., trial was 7 days
-        current_period_end=trial_end_datetime,
-        trial_ends_at=trial_end_datetime,
+        start_date=datetime.now(UTC) - timedelta(days=12), # e.g., trial was 7 days
+        renewal_date=trial_end_datetime,
         is_active=False, # No longer active
+        auto_renew=False,
+        last_renewal_date=None,
         created_at=datetime.now(UTC) - timedelta(days=12),
         updated_at=datetime.now(UTC) - timedelta(days=4), # Updated to canceled
         plan=mock_plan
@@ -276,10 +280,11 @@ async def test_get_user_status_active_paid_subscription(
         plan_id=mock_plan.id,
         stripe_subscription_id="sub_paid_active",
         status="active", # DB status
-        current_period_start=current_period_start_dt,
-        current_period_end=current_period_end_dt,
-        trial_ends_at=None, # No trial or trial ended long ago
+        start_date=current_period_start_dt,
+        renewal_date=current_period_end_dt,
         is_active=True,
+        auto_renew=True,
+        last_renewal_date=current_period_start_dt,
         created_at=datetime.now(UTC) - timedelta(days=45), # Subscribed 45 days ago
         updated_at=datetime.now(UTC),
         plan=mock_plan
@@ -334,7 +339,7 @@ async def test_get_user_status_frozen_subscription_past_due(
     current_period_start_dt = datetime.now(UTC) - timedelta(days=40)
     # past_due means current_period_end might be in the past, or Stripe is still trying.
     # Let's say Stripe's current_period_end is still in the future, but status is past_due.
-    current_period_end_dt = datetime.now(UTC) + timedelta(days(5))
+    current_period_end_dt = datetime.now(UTC) + timedelta(days=5)
 
 
     mock_frozen_subscription = Subscription(
@@ -343,10 +348,11 @@ async def test_get_user_status_frozen_subscription_past_due(
         plan_id=mock_plan.id,
         stripe_subscription_id="sub_frozen_past_due",
         status="active", # DB might still think it's active before sync
-        current_period_start=current_period_start_dt,
-        current_period_end=current_period_end_dt, # DB's view of period end
-        trial_ends_at=None,
+        start_date=current_period_start_dt,
+        renewal_date=current_period_end_dt, # DB's view of period end
         is_active=True, # DB might still think it's active
+        auto_renew=True,
+        last_renewal_date=current_period_start_dt,
         created_at=datetime.now(UTC) - timedelta(days=70),
         updated_at=datetime.now(UTC) - timedelta(days=1), # Last update
         plan=mock_plan
@@ -437,10 +443,11 @@ async def test_get_user_status_canceled_subscription(
         plan_id=mock_plan.id,
         stripe_subscription_id="sub_canceled_xyz",
         status="canceled", # DB status is canceled
-        current_period_start=datetime.now(UTC) - timedelta(days=40),
-        current_period_end=period_end_dt,
-        trial_ends_at=None,
+        start_date=datetime.now(UTC) - timedelta(days=40),
+        renewal_date=period_end_dt,
         is_active=False, # Explicitly not active
+        auto_renew=False,
+        last_renewal_date=datetime.now(UTC) - timedelta(days=40),
         created_at=datetime.now(UTC) - timedelta(days=100),
         updated_at=datetime.now(UTC) - timedelta(days=10), # Canceled 10 days ago
         plan=mock_plan
