@@ -409,14 +409,16 @@ class WebhookService:
         subscription_record.stripe_price_id = new_stripe_price_id if new_stripe_price_id else subscription_record.stripe_price_id
         
         trial_end_ts = subscription_data.get("trial_end")
-        subscription_record.trial_end_date = datetime.fromtimestamp(trial_end_ts, timezone.utc) if trial_end_ts else subscription_record.trial_end_date
+        # Use getattr for safe access before merge
+        subscription_record.trial_end_date = datetime.fromtimestamp(trial_end_ts, timezone.utc) if trial_end_ts else getattr(subscription_record, 'trial_end_date', None)
         
-        subscription_record.current_period_start = datetime.fromtimestamp(subscription_data.current_period_start, timezone.utc) if subscription_data.current_period_start else subscription_record.current_period_start
-        subscription_record.current_period_end = datetime.fromtimestamp(subscription_data.current_period_end, timezone.utc) if subscription_data.current_period_end else subscription_record.current_period_end
-        subscription_record.cancel_at_period_end = subscription_data.cancel_at_period_end
+        subscription_record.current_period_start = datetime.fromtimestamp(subscription_data.current_period_start, timezone.utc) if subscription_data.current_period_start else getattr(subscription_record, 'current_period_start', None)
+        subscription_record.current_period_end = datetime.fromtimestamp(subscription_data.current_period_end, timezone.utc) if subscription_data.current_period_end else getattr(subscription_record, 'current_period_end', None)
+        # cancel_at_period_end is boolean, default should be False if not present
+        subscription_record.cancel_at_period_end = subscription_data.cancel_at_period_end if hasattr(subscription_data, 'cancel_at_period_end') else getattr(subscription_record, 'cancel_at_period_end', False)
         
         canceled_at_ts = subscription_data.get("canceled_at")
-        subscription_record.canceled_at = datetime.fromtimestamp(canceled_at_ts, timezone.utc) if canceled_at_ts else subscription_record.canceled_at
+        subscription_record.canceled_at = datetime.fromtimestamp(canceled_at_ts, timezone.utc) if canceled_at_ts else getattr(subscription_record, 'canceled_at', None)
         
         await self.db.merge(subscription_record)
 
