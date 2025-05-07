@@ -59,7 +59,7 @@ async def test_cancel_subscription_success(client, db, auth_header, mock_stripe_
     await db.refresh(subscription)
     
     # Make the request to cancel the subscription
-    response = client.post(
+    response = await client.post(
         "/credits/subscriptions/cancel",
         json={
             "subscription_id": subscription.id,
@@ -124,7 +124,7 @@ async def test_cancel_subscription_already_canceled(client, db, auth_header):
     await db.refresh(subscription)
     
     # Make the request to cancel the subscription
-    response = client.post(
+    response = await client.post(
         "/credits/subscriptions/cancel",
         json={
             "subscription_id": subscription.id,
@@ -191,7 +191,7 @@ async def test_cancel_subscription_unauthorized(client, db, auth_header):
     
     # Make the request to cancel the subscription as user1
     # (auth_header is for user1)
-    response = client.post(
+    response = await client.post(
         "/credits/subscriptions/cancel",
         json={
             "subscription_id": subscription.id,
@@ -203,4 +203,4 @@ async def test_cancel_subscription_unauthorized(client, db, auth_header):
     # Check the response
     assert response.status_code == status.HTTP_403_FORBIDDEN
     data = response.json()
-    assert "permission" in data["detail"]["message"]
+    assert "permission" in data["detail"]

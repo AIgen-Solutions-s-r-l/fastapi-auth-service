@@ -25,17 +25,17 @@ def mock_db_session() -> AsyncMock:
     session = AsyncMock(spec=AsyncSession)
     
     # Create a mock for the execute result
-    execute_result = AsyncMock()
-    scalars_result = AsyncMock()
-    first_result = MagicMock()  # Use MagicMock for non-async methods
-    
+    # Create mocks for the execute result and its methods
+    execute_result_mock = MagicMock() # The object returned by the awaited execute
+    scalars_result_mock = AsyncMock() # The object returned by scalars() - Make it AsyncMock for awaitable methods
+
     # Set up the chain
-    session.execute.return_value = execute_result
-    execute_result.scalars.return_value = scalars_result
-    scalars_result.first = first_result
+    session.execute = AsyncMock(return_value=execute_result_mock) # execute() is awaitable
+    execute_result_mock.scalars.return_value = scalars_result_mock # scalars() is sync
+    scalars_result_mock.first = AsyncMock(return_value=None) # first() is awaitable and returns None by default
     
     # Other session methods
-    session.get = AsyncMock()
+    session.get = AsyncMock(return_value=None) # Default to not found
     session.merge = AsyncMock()
     session.add = AsyncMock()
     session.flush = AsyncMock()
@@ -119,13 +119,8 @@ class TestWebhookServiceEventProcessing:
 
     async def test_is_event_processed_returns_true_if_exists(self, webhook_service: WebhookService, mock_db_session: AsyncMock):
         # Create a proper mock structure
-        mock_result = MagicMock()
-        mock_scalars = MagicMock()
-        mock_scalars.first.return_value = ProcessedStripeEvent(stripe_event_id="evt_exists")
-        mock_result.scalars.return_value = mock_scalars
-        
-        # Set up the mock
-        mock_db_session.execute.return_value = mock_result
+        # Set up the mock to return a ProcessedStripeEvent
+        mock_db_session.execute.return_value.scalars.return_value.first.return_value = ProcessedStripeEvent(stripe_event_id="evt_exists")
         
         # Call the method
         result = await webhook_service.is_event_processed("evt_exists")
@@ -136,13 +131,8 @@ class TestWebhookServiceEventProcessing:
 
     async def test_is_event_processed_returns_false_if_not_exists(self, webhook_service: WebhookService, mock_db_session: AsyncMock):
         # Create a proper mock structure
-        mock_result = MagicMock()
-        mock_scalars = MagicMock()
-        mock_scalars.first.return_value = None
-        mock_result.scalars.return_value = mock_scalars
-        
-        # Set up the mock
-        mock_db_session.execute.return_value = mock_result
+        # Set up the mock to return None
+        mock_db_session.execute.return_value.scalars.return_value.first.return_value = None
         
         # Call the method
         result = await webhook_service.is_event_processed("evt_not_exists")
@@ -331,7 +321,7 @@ class TestHandleCheckoutSessionCompleted:
         mock_get_fingerprint.return_value = card_fingerprint
         
         # Mock DB query for existing fingerprint
-        mock_existing_fp_use = MagicMock(spec=UsedTrialCardFingerprint)
+        mock_existing_fp_use = AsyncMock(spec=UsedTrialCardFingerprint) # Use AsyncMock
         mock_existing_fp_use.user_id = "user_other"
         mock_existing_fp_use.stripe_subscription_id = "sub_other"
         mock_db_session.execute.return_value.scalars.return_value.first.return_value = mock_existing_fp_use
@@ -1183,12 +1173,20 @@ class TestHandleInvoicePaymentFailed:
             "paid": False, "billing_reason": "subscription_cycle"
         }
         event = create_stripe_event_payload(event_type="invoice.payment_failed", data_object=event_payload)
-        mock_db_session.execute.return_value.scalars.return_value.first.return_value = None # User not found
+
+        # Ensure accessing customer_details.get("metadata", {}) returns {}
+        # This simulates metadata not being present in customer_details, forcing the fallback DB lookup
+        event.data.object.customer_details = MagicMock()
+        event.data.object.customer_details.get.return_value = {} # Mock the get('metadata', {}) call
+
+        # Mock the DB lookup fallback to also return None
+        mock_db_session.execute.return_value.scalars.return_value.first.return_value = None
 
         await webhook_service.handle_invoice_payment_failed(event)
         mock_logger.error.assert_called_with(
-            f"User ID not found for invoice.payment_failed: {event.id}, Stripe Customer: {event.data.object.customer}",
-            event_id=event.id, stripe_customer_id=event.data.object.customer
+            f"User ID not found for invoice.payment_failed: {event.id}, Stripe Customer: {event_payload['customer']}",
+            event_id=event.id,
+            stripe_customer_id=event_payload['customer']
         )
         mock_db_session.commit.assert_not_called()
 
@@ -1198,13 +1196,25 @@ class TestHandleInvoicePaymentFailed:
             "id": "in_fail_user_not_found", "customer": "cus_for_ghost_fail", "subscription": "sub_for_ghost_fail",
             "paid": False, "billing_reason": "subscription_cycle", "metadata": {"user_id": user_id_from_meta}
         }
-        event = create_stripe_event_payload(event_type="invoice.payment_failed", data_object=event_payload)
+        event = create_stripe_event_payload(event_id="in_fail_user_not_found", event_type="invoice.payment_failed", data_object=event_payload)
+
+        # Mock the nested access: invoice_data.customer_details.get("metadata", {}).get("user_id")
+        mock_metadata_dict = MagicMock()
+        mock_metadata_dict.get.return_value = user_id_from_meta # Mock the final .get("user_id")
+
+        mock_customer_details = MagicMock()
+        # Mock the .get("metadata", {}) call to return the mock metadata dict
+        mock_customer_details.get.return_value = mock_metadata_dict
+
+        event.data.object.customer_details = mock_customer_details # Assign the mock customer_details
+
         mock_db_session.get.return_value = None # User not found by ID
 
         await webhook_service.handle_invoice_payment_failed(event)
         mock_logger.error.assert_called_with(
             f"User {user_id_from_meta} not found for invoice.payment_failed: {event.id}",
-            event_id=event.id, user_id=user_id_from_meta
+            event_id=event.id,
+            user_id=user_id_from_meta
         )
         mock_db_session.commit.assert_not_called()
 
@@ -1276,7 +1286,12 @@ class TestHandleInvoicePaymentFailed:
 
         mock_user = MagicMock(spec=User); mock_user.id = user_id; mock_user.account_status = "active"
         mock_db_session.get.return_value = mock_user
-        mock_db_session.execute.return_value.scalars.return_value.first.return_value = None # No subscription
+        # Mock the subscription query to return a mock Subscription object
+        mock_subscription = MagicMock(spec=Subscription)
+        mock_subscription.user_id = user_id
+        mock_subscription.stripe_subscription_id = "sub_db_err_fail"
+        mock_subscription.status = "active" # Initial status before potential change
+        mock_db_session.execute.return_value.scalars.return_value.first.return_value = mock_subscription
 
         # This commit is conditional on user.account_status changing.
         # To force a commit attempt, ensure initial status is different from 'frozen'.
@@ -1295,6 +1310,6 @@ class TestHandleInvoicePaymentFailed:
         # Rollback should be called if commit was attempted and failed
         mock_db_session.rollback.assert_called_once()
         mock_logger.error.assert_any_call(
-            f"Database error processing invoice.payment_failed for event {event.id}: DB commit failed inv_fail",
+            f"DB commit error for invoice.payment_failed {event.id}: DB commit failed inv_fail",
             event_id=event.id, exc_info=True
         )

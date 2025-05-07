@@ -567,7 +567,8 @@ class WebhookService:
         if not user_id and stripe_customer_id:
             user_stmt = select(User.id).where(User.stripe_customer_id == stripe_customer_id)
             user_result = await self.db.execute(user_stmt)
-            user_id = await user_result.scalars().first()
+            _scalars_res_user = user_result.scalars() # type: ignore
+            user_id = await _scalars_res_user.first()
 
         if not user_id:
             logger.error(f"User ID not found for invoice.payment_failed: {event_id}, Stripe Customer: {stripe_customer_id}", event_id=event_id, stripe_customer_id=stripe_customer_id)
@@ -584,7 +585,8 @@ class WebhookService:
         # Only freeze account if related to a subscription payment failure
         if stripe_subscription_id and invoice_data.billing_reason in ['subscription_cycle', 'subscription_create', 'subscription_update']:
             db_sub = await self.db.execute(select(Subscription).where(Subscription.stripe_subscription_id == stripe_subscription_id))
-            subscription_record = await db_sub.scalars().first()
+            _scalars_res_sub = db_sub.scalars() # type: ignore
+            subscription_record = await _scalars_res_sub.first()
             
             if subscription_record:
                 # Update subscription status based on Stripe's recommendation or a generic 'past_due'

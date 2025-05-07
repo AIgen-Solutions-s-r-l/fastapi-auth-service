@@ -320,7 +320,7 @@ async def get_or_create_subscription(db: AsyncSession, user_id: str, stripe_subs
     # Try to find existing subscription by stripe_subscription_id first
     stmt = select(Subscription).where(Subscription.stripe_subscription_id == stripe_subscription_id)
     result = await db.execute(stmt)
-    db_sub = result.scalars().first()
+    db_sub = await result.scalars().first()
 
     if db_sub:
         # If found, ensure user_id matches if it's already set, or set it if not
