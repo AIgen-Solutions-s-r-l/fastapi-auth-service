@@ -10,7 +10,7 @@ from app.services.user_service import UserService
 from app.models.user import User
 from app.models.credit import UserCredit
 from app.models.plan import Subscription, Plan
-from app.schemas.auth_schemas import UserStatusResponse, SubscriptionStatusResponse
+from app.schemas.auth_schemas import UserStatusResponse, SubscriptionStatusResponse, SubscriptionStatusEnum, UserAccountStatusEnum # Added import
 from app.core.config import settings
 
 
@@ -143,11 +143,13 @@ async def test_get_user_status_active_free_trial(
     user_service.get_user_by_id = AsyncMock(return_value=mock_user)
 
     # Mock stripe.Subscription.retrieve
-    mock_stripe_sub_data = MagicMock()
-    mock_stripe_sub_data.status = "trialing" # Stripe's status
-    mock_stripe_sub_data.trial_end = int(trial_end_datetime.timestamp())
-    mock_stripe_sub_data.current_period_end = int(trial_end_datetime.timestamp())
-    mock_stripe_sub_data.cancel_at_period_end = False
+    # Ensure the mock behaves like a dictionary for attribute access used in the service
+    mock_stripe_sub_data = {
+        "status": "trialing",  # Stripe's status as a string
+        "trial_end": int(trial_end_datetime.timestamp()),
+        "current_period_end": int(trial_end_datetime.timestamp()),
+        "cancel_at_period_end": False
+    }
     
     # Patch 'stripe.Subscription.retrieve'
     # The path to patch is where it's looked up, which is 'app.services.user_service.stripe.Subscription.retrieve'
@@ -187,7 +189,9 @@ async def test_get_user_status_active_free_trial(
     # However, the code always tries to commit after a refresh if stripe_sub was found.
     # Let's check if commit was called (it will be, due to refresh logic)
     # mock_db_session.commit.assert_called_once() # This might be too strict if other commits happen
-    assert mock_db_session.commit.call_count >= 1 # At least one commit for the refresh
+    # No commit is expected if the DB status and Stripe status match,
+    # as the commit is inside the status update block.
+    mock_db_session.commit.assert_not_called()
     
     # Check if the local subscription status was updated (it shouldn't if they matched)
     # If stripe status was different, then a commit would happen.
@@ -234,24 +238,34 @@ async def test_get_user_status_expired_trial_no_paid_subscription(
     # Mock the return value of get_user_by_id
     user_service.get_user_by_id = AsyncMock(return_value=mock_user)
 
-    # In this scenario, because the DB subscription is not 'active' or 'trialing',
-    # the stripe.Subscription.retrieve call should NOT be made.
-    with patch('app.services.user_service.stripe.Subscription.retrieve') as mock_stripe_retrieve:
+    # The service logic will attempt to retrieve from Stripe if stripe_subscription_id exists,
+    # even if the DB status is 'canceled', because 'canceled' is in candidate_subscriptions.
+    mock_stripe_return_data_expired = {
+        "status": "canceled", # What Stripe would likely return for an expired/canceled trial
+        "trial_end": int(trial_end_datetime.timestamp()), # Reflects when trial actually ended
+        "current_period_end": int(trial_end_datetime.timestamp()), # Period ended with trial
+        "cancel_at_period_end": False # Or True, depends on exact Stripe state
+    }
+    with patch('app.services.user_service.stripe.Subscription.retrieve', return_value=mock_stripe_return_data_expired) as mock_stripe_retrieve, \
+         patch('app.services.user_service.settings', STRIPE_SECRET_KEY='sk_test_123', STRIPE_API_VERSION='2020-08-27'):
         response = await user_service.get_user_status_details(mock_user.id)
 
     assert response is not None
     assert response.user_id == str(mock_user.id)
-    # Account status itself might still be active, depends on overall business logic
-    # For this test, we assume the user account itself isn't automatically deactivated.
     assert response.account_status == "active"
     assert response.credits_remaining == 0
     
-    # Since no active or trialing subscription is found in the DB based on the service's filter,
-    # the subscription part of the response should be None.
-    assert response.subscription is None
+    # The subscription details should be populated based on the 'canceled' status from Stripe/DB
+    assert response.subscription is not None
+    assert response.subscription.stripe_subscription_id == "sub_trial_expired_canceled"
+    assert response.subscription.status == SubscriptionStatusEnum.CANCELED
+    assert response.subscription.plan_name == mock_plan.name # Plan name from DB record
+    assert response.subscription.trial_end_date is not None
+    assert abs((response.subscription.trial_end_date - trial_end_datetime).total_seconds()) < 1
+    assert response.subscription.current_period_end is not None
+    assert abs((response.subscription.current_period_end - trial_end_datetime).total_seconds()) < 1
 
-    # Verify stripe.Subscription.retrieve was NOT called
-    mock_stripe_retrieve.assert_not_called()
+    mock_stripe_retrieve.assert_called_once_with("sub_trial_expired_canceled")
     
     # No specific commit expected for subscription status change as Stripe wasn't called.
     # Any commit would be from the initial get_user_by_id if it did a refresh,
@@ -295,11 +309,13 @@ async def test_get_user_status_active_paid_subscription(
 
     user_service.get_user_by_id = AsyncMock(return_value=mock_user)
 
-    mock_stripe_sub_data = MagicMock()
-    mock_stripe_sub_data.status = "active" # Stripe's status
-    mock_stripe_sub_data.trial_end = None # No active trial on Stripe
-    mock_stripe_sub_data.current_period_end = int(current_period_end_dt.timestamp())
-    mock_stripe_sub_data.cancel_at_period_end = False
+    # Ensure the mock behaves like a dictionary
+    mock_stripe_sub_data = {
+        "status": "active",  # Stripe's status as a string
+        "trial_end": None, # No active trial on Stripe
+        "current_period_end": int(current_period_end_dt.timestamp()),
+        "cancel_at_period_end": False
+    }
 
     with patch('app.services.user_service.stripe.Subscription.retrieve', return_value=mock_stripe_sub_data) as mock_stripe_retrieve, \
          patch('app.services.user_service.settings', STRIPE_SECRET_KEY='sk_test_123', STRIPE_API_VERSION='2020-08-27'):
@@ -321,7 +337,8 @@ async def test_get_user_status_active_paid_subscription(
     assert response.subscription.cancel_at_period_end is False
 
     mock_stripe_retrieve.assert_called_once_with("sub_paid_active")
-    assert mock_db_session.commit.call_count >= 1 # For refresh
+    # No commit is expected if the DB status and Stripe status match
+    mock_db_session.commit.assert_not_called()
 @pytest.mark.asyncio
 async def test_get_user_status_frozen_subscription_past_due(
     user_service: UserService,
@@ -363,13 +380,13 @@ async def test_get_user_status_frozen_subscription_past_due(
 
     user_service.get_user_by_id = AsyncMock(return_value=mock_user)
 
-    mock_stripe_sub_data = MagicMock()
-    mock_stripe_sub_data.status = "past_due" # Stripe's status indicates payment issue
-    mock_stripe_sub_data.trial_end = None
-    # Stripe's current_period_end for a past_due subscription
-    # usually remains the original one until it's resolved or canceled.
-    mock_stripe_sub_data.current_period_end = int(current_period_end_dt.timestamp())
-    mock_stripe_sub_data.cancel_at_period_end = False
+    # Ensure the mock behaves like a dictionary
+    mock_stripe_sub_data = {
+        "status": "past_due",  # Stripe's status as a string
+        "trial_end": None,
+        "current_period_end": int(current_period_end_dt.timestamp()),
+        "cancel_at_period_end": False
+    }
 
     with patch('app.services.user_service.stripe.Subscription.retrieve', return_value=mock_stripe_sub_data) as mock_stripe_retrieve, \
          patch('app.services.user_service.settings', STRIPE_SECRET_KEY='sk_test_123', STRIPE_API_VERSION='2020-08-27'):
@@ -418,7 +435,7 @@ async def test_get_user_status_frozen_subscription_past_due(
                                                     # This means `mock_frozen_subscription.is_active` (which was True) remains True.
                                                     # This is an important nuance.
 
-    assert mock_frozen_subscription.is_active is True # Based on current service logic for "past_due"
+    assert mock_frozen_subscription.is_active is False # Service logic now correctly sets is_active to False for "past_due"
 
     assert mock_db_session.commit.call_count >= 1 # For status update and refresh
 @pytest.mark.asyncio
@@ -458,8 +475,15 @@ async def test_get_user_status_canceled_subscription(
 
     user_service.get_user_by_id = AsyncMock(return_value=mock_user)
 
-    # Stripe should not be called because the DB subscription is not 'active' or 'trialing'
-    with patch('app.services.user_service.stripe.Subscription.retrieve') as mock_stripe_retrieve:
+    # The service logic will attempt to retrieve from Stripe if stripe_subscription_id exists.
+    mock_stripe_return_data_canceled = {
+        "status": "canceled", # What Stripe would return
+        "trial_end": None, # Assuming not a trial, or trial info is not relevant for already canceled
+        "current_period_end": int(period_end_dt.timestamp()), # When the period effectively ended
+        "cancel_at_period_end": True # Typically true if user canceled, or could be false if Stripe canceled it
+    }
+    with patch('app.services.user_service.stripe.Subscription.retrieve', return_value=mock_stripe_return_data_canceled) as mock_stripe_retrieve, \
+         patch('app.services.user_service.settings', STRIPE_SECRET_KEY='sk_test_123', STRIPE_API_VERSION='2020-08-27'):
         response = await user_service.get_user_status_details(mock_user.id)
 
     assert response is not None
@@ -467,12 +491,14 @@ async def test_get_user_status_canceled_subscription(
     assert response.account_status == "active"
     assert response.credits_remaining == 5
 
-    # Since the DB subscription is 'canceled' and 'is_active=False',
-    # it won't be picked by the filter for active_subscription.
-    # Thus, response.subscription should be None.
-    assert response.subscription is None
-
-    mock_stripe_retrieve.assert_not_called()
+    assert response.subscription is not None
+    assert response.subscription.stripe_subscription_id == "sub_canceled_xyz"
+    assert response.subscription.status == SubscriptionStatusEnum.CANCELED
+    assert response.subscription.plan_name == mock_plan.name
+    assert response.subscription.current_period_end is not None
+    assert abs((response.subscription.current_period_end - period_end_dt).total_seconds()) < 1
+    
+    mock_stripe_retrieve.assert_called_once_with("sub_canceled_xyz")
     # No commit expected for subscription status change as Stripe wasn't called.
     # mock_db_session.commit.assert_not_called() # Potentially too strict
 @pytest.mark.asyncio
@@ -524,10 +550,11 @@ async def test_get_user_status_consumed_trial_then_active_paid(
         user_id=mock_user.id,
         plan_id=past_trial_plan.id,
         stripe_subscription_id="sub_consumed_trial",
-        status=SubscriptionStatusEnum.CANCELED, # Or EXPIRED, effectively not active
+        status="canceled", # Use string value for DB model
         current_period_start=datetime.now(UTC) - timedelta(days=60),
         current_period_end=datetime.now(UTC) - timedelta(days=53), # Trial ended
-        trial_ends_at=datetime.now(UTC) - timedelta(days=53),
+        # trial_ends_at is not a direct field on Subscription model, use trial_end_date
+        trial_end_date=datetime.now(UTC) - timedelta(days=53),
         is_active=False,
         created_at=datetime.now(UTC) - timedelta(days=60),
         updated_at=datetime.now(UTC) - timedelta(days=53),
@@ -538,17 +565,17 @@ async def test_get_user_status_consumed_trial_then_active_paid(
     mock_plan.is_trial_eligible = False # Ensure this is treated as a non-trial plan
     mock_plan.name = "Active Paid Plan"
     active_paid_subscription_start_dt = datetime.now(UTC) - timedelta(days=30)
-    active_paid_subscription_end_dt = datetime.now(UTC) + timedelta(days(5)) # Corrected: timedelta takes days as arg
+    active_paid_subscription_end_dt = datetime.now(UTC) + timedelta(days=5) # Corrected: timedelta takes days as arg
     
     active_paid_subscription = Subscription(
         id=8,
         user_id=mock_user.id,
         plan_id=mock_plan.id,
         stripe_subscription_id="sub_active_paid_after_trial",
-        status=SubscriptionStatusEnum.ACTIVE,
+        status="active", # DB model expects a string
         current_period_start=active_paid_subscription_start_dt,
         current_period_end=active_paid_subscription_end_dt,
-        trial_ends_at=None, # No trial on this specific subscription
+        trial_end_date=None, # Correct field name for Subscription model
         is_active=True,
         created_at=active_paid_subscription_start_dt, # Created after trial
         updated_at=datetime.now(UTC),
@@ -562,11 +589,13 @@ async def test_get_user_status_consumed_trial_then_active_paid(
     user_service.get_user_by_id = AsyncMock(return_value=mock_user)
 
     # Stripe mock for the active paid subscription
-    mock_stripe_sub_data_paid = MagicMock()
-    mock_stripe_sub_data_paid.status = "active"
-    mock_stripe_sub_data_paid.trial_end = None
-    mock_stripe_sub_data_paid.current_period_end = int(active_paid_subscription_end_dt.timestamp())
-    mock_stripe_sub_data_paid.cancel_at_period_end = False
+    # Ensure the mock behaves like a dictionary
+    mock_stripe_sub_data_paid = {
+        "status": "active", # Stripe's status as a string
+        "trial_end": None,
+        "current_period_end": int(active_paid_subscription_end_dt.timestamp()),
+        "cancel_at_period_end": False
+    }
 
     with patch('app.services.user_service.stripe.Subscription.retrieve', return_value=mock_stripe_sub_data_paid) as mock_stripe_retrieve, \
          patch('app.services.user_service.settings', STRIPE_SECRET_KEY='sk_test_123', STRIPE_API_VERSION='2020-08-27'):
@@ -590,4 +619,5 @@ async def test_get_user_status_consumed_trial_then_active_paid(
 
     # Stripe retrieve should be called for the active paid subscription
     mock_stripe_retrieve.assert_called_once_with("sub_active_paid_after_trial")
-    assert mock_db_session.commit.call_count >= 1 # For refresh of the active subscription
+    # No commit is expected if the DB status and Stripe status match
+    mock_db_session.commit.assert_not_called()

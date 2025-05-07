@@ -2,6 +2,7 @@
 
 from typing import Optional
 from datetime import datetime # Added for datetime type hint
+from enum import Enum # Added for SubscriptionStatusEnum
 from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 
 class GoogleAuthRequest(BaseModel):
@@ -142,10 +143,21 @@ class RegistrationResponse(BaseModel):
 
 # --- Schemas for User Status API ---
 
+class SubscriptionStatusEnum(str, Enum):
+    """Enum for Stripe subscription statuses."""
+    TRIALING = "trialing"
+    ACTIVE = "active"
+    PAST_DUE = "past_due"
+    CANCELED = "canceled"
+    UNPAID = "unpaid"
+    INCOMPLETE = "incomplete"
+    INCOMPLETE_EXPIRED = "incomplete_expired"
+    # Add any other relevant statuses if needed
+
 class SubscriptionStatusResponse(BaseModel):
     """Pydantic model for subscription details in user status response."""
     stripe_subscription_id: str
-    status: str
+    status: SubscriptionStatusEnum # Changed from str to SubscriptionStatusEnum
     plan_name: str
     trial_end_date: Optional[datetime] = None
     current_period_end: Optional[datetime] = None
@@ -153,10 +165,19 @@ class SubscriptionStatusResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class UserAccountStatusEnum(str, Enum):
+    """Enum for user account statuses."""
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    SUSPENDED = "suspended"
+    FROZEN = "frozen"
+    PENDING_VERIFICATION = "pending_verification"
+    # Add other relevant statuses as needed
+
 class UserStatusResponse(BaseModel):
     """Pydantic model for the user status API response."""
     user_id: str # Assuming this will be the string representation of the UUID
-    account_status: str
+    account_status: UserAccountStatusEnum # Changed from str
     credits_remaining: int
     subscription: Optional[SubscriptionStatusResponse] = None
 

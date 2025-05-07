@@ -20,7 +20,7 @@ from app.core.security import get_password_hash, verify_password
 from app.models.user import User, EmailVerificationToken, EmailChangeRequest, PasswordResetToken
 from app.models.credit import UserCredit # Added
 from app.models.plan import Subscription, Plan # Added
-from app.schemas.auth_schemas import UserStatusResponse, SubscriptionStatusResponse # Added
+from app.schemas.auth_schemas import UserStatusResponse, SubscriptionStatusResponse, SubscriptionStatusEnum # Added Enum
 from app.services.email_service import EmailService
 from app.services.stripe_service import StripeService # Added
 from app.log.logging import logger
@@ -221,7 +221,9 @@ class UserService:
                             )
                             active_subscription.status = stripe_subscription_status
                             # Potentially update is_active based on Stripe status
-                            if stripe_subscription_status not in ["active", "trialing", "past_due"]: # incomplete, unpaid, canceled
+                            # If Stripe status is anything other than 'active' or 'trialing', set local is_active to False.
+                            # This includes 'past_due', 'canceled', 'unpaid', 'incomplete', etc.
+                            if stripe_subscription_status not in [SubscriptionStatusEnum.ACTIVE.value, SubscriptionStatusEnum.TRIALING.value]:
                                 active_subscription.is_active = False
                             await self.db.commit()
                             await self.db.refresh(active_subscription)
