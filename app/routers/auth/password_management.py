@@ -199,6 +199,16 @@ async def reset_password_with_token(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid user or invalid/expired token"
         )
+    except HTTPException as http_ex:
+        # Re-raise HTTP exceptions to preserve their status code and details
+        logger.error(
+            f"HTTP exception in reset_password_with_token: {http_ex.status_code}: {http_ex.detail}",
+            event_type="password_reset_http_error",
+            token=reset_data.token,
+            error_type="HTTPException",
+            error_details=str(http_ex.detail)
+        )
+        raise http_ex
     except Exception as e:
         logger.error(
             "Password reset failed",

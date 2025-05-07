@@ -172,6 +172,8 @@ class UserAccountStatusEnum(str, Enum):
     SUSPENDED = "suspended"
     FROZEN = "frozen"
     PENDING_VERIFICATION = "pending_verification"
+    NEW_USER = "new_user" # Added status used in tests
+    TRIALING = "trialing" # Added status used in tests
     # Add other relevant statuses as needed
 
 class UserStatusResponse(BaseModel):

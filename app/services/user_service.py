@@ -20,7 +20,12 @@ from app.core.security import get_password_hash, verify_password
 from app.models.user import User, EmailVerificationToken, EmailChangeRequest, PasswordResetToken
 from app.models.credit import UserCredit # Added
 from app.models.plan import Subscription, Plan # Added
-from app.schemas.auth_schemas import UserStatusResponse, SubscriptionStatusResponse, SubscriptionStatusEnum # Added Enum
+from app.schemas.auth_schemas import ( # Import Enums explicitly
+    UserStatusResponse,
+    SubscriptionStatusResponse,
+    SubscriptionStatusEnum,
+    UserAccountStatusEnum
+)
 from app.services.email_service import EmailService
 from app.services.stripe_service import StripeService # Added
 from app.log.logging import logger
@@ -246,18 +251,34 @@ class UserService:
                         error_message=str(e)
                     )
             
+            # Validate/Convert subscription status string to Enum
+            try:
+                validated_sub_status = SubscriptionStatusEnum(stripe_subscription_status)
+            except ValueError:
+                logger.warning(f"Invalid subscription status '{stripe_subscription_status}' received for user {user_id}. Defaulting to 'active'.",
+                               event_type="invalid_subscription_status", user_id=user_id, received_status=stripe_subscription_status)
+                validated_sub_status = SubscriptionStatusEnum.ACTIVE # Or handle as appropriate
+
             subscription_response = SubscriptionStatusResponse(
                 stripe_subscription_id=stripe_sub_id_db or "N/A",
-                status=stripe_subscription_status, # Use status from Stripe if available
+                status=validated_sub_status, # Use validated Enum member
                 plan_name=plan_name,
                 trial_end_date=trial_end_date_stripe,
                 current_period_end=current_period_end_stripe,
                 cancel_at_period_end=cancel_at_period_end_stripe
             )
+        
+        # Validate/Convert account status string to Enum
+        try:
+            validated_account_status = UserAccountStatusEnum(user.account_status)
+        except ValueError:
+             logger.warning(f"Invalid account status '{user.account_status}' found for user {user_id}. Defaulting to 'active'.",
+                           event_type="invalid_account_status", user_id=user_id, db_status=user.account_status)
+             validated_account_status = UserAccountStatusEnum.ACTIVE # Or handle as appropriate
 
         return UserStatusResponse(
-            user_id=str(user.id), # Assuming user.id is int, convert to str if schema expects UUID as str
-            account_status=user.account_status,
+            user_id=str(user.id),
+            account_status=validated_account_status, # Use validated Enum member
             credits_remaining=credits_remaining,
             subscription=subscription_response
         )

@@ -4,15 +4,20 @@ import pytest
 from httpx import AsyncClient # Changed from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from typing import AsyncGenerator, Generator
+from typing import AsyncGenerator, Generator, Tuple, Dict # Added Tuple, Dict
 from unittest.mock import AsyncMock, patch
 import asyncio
+import secrets # Added secrets
 import greenlet
 import logging
+from app.log.logging import logger # Import logger
 
 from app.core.database import get_db
-from app.main import app
-from app.models.user import Base
+# Import app directly from app.main to ensure we're using the same instance
+from app.main import app as app_instance
+import app.models # Import all models to ensure they are registered with Base.metadata
+from app.models.user import User # Ensure User is imported for type hinting
+from app.core.base_model import Base # Import Base from its actual definition location
 from app.services.email_service import EmailService
 
 logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
@@ -20,34 +25,54 @@ logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
 # Use SQLite for testing
 SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
 
+# Create engine once
 engine = create_async_engine(
-    SQLALCHEMY_DATABASE_URL, 
+    SQLALCHEMY_DATABASE_URL,
     connect_args={"check_same_thread": False},
-    poolclass=None,
-    echo=False
+    # poolclass=None, # Let SQLAlchemy manage pooling, default is QueuePool
+    echo=False # Set to True for debugging SQL
 )
-TestingSessionLocal = sessionmaker(
-    autocommit=False, 
-    autoflush=False, 
-    bind=engine, 
-    class_=AsyncSession,
-    expire_on_commit=False
-)
- 
-# Removed custom event_loop fixture to let pytest-asyncio handle it,
-# as asyncio_mode = auto is set in pytest.ini.
- 
-@pytest.fixture
-async def db() -> AsyncGenerator[AsyncSession, None]:
-    """Create a clean database session for a test."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
 
-    async with TestingSessionLocal() as session:
+# Create sessionmaker once
+AsyncTestingSessionLocal = sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False,
+    autocommit=False,
+)
+
+@pytest.fixture(scope="session", autouse=True)
+async def setup_database():
+    """Create database tables once per session."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all) # Drop at start of session
+        await conn.run_sync(Base.metadata.create_all) # Create at start of session
+    logger.info("Database tables created for test session.")
+    yield
+    logger.info("Test session finished.")
+    # Optional: Drop tables at end of session if needed
+    # async with engine.begin() as conn:
+    #     await conn.run_sync(Base.metadata.drop_all)
+
+@pytest.fixture()
+async def db(setup_database) -> AsyncGenerator[AsyncSession, None]:
+    """Provide a transactional scope around a test using nested transactions."""
+    async with AsyncTestingSessionLocal() as session:
+        # Begin a nested transaction (savepoint) for the test
+        nested_transaction = await session.begin_nested()
+        logger.debug(f"Started nested transaction for test.")
+
         yield session
-        await session.rollback()
-        await session.close()
+
+        # Roll back the nested transaction after the test
+        if nested_transaction.is_active:
+            await nested_transaction.rollback()
+            logger.debug(f"Rolled back nested transaction.")
+        else:
+            logger.warning(f"Nested transaction was already inactive before explicit rollback.")
+        # The outer transaction managed by AsyncTestingSessionLocal context manager
+        # will also be rolled back upon exiting the 'async with'.
 
 @pytest.fixture
 async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]: # Changed to async fixture and AsyncClient
@@ -56,10 +81,10 @@ async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]: # Chang
     async def override_get_db():
         yield db # Simplified: db fixture manages its own lifecycle
  
-    app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(app=app, base_url="http://test") as test_client: # Use AsyncClient
+    app_instance.dependency_overrides[get_db] = override_get_db
+    async with AsyncClient(app=app_instance, base_url="http://test") as test_client: # Use app_instance
         yield test_client
-    app.dependency_overrides.clear()
+    app_instance.dependency_overrides.clear()
 
 @pytest.fixture
 def test_user_data():
@@ -94,13 +119,12 @@ def mock_background_tasks():
         yield mock
 
 # Helper functions for tests
-async def create_test_user(db: AsyncSession, email: str, password: str, is_verified: bool = False):
+async def create_test_user(db: AsyncSession, email: str, password: str, is_verified: bool = False) -> User: # Added return type hint
     """Helper function to create a test user."""
-    from app.services.user_service import create_user
-    user = await create_user(db, email, password)
-    if is_verified:
-        user.is_verified = True
-        await db.commit()
+    from app.services.user_service import UserService # Changed from create_user directly
+    user_service = UserService(db) # Instantiate UserService
+    user = await user_service.create_user(email, password, auto_verify=is_verified) # Call the method
+    # Removed direct is_verified assignment and commit, as create_user handles it.
     return user
 
 async def create_test_token(db: AsyncSession, user_id: int, token: str, expires_in_hours: int = 24):
@@ -119,19 +143,23 @@ async def create_test_token(db: AsyncSession, user_id: int, token: str, expires_
     return token_record
 
 @pytest.fixture
-async def auth_header(db: AsyncSession) -> dict:
-    """Create an authenticated user and return the auth header."""
+async def auth_user_and_header(db: AsyncSession) -> Tuple[User, Dict[str, str]]:
+    """Create an authenticated user and return the user object and auth header."""
     from app.core.security import create_access_token
     from datetime import timedelta
+
+    # Create a unique email for each test run using this fixture
+    unique_suffix = secrets.token_hex(4)
+    test_email = f"auth_test_{unique_suffix}@example.com"
     
     # Create a test user
-    user = await create_test_user(db, "auth_test@example.com", "password123", is_verified=True)
+    user = await create_test_user(db, test_email, "password123", is_verified=True)
     
     # Create access token
     access_token = create_access_token(
-        data={"sub": user.email},
+        data={"sub": user.email}, # Use the actual email of the created user
         expires_delta=timedelta(minutes=30)
     )
     
-    # Return auth header
-    return {"Authorization": f"Bearer {access_token}"}
+    auth_header_dict = {"Authorization": f"Bearer {access_token}"}
+    return user, auth_header_dict

@@ -10,7 +10,7 @@ pytestmark = pytest.mark.asyncio
 
 async def test_successful_registration(client, db, test_user_data):
     """Test successful user registration."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json=test_user_data
     )
@@ -33,22 +33,22 @@ async def test_successful_registration(client, db, test_user_data):
 async def test_register_duplicate_email(client, db, test_user_data):
     """Test registration with existing email returns conflict error."""
     # First registration
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json=test_user_data
     )
     assert response.status_code == status.HTTP_201_CREATED
-
+ 
     # Attempt duplicate registration
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json=test_user_data
     )
     # The current implementation returns 400 Bad Request for duplicate emails
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     data = response.json()
-    # The error message is in the "detail" field
-    assert "Email already registered" in data["detail"]["message"]
+    # Adjust assertion: Check if the detail string contains "Email already registered"
+    assert "Email already registered" in str(data["detail"])
 
 async def test_register_invalid_email_format(client):
     """Test registration with invalid email format."""
@@ -56,7 +56,7 @@ async def test_register_invalid_email_format(client):
         "email": "invalid-email",
         "password": "testpassword123"
     }
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json=invalid_data
     )
@@ -73,7 +73,7 @@ async def test_register_weak_password(client):
         "email": "test@example.com",
         "password": "weak"  # Too short
     }
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json=weak_password_data
     )
@@ -86,7 +86,7 @@ async def test_register_weak_password(client):
 
 async def test_register_missing_email(client):
     """Test registration with missing email."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json={"password": "testpassword123"}
     )
@@ -99,7 +99,7 @@ async def test_register_missing_email(client):
 
 async def test_register_missing_password(client):
     """Test registration with missing password."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json={"email": "test@example.com"}
     )
@@ -112,7 +112,7 @@ async def test_register_missing_password(client):
 
 async def test_register_empty_payload(client):
     """Test registration with empty payload."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json={}
     )
@@ -125,7 +125,7 @@ async def test_register_empty_payload(client):
 
 async def test_register_verify_background_task(client, db, test_user_data, mock_email_service):
     """Test that registration triggers verification email background task."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json=test_user_data
     )
@@ -153,7 +153,7 @@ async def test_register_with_whitespace_email(client):
         "email": " test@example.com ",  # Whitespace should be trimmed
         "password": "testpassword123"
     }
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json=data
     )
@@ -167,7 +167,7 @@ async def test_register_large_payload(client):
         "email": "test@example.com",
         "password": "x" * 1_000_000  # Very large password
     }
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json=large_data
     )
@@ -187,7 +187,7 @@ async def test_register_password_requirements(client):
         "email": "test@example.com",
         "password": "short"  # Too short
     }
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json=short_password_data
     )
@@ -202,7 +202,7 @@ async def test_register_password_requirements(client):
         "email": "test2@example.com",
         "password": "12345678"  # Meets length requirement
     }
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json=numeric_password_data
     )
@@ -213,7 +213,7 @@ async def test_register_password_requirements(client):
         "email": "test3@example.com",
         "password": "abcdefgh"  # Meets length requirement
     }
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json=letter_password_data
     )

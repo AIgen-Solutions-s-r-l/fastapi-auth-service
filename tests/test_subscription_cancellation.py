@@ -22,12 +22,9 @@ def mock_stripe_cancel(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cancel_subscription_success(client, db, auth_header, mock_stripe_cancel):
+async def test_cancel_subscription_success(client, db, auth_user_and_header, mock_stripe_cancel):
     """Test successful subscription cancellation."""
-    # Get the authenticated user from the database
-    from sqlalchemy import select
-    result = await db.execute(select(User).where(User.email == "auth_test@example.com"))
-    user = result.scalar_one()
+    user, auth_header = auth_user_and_header # Unpack the fixture
     
     # Create a test plan
     plan = Plan(
@@ -87,12 +84,9 @@ async def test_cancel_subscription_success(client, db, auth_header, mock_stripe_
 
 
 @pytest.mark.asyncio
-async def test_cancel_subscription_already_canceled(client, db, auth_header):
+async def test_cancel_subscription_already_canceled(client, db, auth_user_and_header):
     """Test cancellation of an already canceled subscription."""
-    # Get the authenticated user from the database
-    from sqlalchemy import select
-    result = await db.execute(select(User).where(User.email == "auth_test@example.com"))
-    user = result.scalar_one()
+    user, auth_header = auth_user_and_header # Unpack the fixture
     
     # Create a test plan
     plan = Plan(
@@ -141,12 +135,9 @@ async def test_cancel_subscription_already_canceled(client, db, auth_header):
 
 
 @pytest.mark.asyncio
-async def test_cancel_subscription_unauthorized(client, db, auth_header):
+async def test_cancel_subscription_unauthorized(client, db, auth_user_and_header):
     """Test cancellation of another user's subscription."""
-    # Get the authenticated user from the database (user1)
-    from sqlalchemy import select
-    result = await db.execute(select(User).where(User.email == "auth_test@example.com"))
-    user1 = result.scalar_one()
+    user1, auth_header = auth_user_and_header # Unpack the fixture (this is user1)
     
     # Create a second test user (user2)
     user2 = User(

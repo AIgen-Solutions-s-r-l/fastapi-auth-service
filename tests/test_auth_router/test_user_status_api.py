@@ -96,7 +96,7 @@ async def test_get_user_status_with_active_subscription(
         raise NotImplementedError(f"Unexpected call to asyncio.to_thread with {func.__name__}")
 
     with patch("asyncio.to_thread", AsyncMock(side_effect=mock_to_thread_side_effect)) as mock_asyncio_to_thread:
-        response = client.get("/auth/me/status", headers=headers)
+        response = await client.get("/auth/me/status", headers=headers) # Added await
  
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
@@ -136,9 +136,9 @@ async def test_get_user_status_no_subscription(
     token_data = {"sub": user.email, "id": user.id}
     access_token = create_access_token(data=token_data)
     headers = {"Authorization": f"Bearer {access_token}"}
-
-    response = client.get("/auth/me/status", headers=headers)
-
+ 
+    response = await client.get("/auth/me/status", headers=headers) # Added await
+ 
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
 
@@ -208,7 +208,7 @@ async def test_get_user_status_trialing_subscription(
         raise NotImplementedError(f"Unexpected call to asyncio.to_thread with {func.__name__}")
 
     with patch("asyncio.to_thread", side_effect=mock_to_thread_side_effect) as mock_asyncio_to_thread:
-        response = client.get("/auth/me/status", headers=headers)
+        response = await client.get("/auth/me/status", headers=headers) # Added await
  
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
@@ -231,8 +231,7 @@ async def test_get_user_status_trialing_subscription(
 @pytest.mark.asyncio
 async def test_get_user_status_unauthorized(client: AsyncClient):
     """Test attempting to get user status without authentication."""
-    # Don't use await here since the response is already a Response object, not a coroutine
-    response = client.get("/auth/me/status")
+    response = await client.get("/auth/me/status") # Added await
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
     # The response format might be slightly different, just check that it contains an authentication error
     response_json = response.json()
@@ -277,8 +276,8 @@ async def test_get_user_status_stripe_api_error(
         raise NotImplementedError(f"Unexpected call to asyncio.to_thread with {func.__name__}")
  
     with patch("app.services.user_service.asyncio.to_thread", side_effect=mock_to_thread_side_effect) as mock_asyncio_to_thread:
-        response = client.get("/auth/me/status", headers=headers)
- 
+        response = await client.get("/auth/me/status", headers=headers) # Added await
+  
     assert response.status_code == status.HTTP_200_OK # Endpoint should still succeed, but subscription details might be from DB / defaults
     data = response.json()
     
@@ -359,8 +358,8 @@ async def test_get_user_status_frozen_account(
         raise NotImplementedError(f"Unexpected call to asyncio.to_thread with {func.__name__}")
 
     with patch("asyncio.to_thread", side_effect=mock_to_thread_side_effect) as mock_asyncio_to_thread:
-        response = client.get("/auth/me/status", headers=headers)
- 
+        response = await client.get("/auth/me/status", headers=headers) # Added await
+  
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
 
@@ -441,8 +440,8 @@ async def test_get_user_status_canceled_subscription(
         raise NotImplementedError(f"Unexpected call to asyncio.to_thread with {func.__name__}")
 
     with patch("asyncio.to_thread", side_effect=mock_to_thread_side_effect) as mock_asyncio_to_thread:
-        response = client.get("/auth/me/status", headers=headers)
- 
+        response = await client.get("/auth/me/status", headers=headers) # Added await
+  
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
 

@@ -526,6 +526,7 @@ class TransactionService:
                                          event_type="free_plan_gate_db_insert_attempt",
                                          fingerprint=fingerprint)
                             new_card_record = UsedTrialCardFingerprint(
+                                user_id=user_id, # Add user_id
                                 stripe_card_fingerprint=fingerprint,
                                 stripe_payment_method_id=payment_method_id,
                                 stripe_customer_id=stripe_customer_id,
