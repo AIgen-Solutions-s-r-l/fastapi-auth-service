@@ -348,6 +348,186 @@ async def test_paid_plan_subscription_bypass_gate(
         transaction_service.purchase_plan.assert_called_once()
 
 @pytest.mark.asyncio
+async def test_paid_plan_after_free_trial_same_card(
+    transaction_service: TransactionService,
+    test_user: User,
+    test_free_plan: Plan, # Used to set up the initial free trial card usage
+    test_paid_plan: Plan, # The plan being purchased
+    db: AsyncSession
+):
+    """
+    Test AC1: User who used a card for a free trial CAN purchase a PAID plan with the SAME card.
+    The card uniqueness gate should NOT be triggered for non-limited_free plans.
+    """
+    paid_sub_id = f"sub_paid_after_free_{secrets.token_hex(4)}"
+    # Use the same fingerprint that was "used" for a free trial
+    shared_fingerprint = f"fp_shared_{secrets.token_hex(4)}"
+    shared_pm_id = f"pm_shared_{secrets.token_hex(4)}"
+
+    # 1. Simulate prior use of the card for a free trial
+    used_card_record = UsedTrialCardFingerprint(
+        user_id=test_user.id,
+        stripe_card_fingerprint=shared_fingerprint,
+        stripe_payment_method_id="pm_free_trial_orig", # Original PM for free trial
+        stripe_subscription_id="sub_free_trial_orig", # Original sub for free trial
+        stripe_customer_id=test_user.stripe_customer_id
+    )
+    db.add(used_card_record)
+    await db.commit()
+
+    # 2. Mock services for the PAID plan purchase
+    # Mock plan_service.get_plan_by_id to return the test_paid_plan
+    transaction_service.plan_service.get_plan_by_id.return_value = test_paid_plan
+    
+    # Mock stripe_service.verify_transaction_id for the paid subscription
+    transaction_service.stripe_service.verify_transaction_id.return_value = {
+        "verified": True,
+        "id": paid_sub_id,
+        "object_type": "subscription",
+        "amount": test_paid_plan.price,
+        "customer_id": test_user.stripe_customer_id,
+        "status": "active",
+        "plan_id": test_paid_plan.stripe_price_id # Stripe Price ID of the PAID plan
+    }
+    
+    # Mock stripe_service.check_active_subscription (no existing active sub)
+    transaction_service.stripe_service.check_active_subscription.return_value = None
+    
+    # Mock _find_matching_plan to return the paid plan's ID
+    # This mock is crucial to simulate that the system correctly identifies the paid plan
+    with patch.object(transaction_service, '_find_matching_plan', new_callable=AsyncMock) as mock_find_plan:
+        mock_find_plan.return_value = test_paid_plan.id
+        
+        # Mock stripe_service.verify_subscription_active (for the purchase_plan call)
+        transaction_service.stripe_service.verify_subscription_active.return_value = True
+        
+        # Mock the actual purchase_plan method since we are testing verify_and_process_subscription
+        transaction_service.purchase_plan = AsyncMock()
+        # Ensure the mock objects have an 'id' attribute, as the code under test will access it.
+        mock_transaction_response = MagicMock(spec=credit_schemas.TransactionResponse)
+        mock_transaction_response.id = "mock_tx_id_123" # Add id attribute
+        mock_transaction_response.new_balance = Decimal("100.00") # Add new_balance attribute
+        mock_subscription_object = MagicMock(spec=Subscription)
+        mock_subscription_object.id = "mock_sub_obj_id_456" # Add id attribute
+        transaction_service.purchase_plan.return_value = (mock_transaction_response, mock_subscription_object)
+
+        # Mock Stripe API calls that *should not* be called if the gate is correctly bypassed
+        with patch('stripe.Subscription.retrieve', new_callable=AsyncMock) as mock_stripe_sub_retrieve, \
+             patch('stripe.PaymentMethod.retrieve', new_callable=AsyncMock) as mock_stripe_pm_retrieve:
+
+            # 3. Execute the method
+            background_tasks = BackgroundTasks()
+            transaction, subscription = await transaction_service.verify_and_process_subscription(
+                user_id=test_user.id,
+                transaction_id=paid_sub_id,
+                background_tasks=background_tasks
+            )
+            
+            # 4. Verify results
+            assert transaction is mock_transaction_response
+            assert subscription is mock_subscription_object
+            
+            # Verify mocks
+            transaction_service.stripe_service.verify_transaction_id.assert_called_once_with(paid_sub_id)
+            transaction_service.stripe_service.check_active_subscription.assert_called_once_with(test_user.id)
+            mock_find_plan.assert_called_once_with(test_paid_plan.stripe_price_id)
+            # get_plan_by_id is called once to check is_limited_free
+            transaction_service.plan_service.get_plan_by_id.assert_called_once_with(test_paid_plan.id)
+            
+            # CRITICAL: Assert that Stripe card detail retrieval was NOT called (gate bypassed)
+            mock_stripe_sub_retrieve.assert_not_called()
+            mock_stripe_pm_retrieve.assert_not_called()
+            
+            # Assert purchase_plan was called
+            transaction_service.purchase_plan.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_verify_subscription_no_local_plan_match(
+    transaction_service: TransactionService,
+    test_user: User
+):
+    """Test verify_and_process_subscription when Stripe Price ID from webhook has no matching local plan."""
+    sub_id_unknown_plan = f"sub_unknown_plan_{secrets.token_hex(4)}"
+    stripe_price_id_unknown = "price_does_not_exist_locally"
+
+    # Mock stripe_service.verify_transaction_id to return a plan_id that won't be found
+    transaction_service.stripe_service.verify_transaction_id.return_value = {
+        "verified": True,
+        "id": sub_id_unknown_plan,
+        "object_type": "subscription",
+        "amount": Decimal("10.00"),
+        "customer_id": test_user.stripe_customer_id,
+        "status": "active",
+        "plan_id": stripe_price_id_unknown # This Stripe Price ID won't match any local plan
+    }
+    
+    # Mock stripe_service.check_active_subscription
+    transaction_service.stripe_service.check_active_subscription.return_value = None
+    
+    # Mock _find_matching_plan to return None, simulating no local match
+    with patch.object(transaction_service, '_find_matching_plan', new_callable=AsyncMock) as mock_find_plan:
+        mock_find_plan.return_value = None # Simulate no matching plan found
+
+        background_tasks = BackgroundTasks()
+        with pytest.raises(HTTPException) as excinfo:
+            await transaction_service.verify_and_process_subscription(
+                user_id=test_user.id,
+                transaction_id=sub_id_unknown_plan,
+                background_tasks=background_tasks
+            )
+        
+        assert excinfo.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert f"Configuration error: The plan associated with your subscription (ID: {stripe_price_id_unknown}) is not configured in our system." in str(excinfo.value.detail)
+
+        # Verify mocks
+        transaction_service.stripe_service.verify_transaction_id.assert_called_once_with(sub_id_unknown_plan)
+        transaction_service.stripe_service.check_active_subscription.assert_called_once_with(test_user.id)
+        mock_find_plan.assert_called_once_with(stripe_price_id_unknown)
+        # get_plan_by_id should not be called if _find_matching_plan returns None early
+        transaction_service.plan_service.get_plan_by_id.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_verify_subscription_stripe_provides_no_plan_id(
+    transaction_service: TransactionService,
+    test_user: User
+):
+    """Test verify_and_process_subscription when Stripe verification result has no plan_id."""
+    sub_id_no_plan_from_stripe = f"sub_no_plan_stripe_{secrets.token_hex(4)}"
+
+    # Mock stripe_service.verify_transaction_id to return no plan_id
+    transaction_service.stripe_service.verify_transaction_id.return_value = {
+        "verified": True,
+        "id": sub_id_no_plan_from_stripe,
+        "object_type": "subscription",
+        "amount": Decimal("10.00"),
+        "customer_id": test_user.stripe_customer_id,
+        "status": "active",
+        "plan_id": None # Simulate Stripe not returning a plan_id
+    }
+    
+    # Mock stripe_service.check_active_subscription
+    transaction_service.stripe_service.check_active_subscription.return_value = None
+    
+    # _find_matching_plan should not even be called if plan_id from stripe is None
+    with patch.object(transaction_service, '_find_matching_plan', new_callable=AsyncMock) as mock_find_plan:
+        background_tasks = BackgroundTasks()
+        with pytest.raises(HTTPException) as excinfo:
+            await transaction_service.verify_and_process_subscription(
+                user_id=test_user.id,
+                transaction_id=sub_id_no_plan_from_stripe,
+                background_tasks=background_tasks
+            )
+        
+        assert excinfo.value.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Subscription verification failed: Stripe did not provide a plan identifier." in str(excinfo.value.detail)
+
+        # Verify mocks
+        transaction_service.stripe_service.verify_transaction_id.assert_called_once_with(sub_id_no_plan_from_stripe)
+        transaction_service.stripe_service.check_active_subscription.assert_called_once_with(test_user.id)
+        mock_find_plan.assert_not_called() # Crucial: _find_matching_plan should not be called
+        transaction_service.plan_service.get_plan_by_id.assert_not_called()
+@pytest.mark.asyncio
 async def test_free_plan_subscription_no_payment_method(
     transaction_service: TransactionService,
     test_user: User,

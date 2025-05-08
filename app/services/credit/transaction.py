@@ -429,17 +429,31 @@ class TransactionService:
                     # Continue anyway, but log the failure
             
             # Get plan ID from Stripe plan ID in verification result
-            stripe_plan_id = verification_result.get("plan_id")
-            plan_id = await self._find_matching_plan(stripe_plan_id)
+            stripe_price_id_from_stripe = verification_result.get("plan_id") # This is the Stripe Price ID
+            
+            if not stripe_price_id_from_stripe:
+                logger.error(f"Stripe verification did not return a plan_id (Stripe Price ID) for subscription {transaction_id}.",
+                             event_type="stripe_verification_missing_plan_id",
+                             user_id=user_id,
+                             subscription_id=transaction_id)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Subscription verification failed: Stripe did not provide a plan identifier."
+                )
+
+            plan_id = await self._find_matching_plan(stripe_price_id_from_stripe)
             
             if not plan_id:
-                logger.warning(f"No matching plan found for Stripe plan ID: {stripe_plan_id}",
-                             event_type="no_matching_plan",
+                logger.error(f"Critical: No local plan found matching Stripe Price ID: {stripe_price_id_from_stripe}. "
+                             f"Subscription: {transaction_id}, User: {user_id}. Check plan configuration in DB and Stripe.",
+                             event_type="local_plan_not_found_for_stripe_id",
                              user_id=user_id,
                              subscription_id=transaction_id,
-                             stripe_plan_id=stripe_plan_id)
-                # Fallback to default plan ID if no matching plan found
-                plan_id = 1
+                             stripe_price_id=stripe_price_id_from_stripe)
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Configuration error: The plan associated with your subscription (ID: {stripe_price_id_from_stripe}) is not configured in our system."
+                )
             
             # <<< START CARD UNIQUENESS GATE >>>
             plan = await self.plan_service.get_plan_by_id(plan_id)
@@ -661,29 +675,32 @@ class TransactionService:
         Find a matching plan in our system based on Stripe plan ID.
         
         Args:
-            stripe_plan_id: The Stripe plan ID
+            stripe_plan_id: The Stripe plan ID (which is actually a Stripe Price ID)
             
         Returns:
             Optional[int]: The plan ID if found, None otherwise
         """
         if not stripe_plan_id:
-            # If no Stripe plan ID, return the first active plan as fallback
-            plans = await self.plan_service.get_all_active_plans()
-            if plans:
-                return plans[0].id
+            logger.warning("Attempted to find plan with no stripe_plan_id provided.",
+                           event_type="plan_matching_no_stripe_id")
             return None
-        
+
         # Get plans from database to find the matching plan
+        # TODO: Optimize by adding a plan_service method to fetch by stripe_price_id directly
         plans = await self.plan_service.get_all_active_plans()
         matching_plans = [p for p in plans if p.stripe_price_id == stripe_plan_id]
         
         if matching_plans:
+            if len(matching_plans) > 1:
+                logger.warning(f"Multiple plans found for Stripe Price ID: {stripe_plan_id}. Using the first one: {matching_plans[0].id}",
+                               event_type="plan_matching_multiple_found",
+                               stripe_price_id=stripe_plan_id,
+                               matched_plan_ids=[p.id for p in matching_plans])
             return matching_plans[0].id
         
-        # If no exact match found, fallback to a default plan
-        if plans:
-            return plans[0].id
-        
+        logger.warning(f"No matching plan found for Stripe Price ID: {stripe_plan_id}. Consider checking Stripe configuration and local plan data.",
+                       event_type="plan_matching_failed_strict",
+                       stripe_price_id=stripe_plan_id)
         return None
 
     @db_error_handler()
