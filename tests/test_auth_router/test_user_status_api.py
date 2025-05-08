@@ -14,6 +14,7 @@ from app.models.user import User
 from app.models.credit import UserCredit
 from app.models.plan import Plan, Subscription
 from app.schemas.auth_schemas import UserStatusResponse, SubscriptionStatusResponse
+from app.schemas.trial_schemas import TrialEligibilityResponse, TrialEligibilityReasonCode # Added
 from app.core.security import create_access_token
 
 # Test user data
@@ -469,3 +470,116 @@ async def test_get_user_status_canceled_subscription(
 # TODO: Add test for when user.subscriptions is empty or None. (Covered by test_get_user_status_no_subscription)
 
 # TODO: Add test for subscription status sync logic (Stripe status differs from DB status)
+
+
+@pytest.mark.asyncio
+async def test_get_trial_eligibility_eligible(
+    client: AsyncClient, db: AsyncSession, test_user_with_profile_data: User
+):
+    """Test /users/me/trial-eligibility when user is eligible."""
+    user = test_user_with_profile_data
+    user.has_consumed_initial_trial = False
+    await db.commit()
+
+    token_data = {"sub": user.email, "id": user.id}
+    access_token = create_access_token(data=token_data)
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    # Mock the UserService.get_trial_eligibility method
+    mock_eligibility_response = TrialEligibilityResponse(
+        is_eligible=True,
+        reason_code=TrialEligibilityReasonCode.ELIGIBLE,
+        message="User is eligible for a free trial."
+    )
+    with patch("app.routers.auth.user_profile.UserService.get_trial_eligibility", AsyncMock(return_value=mock_eligibility_response)) as mock_get_eligibility:
+        response = await client.get("/auth/me/trial-eligibility", headers=headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["is_eligible"] is True
+    assert data["reason_code"] == "ELIGIBLE"
+    assert data["message"] == "User is eligible for a free trial."
+    mock_get_eligibility.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_trial_eligibility_consumed_trial(
+    client: AsyncClient, db: AsyncSession, test_user_with_profile_data: User
+):
+    """Test /users/me/trial-eligibility when user has consumed trial."""
+    user = test_user_with_profile_data
+    user.has_consumed_initial_trial = True
+    await db.commit()
+
+    token_data = {"sub": user.email, "id": user.id}
+    access_token = create_access_token(data=token_data)
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    mock_eligibility_response = TrialEligibilityResponse(
+        is_eligible=False,
+        reason_code=TrialEligibilityReasonCode.TRIAL_CONSUMED,
+        message="User has already consumed their initial free trial."
+    )
+    with patch("app.routers.auth.user_profile.UserService.get_trial_eligibility", AsyncMock(return_value=mock_eligibility_response)) as mock_get_eligibility:
+        response = await client.get("/auth/me/trial-eligibility", headers=headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["is_eligible"] is False
+    assert data["reason_code"] == "TRIAL_CONSUMED"
+    mock_get_eligibility.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_trial_eligibility_currently_in_trial(
+    client: AsyncClient, db: AsyncSession, test_user_with_profile_data: User
+):
+    """Test /users/me/trial-eligibility when user is currently in trial."""
+    user = test_user_with_profile_data
+    user.has_consumed_initial_trial = False
+    await db.commit()
+
+    token_data = {"sub": user.email, "id": user.id}
+    access_token = create_access_token(data=token_data)
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    mock_eligibility_response = TrialEligibilityResponse(
+        is_eligible=False,
+        reason_code=TrialEligibilityReasonCode.CURRENTLY_IN_TRIAL,
+        message="User is currently in an active trial period."
+    )
+    with patch("app.routers.auth.user_profile.UserService.get_trial_eligibility", AsyncMock(return_value=mock_eligibility_response)) as mock_get_eligibility:
+        response = await client.get("/auth/me/trial-eligibility", headers=headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["is_eligible"] is False
+    assert data["reason_code"] == "CURRENTLY_IN_TRIAL"
+    mock_get_eligibility.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_trial_eligibility_unauthorized(client: AsyncClient):
+    """Test /users/me/trial-eligibility when unauthorized."""
+    response = await client.get("/auth/me/trial-eligibility")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.asyncio
+async def test_get_trial_eligibility_service_error(
+    client: AsyncClient, db: AsyncSession, test_user_with_profile_data: User
+):
+    """Test /users/me/trial-eligibility when the service layer raises an unexpected error."""
+    user = test_user_with_profile_data
+    token_data = {"sub": user.email, "id": user.id}
+    access_token = create_access_token(data=token_data)
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    with patch("app.routers.auth.user_profile.UserService.get_trial_eligibility", AsyncMock(side_effect=Exception("Service layer error"))) as mock_get_eligibility:
+        response = await client.get("/auth/me/trial-eligibility", headers=headers)
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    data = response.json()
+    assert "detail" in data
+    assert data["detail"] == "An unexpected error occurred while checking trial eligibility."
+    mock_get_eligibility.assert_called_once()

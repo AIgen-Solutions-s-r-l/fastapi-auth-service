@@ -15,6 +15,7 @@ from app.schemas.auth_schemas import (
     UserStatusResponse,
     # SubscriptionStatusResponse # No longer needed here, will be in subscription_schemas
 )
+from app.schemas.trial_schemas import TrialEligibilityResponse # Added for trial eligibility
 from app.schemas.subscription_schemas import (
     SubscriptionCancelRequest,
     SubscriptionCancelResponse,
@@ -97,6 +98,50 @@ async def get_user_status(
         user_id=current_user.id
     )
     return user_status_data
+
+
+@router.get(
+    "/me/trial-eligibility",
+    response_model=TrialEligibilityResponse,
+    summary="Check if the current user is eligible for a free trial",
+    tags=["User", "Trial"],
+    responses={
+        200: {"description": "Successfully determined trial eligibility"},
+        401: {"description": "Unauthorized"},
+        404: {"description": "User not found"}, # Should not happen if get_current_active_user works
+        500: {"description": "Internal Server Error"}
+    }
+)
+async def get_trial_eligibility_status(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+) -> TrialEligibilityResponse:
+    """
+    Checks if the currently authenticated user is eligible to start a new free trial.
+    """
+    user_service = UserService(db)
+    try:
+        eligibility_response = await user_service.get_trial_eligibility(user=current_user)
+        logger.info(
+            f"Trial eligibility check for user {current_user.id}: {eligibility_response.reason_code}",
+            event_type="trial_eligibility_check",
+            user_id=current_user.id,
+            is_eligible=eligibility_response.is_eligible,
+            reason_code=eligibility_response.reason_code.value
+        )
+        return eligibility_response
+    except Exception as e:
+        logger.error(
+            f"Error checking trial eligibility for user {current_user.id}: {str(e)}",
+            event_type="trial_eligibility_error",
+            user_id=current_user.id,
+            error_message=str(e)
+        )
+        # Generic error for unexpected issues in the service layer
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while checking trial eligibility."
+        )
 
 
 @router.post(

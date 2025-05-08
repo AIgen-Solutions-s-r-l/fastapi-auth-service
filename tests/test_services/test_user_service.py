@@ -11,6 +11,7 @@ from app.models.user import User
 from app.models.credit import UserCredit
 from app.models.plan import Subscription, Plan
 from app.schemas.auth_schemas import UserStatusResponse, SubscriptionStatusResponse, SubscriptionStatusEnum, UserAccountStatusEnum # Added import
+from app.schemas.trial_schemas import TrialEligibilityResponse, TrialEligibilityReasonCode # Added for trial eligibility
 from app.core.config import settings
 
 
@@ -621,3 +622,151 @@ async def test_get_user_status_consumed_trial_then_active_paid(
     mock_stripe_retrieve.assert_called_once_with("sub_active_paid_after_trial")
     # No commit is expected if the DB status and Stripe status match
     mock_db_session.commit.assert_not_called()
+@pytest.mark.asyncio
+async def test_get_trial_eligibility_eligible(
+    user_service: UserService,
+    mock_user: User,
+    mock_db_session: AsyncMock
+):
+    """Test get_trial_eligibility when the user is eligible."""
+    mock_user.has_consumed_initial_trial = False
+    
+    # Mock the database call within get_trial_eligibility to return no relevant subscriptions
+    mock_db_session.execute.return_value.scalars.return_value.all.return_value = []
+
+    response = await user_service.get_trial_eligibility(mock_user)
+
+    assert response.is_eligible is True
+    assert response.reason_code == TrialEligibilityReasonCode.ELIGIBLE
+    assert response.message == "User is eligible for a free trial."
+    mock_db_session.execute.assert_called_once() # Ensure the subscription query was made
+
+
+@pytest.mark.asyncio
+async def test_get_trial_eligibility_consumed_trial(
+    user_service: UserService,
+    mock_user: User,
+    mock_db_session: AsyncMock # mock_db_session is needed for UserService instantiation, but not directly used here
+):
+    """Test get_trial_eligibility when the user has already consumed their trial."""
+    mock_user.has_consumed_initial_trial = True
+
+    response = await user_service.get_trial_eligibility(mock_user)
+
+    assert response.is_eligible is False
+    assert response.reason_code == TrialEligibilityReasonCode.TRIAL_CONSUMED
+    assert response.message == "User has already consumed their initial free trial."
+    # No DB call for subscriptions should be made if has_consumed_initial_trial is true
+    mock_db_session.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_trial_eligibility_currently_in_trial(
+    user_service: UserService,
+    mock_user: User,
+    mock_plan: Plan, # For creating a mock subscription
+    mock_db_session: AsyncMock
+):
+    """Test get_trial_eligibility when the user is currently in an active trial."""
+    mock_user.has_consumed_initial_trial = False
+    
+    trial_end_datetime = datetime.now(UTC) + timedelta(days=5)
+    active_trial_subscription = Subscription(
+        id=10,
+        user_id=mock_user.id,
+        plan_id=mock_plan.id,
+        status=SubscriptionStatusEnum.TRIALING.value, # Or "active" if trial_end_date is used as primary indicator
+        trial_end_date=trial_end_datetime,
+        start_date=datetime.now(UTC) - timedelta(days=2),
+        renewal_date=trial_end_datetime,
+        is_active=True,
+        plan=mock_plan
+    )
+    
+    # Mock the database call within get_trial_eligibility
+    mock_db_session.execute.return_value.scalars.return_value.all.return_value = [active_trial_subscription]
+
+    response = await user_service.get_trial_eligibility(mock_user)
+
+    assert response.is_eligible is False
+    assert response.reason_code == TrialEligibilityReasonCode.CURRENTLY_IN_TRIAL
+    assert response.message == "User is currently in an active trial period."
+    mock_db_session.execute.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_trial_eligibility_active_subscription_past_trial_end_date(
+    user_service: UserService,
+    mock_user: User,
+    mock_plan: Plan,
+    mock_db_session: AsyncMock
+):
+    """
+    Test get_trial_eligibility when user has an active subscription
+    but its trial_end_date is in the past (meaning it's a paid subscription or trial converted to paid).
+    User should be eligible if has_consumed_initial_trial is False and no *current* trial.
+    """
+    mock_user.has_consumed_initial_trial = False # Assuming they haven't used a separate "initial trial" feature
+    
+    past_trial_end_datetime = datetime.now(UTC) - timedelta(days=5)
+    active_paid_subscription = Subscription(
+        id=11,
+        user_id=mock_user.id,
+        plan_id=mock_plan.id,
+        status=SubscriptionStatusEnum.ACTIVE.value,
+        trial_end_date=past_trial_end_datetime, # Trial period is over
+        start_date=datetime.now(UTC) - timedelta(days=30),
+        renewal_date=datetime.now(UTC) + timedelta(days=1),
+        is_active=True,
+        plan=mock_plan
+    )
+    
+    # Mock the database call within get_trial_eligibility
+    mock_db_session.execute.return_value.scalars.return_value.all.return_value = [active_paid_subscription]
+
+    response = await user_service.get_trial_eligibility(mock_user)
+
+    assert response.is_eligible is True # Eligible because current subscription is not a *current* trial
+    assert response.reason_code == TrialEligibilityReasonCode.ELIGIBLE
+    mock_db_session.execute.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_get_trial_eligibility_multiple_subscriptions_one_active_trial(
+    user_service: UserService,
+    mock_user: User,
+    mock_plan: Plan,
+    mock_db_session: AsyncMock
+):
+    """
+    Test get_trial_eligibility with multiple subscriptions, one of which is an active trial.
+    """
+    mock_user.has_consumed_initial_trial = False
+    
+    past_trial_end_datetime = datetime.now(UTC) - timedelta(days=30)
+    future_trial_end_datetime = datetime.now(UTC) + timedelta(days=5)
+
+    # A past, completed/canceled subscription
+    past_subscription = Subscription(
+        id=12, user_id=mock_user.id, plan_id=mock_plan.id,
+        status=SubscriptionStatusEnum.CANCELED.value,
+        trial_end_date=past_trial_end_datetime - timedelta(days=5),
+        start_date=past_trial_end_datetime - timedelta(days=10),
+        is_active=False, plan=mock_plan
+    )
+
+    # An active trial subscription
+    active_trial_subscription = Subscription(
+        id=13, user_id=mock_user.id, plan_id=mock_plan.id,
+        status=SubscriptionStatusEnum.TRIALING.value,
+        trial_end_date=future_trial_end_datetime,
+        start_date=datetime.now(UTC) - timedelta(days=2),
+        is_active=True, plan=mock_plan
+    )
+    
+    mock_db_session.execute.return_value.scalars.return_value.all.return_value = [active_trial_subscription, past_subscription] # Order shouldn't matter due to logic
+
+    response = await user_service.get_trial_eligibility(mock_user)
+
+    assert response.is_eligible is False
+    assert response.reason_code == TrialEligibilityReasonCode.CURRENTLY_IN_TRIAL
+    mock_db_session.execute.assert_called_once()

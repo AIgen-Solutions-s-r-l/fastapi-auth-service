@@ -26,6 +26,7 @@ from app.schemas.auth_schemas import ( # Import Enums explicitly
     SubscriptionStatusEnum,
     UserAccountStatusEnum
 )
+from app.schemas.trial_schemas import TrialEligibilityResponse, TrialEligibilityReasonCode # Added for trial eligibility
 from app.services.email_service import EmailService
 from app.services.stripe_service import StripeService # Added
 from app.log.logging import logger
@@ -829,6 +830,52 @@ class UserService:
             )
             # Do not raise HTTPException directly to allow specific messaging in the router
             return False, f"An unexpected error occurred: {str(e)}", None
+async def get_trial_eligibility(self, user: User) -> TrialEligibilityResponse:
+        """
+        Determines if a user is eligible for a new free trial.
+
+        Args:
+            user: The User object (expected to have `subscriptions` potentially preloaded).
+
+        Returns:
+            TrialEligibilityResponse: The eligibility status and reason.
+        """
+        if user.has_consumed_initial_trial:
+            logger.info(f"User {user.id} is not eligible for trial: TRIAL_CONSUMED.")
+            return TrialEligibilityResponse(
+                is_eligible=False,
+                reason_code=TrialEligibilityReasonCode.TRIAL_CONSUMED,
+                message="User has already consumed their initial free trial."
+            )
+
+        # To ensure we have the latest subscription data, especially `trial_end_date`
+        # and related statuses, we query them directly.
+        query = (
+            select(Subscription)
+            .where(Subscription.user_id == user.id)
+            .order_by(Subscription.start_date.desc()) # Get the most recent ones first
+        )
+        result = await self.db.execute(query)
+        subscriptions = result.scalars().all()
+
+        for sub in subscriptions:
+            # Check if the subscription is 'trialing' or 'active' AND has a future trial_end_date
+            if sub.status in [SubscriptionStatusEnum.TRIALING.value, SubscriptionStatusEnum.ACTIVE.value] and \
+               sub.trial_end_date and \
+               sub.trial_end_date > datetime.now(UTC):
+                logger.info(f"User {user.id} is not eligible for trial: CURRENTLY_IN_TRIAL (Subscription ID: {sub.id}, Trial ends: {sub.trial_end_date}).")
+                return TrialEligibilityResponse(
+                    is_eligible=False,
+                    reason_code=TrialEligibilityReasonCode.CURRENTLY_IN_TRIAL,
+                    message="User is currently in an active trial period."
+                )
+        
+        logger.info(f"User {user.id} is ELIGIBLE for a free trial.")
+        return TrialEligibilityResponse(
+            is_eligible=True,
+            reason_code=TrialEligibilityReasonCode.ELIGIBLE,
+            message="User is eligible for a free trial."
+        )
 
 # --- Standalone functions for testing and external use ---
 
