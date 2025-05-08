@@ -860,7 +860,7 @@ class UserService:
             .order_by(Subscription.start_date.desc()) # Get the most recent ones first
         )
         result = await self.db.execute(query)
-        subscriptions = result.scalars().all()
+        subscriptions = await result.scalars().all()
 
         for sub in subscriptions:
             # Check if the subscription is 'trialing' or 'active' AND has a future trial_end_date
