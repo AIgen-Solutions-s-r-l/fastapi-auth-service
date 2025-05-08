@@ -251,6 +251,13 @@ async def get_transaction_history(
         else:
             tx.is_subscription_active = None
 
+    logger.debug(
+        f"Transaction history response payload for user_id {user_id}: {response.model_dump_json(indent=2)}",
+        event_type="transaction_history_response_payload",
+        user_id=user_id,
+        payload_length=len(response.transactions)
+    )
+
     return response
 
 @router.get("/user/transactions", response_model=TransactionHistoryResponse)
