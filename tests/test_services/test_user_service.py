@@ -637,7 +637,7 @@ async def test_get_trial_eligibility_eligible(
     
     mock_db_session.execute.return_value = async_result_mock
     async_result_mock.scalars.return_value = scalar_result_mock
-    scalar_result_mock.all = AsyncMock(return_value=[])
+    scalar_result_mock.all = MagicMock(return_value=[])
 
     response = await user_service.get_trial_eligibility(mock_user)
 
@@ -694,7 +694,7 @@ async def test_get_trial_eligibility_currently_in_trial(
 
     mock_db_session.execute.return_value = async_result_mock
     async_result_mock.scalars.return_value = scalar_result_mock
-    scalar_result_mock.all = AsyncMock(return_value=[active_trial_subscription])
+    scalar_result_mock.all = MagicMock(return_value=[active_trial_subscription])
 
     response = await user_service.get_trial_eligibility(mock_user)
 
@@ -737,7 +737,7 @@ async def test_get_trial_eligibility_active_subscription_past_trial_end_date(
 
     mock_db_session.execute.return_value = async_result_mock
     async_result_mock.scalars.return_value = scalar_result_mock
-    scalar_result_mock.all = AsyncMock(return_value=[active_paid_subscription])
+    scalar_result_mock.all = MagicMock(return_value=[active_paid_subscription])
 
     response = await user_service.get_trial_eligibility(mock_user)
 
@@ -783,7 +783,7 @@ async def test_get_trial_eligibility_multiple_subscriptions_one_active_trial(
 
     mock_db_session.execute.return_value = async_result_mock
     async_result_mock.scalars.return_value = scalar_result_mock
-    scalar_result_mock.all = AsyncMock(return_value=[active_trial_subscription, past_subscription]) # Order shouldn't matter due to logic
+    scalar_result_mock.all = MagicMock(return_value=[active_trial_subscription, past_subscription]) # Order shouldn't matter due to logic
 
     response = await user_service.get_trial_eligibility(mock_user)
 
