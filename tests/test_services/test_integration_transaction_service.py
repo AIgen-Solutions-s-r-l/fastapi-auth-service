@@ -2,6 +2,7 @@
 
 import pytest
 import pytest_asyncio
+import secrets # Add missing import
 from decimal import Decimal
 from datetime import datetime, UTC, timedelta
 from unittest.mock import patch, MagicMock, AsyncMock, call
@@ -9,9 +10,11 @@ from unittest.mock import patch, MagicMock, AsyncMock, call
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from fastapi import BackgroundTasks, HTTPException, status
+from app.log.logging import logger # Import logger
+from tests.conftest import AsyncTestingSessionLocal # Import sessionmaker
 
 from app.models.user import User
-from app.models.plan import Plan, Subscription, UsedFreePlanCard
+from app.models.plan import Plan, Subscription, UsedTrialCardFingerprint
 from app.models.credit import UserCredit, CreditTransaction, TransactionType
 from app.services.credit import CreditService
 from app.services.credit.transaction import TransactionService
@@ -19,21 +22,40 @@ from app.schemas import credit_schemas
 
 # Fixtures
 
-@pytest_asyncio.fixture
-async def test_user(db: AsyncSession) -> User:
-    """Fixture for creating a test user."""
-    user = User(
-        email="test@example.com",
-        hashed_password="password",
-        is_admin=False,
-        is_verified=True,
-        auth_type="password",
-        stripe_customer_id="cus_test123"
-    )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    return user
+@pytest_asyncio.fixture(scope="session")
+async def test_user(setup_database) -> User: # Depend on session-scoped setup_database
+    """Fixture for creating a test user ONCE per session."""
+    # Create a temporary session just for this fixture setup
+    async with AsyncTestingSessionLocal() as session:
+        async with session.begin(): # Start a transaction
+            # Check if user already exists (in case fixture runs multiple times unexpectedly)
+            from sqlalchemy import select
+            existing_user_result = await session.execute(select(User).where(User.email == "test@example.com"))
+            existing_user = existing_user_result.scalar_one_or_none()
+            if existing_user:
+                 logger.warning("Session-scoped test user already exists. Returning existing user.")
+                 # Refresh to ensure relationships are loaded if needed, though maybe not necessary here
+                 # await session.refresh(existing_user)
+                 return existing_user
+
+            user = User(
+                email="test@example.com",
+                hashed_password="password",
+                is_admin=False,
+                is_verified=True,
+                auth_type="password",
+                stripe_customer_id="cus_test123"
+            )
+            session.add(user)
+            # Commit happens automatically on exiting 'async with session.begin()' block
+        
+        # Refresh the user within the same session but outside the transaction block
+        # to ensure it's loaded correctly before the session closes.
+        await session.refresh(user)
+        logger.info(f"Created session-scoped test user: ID {user.id}")
+        # Detach the user object from the temporary session? Not strictly necessary for read-only use.
+        # session.expunge(user) # Optional: detach if modifications in tests cause issues
+        return user # Return the user object created in the temporary session
 
 @pytest_asyncio.fixture
 async def test_free_plan(db: AsyncSession) -> Plan:
@@ -120,13 +142,17 @@ async def test_free_plan_subscription_new_card(
     db: AsyncSession
 ):
     """Test successful subscription creation for a limited free plan with a new card fingerprint."""
+    sub_id = f"sub_test_{secrets.token_hex(4)}" # Unique ID for this test
+    pm_id = f"pm_test_{secrets.token_hex(4)}"
+    fingerprint = f"fp_test_{secrets.token_hex(4)}"
+
     # Mock plan_service.get_plan_by_id to return our test_free_plan
     transaction_service.plan_service.get_plan_by_id.return_value = test_free_plan
     
     # Mock stripe_service.verify_transaction_id
     transaction_service.stripe_service.verify_transaction_id.return_value = {
         "verified": True,
-        "id": "sub_test123",
+        "id": sub_id, # Use unique ID
         "object_type": "subscription",
         "amount": Decimal("0.00"),
         "customer_id": "cus_test123",
@@ -144,9 +170,9 @@ async def test_free_plan_subscription_new_card(
         # Mock stripe_service.verify_subscription_active
         transaction_service.stripe_service.verify_subscription_active.return_value = True
         
-        # Mock Stripe API calls
-        with patch('stripe.Subscription.retrieve', return_value=mock_stripe_subscription()) as mock_sub_retrieve:
-            with patch('stripe.PaymentMethod.retrieve', return_value=mock_stripe_payment_method()) as mock_pm_retrieve:
+        # Mock Stripe API calls using unique IDs
+        with patch('stripe.Subscription.retrieve', return_value=mock_stripe_subscription(subscription_id=sub_id, payment_method_id=pm_id)) as mock_sub_retrieve:
+            with patch('stripe.PaymentMethod.retrieve', return_value=mock_stripe_payment_method(payment_method_id=pm_id, fingerprint=fingerprint)) as mock_pm_retrieve:
                 
                 # Mock purchase_plan
                 transaction_service.purchase_plan = AsyncMock()
@@ -158,7 +184,7 @@ async def test_free_plan_subscription_new_card(
                 background_tasks = BackgroundTasks()
                 transaction, subscription = await transaction_service.verify_and_process_subscription(
                     user_id=test_user.id,
-                    transaction_id="sub_test123",
+                    transaction_id=sub_id, # Use unique ID
                     background_tasks=background_tasks
                 )
                 
@@ -167,7 +193,7 @@ async def test_free_plan_subscription_new_card(
                 assert subscription is not None
                 
                 # Verify the mocks were called correctly
-                transaction_service.stripe_service.verify_transaction_id.assert_called_once_with("sub_test123")
+                transaction_service.stripe_service.verify_transaction_id.assert_called_once_with(sub_id) # Use unique ID
                 transaction_service.stripe_service.check_active_subscription.assert_called_once_with(test_user.id)
                 mock_find.assert_called_once_with("price_free123")
                 transaction_service.plan_service.get_plan_by_id.assert_called_once_with(test_free_plan.id)
@@ -175,14 +201,14 @@ async def test_free_plan_subscription_new_card(
                 mock_pm_retrieve.assert_called_once()
                 transaction_service.purchase_plan.assert_called_once()
                 
-                # Verify a record was added to UsedFreePlanCard
+                # Verify a record was added to UsedTrialCardFingerprint
                 from sqlalchemy import select
                 card_result = await db.execute(
-                    select(UsedFreePlanCard).where(UsedFreePlanCard.stripe_card_fingerprint == "card_fingerprint123")
+                    select(UsedTrialCardFingerprint).where(UsedTrialCardFingerprint.stripe_card_fingerprint == fingerprint) # Use unique fingerprint
                 )
                 card_record = card_result.scalar_one_or_none()
                 assert card_record is not None
-                assert card_record.stripe_subscription_id == "sub_test123"
+                assert card_record.stripe_subscription_id == sub_id # Use unique ID
 
 @pytest.mark.asyncio
 async def test_free_plan_subscription_duplicate_card(
@@ -192,9 +218,14 @@ async def test_free_plan_subscription_duplicate_card(
     db: AsyncSession
 ):
     """Test rejection when attempting to use the same card fingerprint for a second limited free plan."""
-    # First, add a record to the UsedFreePlanCard table
-    used_card = UsedFreePlanCard(
-        stripe_card_fingerprint="card_fingerprint123",
+    sub_id = f"sub_test_{secrets.token_hex(4)}" # Unique ID for this test
+    pm_id = f"pm_test_{secrets.token_hex(4)}"
+    fingerprint = f"fp_test_{secrets.token_hex(4)}" # Fingerprint to check against
+
+    # First, add a record to the UsedTrialCardFingerprint table with the target fingerprint
+    used_card = UsedTrialCardFingerprint(
+        user_id=test_user.id,
+        stripe_card_fingerprint=fingerprint, # Use the fingerprint we'll test with
         stripe_payment_method_id="pm_existing123",
         stripe_subscription_id="sub_existing123",
         stripe_customer_id="cus_existing123"
@@ -208,7 +239,7 @@ async def test_free_plan_subscription_duplicate_card(
     # Mock stripe_service.verify_transaction_id
     transaction_service.stripe_service.verify_transaction_id.return_value = {
         "verified": True,
-        "id": "sub_test123",
+        "id": sub_id, # Use unique ID
         "object_type": "subscription",
         "amount": Decimal("0.00"),
         "customer_id": "cus_test123",
@@ -223,16 +254,16 @@ async def test_free_plan_subscription_duplicate_card(
     with patch.object(transaction_service, '_find_matching_plan', new_callable=AsyncMock) as mock_find:
         mock_find.return_value = test_free_plan.id
         
-        # Mock Stripe API calls
-        with patch('stripe.Subscription.retrieve', return_value=mock_stripe_subscription()) as mock_sub_retrieve:
-            with patch('stripe.PaymentMethod.retrieve', return_value=mock_stripe_payment_method()) as mock_pm_retrieve:
+        # Mock Stripe API calls using the target fingerprint
+        with patch('stripe.Subscription.retrieve', return_value=mock_stripe_subscription(subscription_id=sub_id, payment_method_id=pm_id)) as mock_sub_retrieve:
+            with patch('stripe.PaymentMethod.retrieve', return_value=mock_stripe_payment_method(payment_method_id=pm_id, fingerprint=fingerprint)) as mock_pm_retrieve:
                 
                 # Execute the method and expect an exception
                 background_tasks = BackgroundTasks()
                 with pytest.raises(HTTPException) as excinfo:
                     await transaction_service.verify_and_process_subscription(
                         user_id=test_user.id,
-                        transaction_id="sub_test123",
+                        transaction_id=sub_id, # Use unique ID
                         background_tasks=background_tasks
                     )
                 
@@ -241,7 +272,7 @@ async def test_free_plan_subscription_duplicate_card(
                 assert "already been used for a free subscription" in str(excinfo.value.detail)
                 
                 # Verify the mocks were called correctly
-                transaction_service.stripe_service.verify_transaction_id.assert_called_once_with("sub_test123")
+                transaction_service.stripe_service.verify_transaction_id.assert_called_once_with(sub_id) # Use unique ID
                 transaction_service.stripe_service.check_active_subscription.assert_called_once_with(test_user.id)
                 mock_find.assert_called_once_with("price_free123")
                 transaction_service.plan_service.get_plan_by_id.assert_called_once_with(test_free_plan.id)
@@ -255,13 +286,15 @@ async def test_paid_plan_subscription_bypass_gate(
     test_paid_plan: Plan
 ):
     """Test successful subscription creation for a non-limited plan, ensuring the gate logic is bypassed."""
+    sub_id = f"sub_test_{secrets.token_hex(4)}" # Unique ID for this test
+
     # Mock plan_service.get_plan_by_id to return our test_paid_plan
     transaction_service.plan_service.get_plan_by_id.return_value = test_paid_plan
     
     # Mock stripe_service.verify_transaction_id
     transaction_service.stripe_service.verify_transaction_id.return_value = {
         "verified": True,
-        "id": "sub_test123",
+        "id": sub_id, # Use unique ID
         "object_type": "subscription",
         "amount": Decimal("10.00"),
         "customer_id": "cus_test123",
@@ -289,7 +322,7 @@ async def test_paid_plan_subscription_bypass_gate(
         background_tasks = BackgroundTasks()
         transaction, subscription = await transaction_service.verify_and_process_subscription(
             user_id=test_user.id,
-            transaction_id="sub_test123",
+            transaction_id=sub_id, # Use unique ID
             background_tasks=background_tasks
         )
         
@@ -298,7 +331,7 @@ async def test_paid_plan_subscription_bypass_gate(
         assert subscription is not None
         
         # Verify the mocks were called correctly
-        transaction_service.stripe_service.verify_transaction_id.assert_called_once_with("sub_test123")
+        transaction_service.stripe_service.verify_transaction_id.assert_called_once_with(sub_id) # Use unique ID
         transaction_service.stripe_service.check_active_subscription.assert_called_once_with(test_user.id)
         mock_find.assert_called_once_with("price_paid123")
         transaction_service.plan_service.get_plan_by_id.assert_called_once_with(test_paid_plan.id)
@@ -321,13 +354,15 @@ async def test_free_plan_subscription_no_payment_method(
     test_free_plan: Plan
 ):
     """Test handling error when Stripe Subscription.retrieve fails or returns no payment method."""
+    sub_id = f"sub_test_{secrets.token_hex(4)}" # Unique ID for this test
+
     # Mock plan_service.get_plan_by_id to return our test_free_plan
     transaction_service.plan_service.get_plan_by_id.return_value = test_free_plan
     
     # Mock stripe_service.verify_transaction_id
     transaction_service.stripe_service.verify_transaction_id.return_value = {
         "verified": True,
-        "id": "sub_test123",
+        "id": sub_id, # Use unique ID
         "object_type": "subscription",
         "amount": Decimal("0.00"),
         "customer_id": "cus_test123",
@@ -342,9 +377,9 @@ async def test_free_plan_subscription_no_payment_method(
     with patch.object(transaction_service, '_find_matching_plan', new_callable=AsyncMock) as mock_find:
         mock_find.return_value = test_free_plan.id
         
-        # Create a subscription with no payment method
+        # Create a subscription with no payment method using the unique ID
         mock_sub_no_pm = MagicMock()
-        mock_sub_no_pm.id = "sub_test123"
+        mock_sub_no_pm.id = sub_id # Use unique ID
         mock_sub_no_pm.customer = "cus_test123"
         mock_sub_no_pm.default_payment_method = None  # No payment method
         
@@ -356,7 +391,7 @@ async def test_free_plan_subscription_no_payment_method(
             with pytest.raises(HTTPException) as excinfo:
                 await transaction_service.verify_and_process_subscription(
                     user_id=test_user.id,
-                    transaction_id="sub_test123",
+                    transaction_id=sub_id, # Use unique ID
                     background_tasks=background_tasks
                 )
             
@@ -365,7 +400,7 @@ async def test_free_plan_subscription_no_payment_method(
             assert "Could not retrieve payment method details" in str(excinfo.value.detail)
             
             # Verify the mocks were called correctly
-            transaction_service.stripe_service.verify_transaction_id.assert_called_once_with("sub_test123")
+            transaction_service.stripe_service.verify_transaction_id.assert_called_once_with(sub_id) # Use unique ID
             transaction_service.stripe_service.check_active_subscription.assert_called_once_with(test_user.id)
             mock_find.assert_called_once_with("price_free123")
             transaction_service.plan_service.get_plan_by_id.assert_called_once_with(test_free_plan.id)
@@ -378,13 +413,16 @@ async def test_free_plan_subscription_invalid_payment_method(
     test_free_plan: Plan
 ):
     """Test handling error when Stripe PaymentMethod.retrieve fails or returns invalid data."""
+    sub_id = f"sub_test_{secrets.token_hex(4)}" # Unique ID for this test
+    pm_id = f"pm_test_{secrets.token_hex(4)}"
+
     # Mock plan_service.get_plan_by_id to return our test_free_plan
     transaction_service.plan_service.get_plan_by_id.return_value = test_free_plan
     
     # Mock stripe_service.verify_transaction_id
     transaction_service.stripe_service.verify_transaction_id.return_value = {
         "verified": True,
-        "id": "sub_test123",
+        "id": sub_id, # Use unique ID
         "object_type": "subscription",
         "amount": Decimal("0.00"),
         "customer_id": "cus_test123",
@@ -399,11 +437,11 @@ async def test_free_plan_subscription_invalid_payment_method(
     with patch.object(transaction_service, '_find_matching_plan', new_callable=AsyncMock) as mock_find:
         mock_find.return_value = test_free_plan.id
         
-        # Mock Stripe API calls
-        with patch('stripe.Subscription.retrieve', return_value=mock_stripe_subscription()) as mock_sub_retrieve:
+        # Mock Stripe API calls using unique IDs
+        with patch('stripe.Subscription.retrieve', return_value=mock_stripe_subscription(subscription_id=sub_id, payment_method_id=pm_id)) as mock_sub_retrieve:
             # Create an invalid payment method (no card or fingerprint)
             mock_pm_invalid = MagicMock()
-            mock_pm_invalid.id = "pm_test123"
+            mock_pm_invalid.id = pm_id # Use unique ID
             mock_pm_invalid.type = "card"
             mock_pm_invalid.card = None  # No card object
             
@@ -414,7 +452,7 @@ async def test_free_plan_subscription_invalid_payment_method(
                 with pytest.raises(HTTPException) as excinfo:
                     await transaction_service.verify_and_process_subscription(
                         user_id=test_user.id,
-                        transaction_id="sub_test123",
+                        transaction_id=sub_id, # Use unique ID
                         background_tasks=background_tasks
                     )
                 
@@ -423,7 +461,7 @@ async def test_free_plan_subscription_invalid_payment_method(
                 assert "Invalid payment method type" in str(excinfo.value.detail)
                 
                 # Verify the mocks were called correctly
-                transaction_service.stripe_service.verify_transaction_id.assert_called_once_with("sub_test123")
+                transaction_service.stripe_service.verify_transaction_id.assert_called_once_with(sub_id) # Use unique ID
                 transaction_service.stripe_service.check_active_subscription.assert_called_once_with(test_user.id)
                 mock_find.assert_called_once_with("price_free123")
                 transaction_service.plan_service.get_plan_by_id.assert_called_once_with(test_free_plan.id)
@@ -438,13 +476,17 @@ async def test_free_plan_subscription_race_condition(
     db: AsyncSession
 ):
     """Test handling database IntegrityError during fingerprint insertion (race condition simulation)."""
+    sub_id = f"sub_test_{secrets.token_hex(4)}" # Unique ID for this test
+    pm_id = f"pm_test_{secrets.token_hex(4)}"
+    fingerprint = f"fp_test_{secrets.token_hex(4)}" # Fingerprint to check against
+
     # Mock plan_service.get_plan_by_id to return our test_free_plan
     transaction_service.plan_service.get_plan_by_id.return_value = test_free_plan
     
     # Mock stripe_service.verify_transaction_id
     transaction_service.stripe_service.verify_transaction_id.return_value = {
         "verified": True,
-        "id": "sub_test123",
+        "id": sub_id, # Use unique ID
         "object_type": "subscription",
         "amount": Decimal("0.00"),
         "customer_id": "cus_test123",
@@ -459,9 +501,9 @@ async def test_free_plan_subscription_race_condition(
     with patch.object(transaction_service, '_find_matching_plan', new_callable=AsyncMock) as mock_find:
         mock_find.return_value = test_free_plan.id
         
-        # Mock Stripe API calls
-        with patch('stripe.Subscription.retrieve', return_value=mock_stripe_subscription()) as mock_sub_retrieve:
-            with patch('stripe.PaymentMethod.retrieve', return_value=mock_stripe_payment_method()) as mock_pm_retrieve:
+        # Mock Stripe API calls using unique IDs
+        with patch('stripe.Subscription.retrieve', return_value=mock_stripe_subscription(subscription_id=sub_id, payment_method_id=pm_id)) as mock_sub_retrieve:
+            with patch('stripe.PaymentMethod.retrieve', return_value=mock_stripe_payment_method(payment_method_id=pm_id, fingerprint=fingerprint)) as mock_pm_retrieve:
                 
                 # For the race condition test, we'll use a different approach
                 # Instead of mocking db.flush, we'll add a record to the database
@@ -479,14 +521,15 @@ async def test_free_plan_subscription_race_condition(
                     
                     # After the check but before the insert, add a conflicting record
                     # to simulate a race condition
-                    if not race_condition_triggered and transaction_id == "sub_test123":
+                    if not race_condition_triggered and transaction_id == sub_id: # Use unique ID
                         race_condition_triggered = True
-                        # Add the conflicting record
-                        used_card = UsedFreePlanCard(
-                            stripe_card_fingerprint="card_fingerprint123",
-                            stripe_payment_method_id="pm_race123",
-                            stripe_subscription_id="sub_race123",
-                            stripe_customer_id="cus_race123"
+                        # Add the conflicting record using the target fingerprint
+                        used_card = UsedTrialCardFingerprint(
+                            user_id=test_user.id,
+                            stripe_card_fingerprint=fingerprint, # Use the target fingerprint
+                            stripe_payment_method_id=f"pm_race_{secrets.token_hex(4)}", # Make these unique too
+                            stripe_subscription_id=f"sub_race_{secrets.token_hex(4)}",
+                            stripe_customer_id=f"cus_race_{secrets.token_hex(4)}"
                         )
                         db.add(used_card)
                         await db.commit()
@@ -501,16 +544,16 @@ async def test_free_plan_subscription_race_condition(
                 with pytest.raises(HTTPException) as excinfo:
                     await transaction_service.verify_and_process_subscription(
                         user_id=test_user.id,
-                        transaction_id="sub_test123",
+                        transaction_id=sub_id, # Use unique ID
                         background_tasks=background_tasks
                     )
                 
                 # Verify the exception details
                 assert excinfo.value.status_code == status.HTTP_409_CONFLICT
                 assert "already been used for a free subscription" in str(excinfo.value.detail)
-                
+
                 # Verify the mocks were called correctly
-                transaction_service.stripe_service.verify_transaction_id.assert_called_once_with("sub_test123")
+                transaction_service.stripe_service.verify_transaction_id.assert_called_once_with(sub_id) # Use dynamic sub_id
                 transaction_service.stripe_service.check_active_subscription.assert_called_once_with(test_user.id)
                 mock_find.assert_called_once_with("price_free123")
                 transaction_service.plan_service.get_plan_by_id.assert_called_once_with(test_free_plan.id)

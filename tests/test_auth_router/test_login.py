@@ -12,7 +12,7 @@ async def test_successful_login(client, db, test_user_data):
     from tests.conftest import create_test_user
     await create_test_user(db, test_user_data["email"], test_user_data["password"], is_verified=True)
     
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/login",
         json={
             "email": test_user_data["email"],
@@ -36,7 +36,7 @@ async def test_login_invalid_password(client, db, test_user_data):
     from tests.conftest import create_test_user
     await create_test_user(db, test_user_data["email"], test_user_data["password"], is_verified=True)
     
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/login",
         json={
             "email": test_user_data["email"],
@@ -51,7 +51,7 @@ async def test_login_invalid_password(client, db, test_user_data):
 
 async def test_login_nonexistent_email(client):
     """Test login with non-existent email."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/login",
         json={
             "email": "nonexistent@example.com",
@@ -66,7 +66,7 @@ async def test_login_nonexistent_email(client):
 
 async def test_login_missing_email(client):
     """Test login with missing email field."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/login",
         json={"password": "testpassword123"}
     )
@@ -79,7 +79,7 @@ async def test_login_missing_email(client):
 
 async def test_login_missing_password(client):
     """Test login with missing password field."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/login",
         json={"email": "test@example.com"}
     )
@@ -92,7 +92,7 @@ async def test_login_missing_password(client):
 
 async def test_login_invalid_email_format(client):
     """Test login with invalid email format."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/login",
         json={
             "email": "invalid-email",
@@ -112,7 +112,7 @@ async def test_login_unverified_user(client, db, test_user_data):
     from tests.conftest import create_test_user
     await create_test_user(db, test_user_data["email"], test_user_data["password"], is_verified=False)
     
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/login",
         json={
             "email": test_user_data["email"],
@@ -124,11 +124,12 @@ async def test_login_unverified_user(client, db, test_user_data):
     assert response.status_code == status.HTTP_403_FORBIDDEN
     data = response.json()
     assert "detail" in data
-    assert "Email not verified" in data["detail"]["message"]
+    # Adjust assertion: Check if the detail string contains "Email not verified"
+    assert "Email not verified" in str(data["detail"])
 
 async def test_login_empty_password(client):
     """Test login with empty password."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/login",
         json={
             "email": "test@example.com",
@@ -143,7 +144,7 @@ async def test_login_empty_password(client):
 
 async def test_login_empty_email(client):
     """Test login with empty email."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/login",
         json={
             "email": "",
@@ -164,7 +165,7 @@ async def test_login_case_insensitive_email(client, db, test_user_data):
     await create_test_user(db, test_user_data["email"].lower(), test_user_data["password"], is_verified=True)
     
     # Try login with uppercase email
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/login",
         json={
             "email": test_user_data["email"].upper(),

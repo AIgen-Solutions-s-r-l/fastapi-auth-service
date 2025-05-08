@@ -13,7 +13,10 @@ from typing import Dict, Any, Callable, TypeVar, Optional, Type, Tuple, Union, L
 from sqlalchemy.exc import SQLAlchemyError, OperationalError, DatabaseError
 from sqlalchemy.sql import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select # Added for get_or_create_subscription
 
+from app.models.plan import Subscription # Added for get_or_create_subscription
+from app.log.logging import logger # Already imported but good to note for context
 from app.core.db_exceptions import (
     ConnectionRefusedError,
     ConnectionLostError,
@@ -308,3 +311,52 @@ async def execute_db_operation(
     except Exception as exc:
         # Let the decorator handle retries and exception classification
         raise
+
+async def get_or_create_subscription(db: AsyncSession, user_id: str, stripe_subscription_id: str) -> Subscription:
+    """
+    Retrieves an existing subscription by stripe_subscription_id or creates a new one
+    if it doesn't exist. Associates with the user_id.
+    """
+    # Try to find existing subscription by stripe_subscription_id first
+    stmt = select(Subscription).where(Subscription.stripe_subscription_id == stripe_subscription_id)
+    result = await db.execute(stmt)
+    db_sub = await result.scalars().first()
+
+    if db_sub:
+        # If found, ensure user_id matches if it's already set, or set it if not
+        if db_sub.user_id and db_sub.user_id != user_id:
+            logger.error(
+                f"Subscription {stripe_subscription_id} found but belongs to different user {db_sub.user_id} (expected {user_id}).",
+                stripe_subscription_id=stripe_subscription_id,
+                current_user_id=db_sub.user_id,
+                expected_user_id=user_id
+            )
+            # This is a critical data integrity issue. How to handle?
+            # For now, raise an error.
+            raise ValueError(f"Subscription {stripe_subscription_id} mismatch on user_id.")
+        if not db_sub.user_id: # If subscription existed without a user_id (e.g. created by Stripe directly)
+            db_sub.user_id = user_id
+            logger.info(f"Associated existing subscription {stripe_subscription_id} with user_id {user_id}.", stripe_subscription_id=stripe_subscription_id, user_id=user_id)
+        return db_sub
+
+    # If not found by stripe_subscription_id, try to find by user_id if one is active/trialing (less likely path here)
+    # This part might be redundant if Stripe always creates a new sub ID.
+    # stmt_user = select(Subscription).where(Subscription.user_id == user_id).where(Subscription.status.in_(['active', 'trialing']))
+    # result_user = await db.execute(stmt_user)
+    # db_sub_user = result_user.scalars().first()
+    # if db_sub_user:
+    #     logger.warning(f"User {user_id} already has an active/trialing subscription {db_sub_user.stripe_subscription_id}. New event for {stripe_subscription_id} received.", user_id=user_id)
+    #     # This scenario needs careful handling based on business logic.
+    #     # For now, we prioritize the stripe_subscription_id from the event.
+
+    # If no existing subscription, create a new one
+    logger.info(f"Creating new local subscription record for Stripe ID: {stripe_subscription_id}, User ID: {user_id}", stripe_subscription_id=stripe_subscription_id, user_id=user_id)
+    new_sub = Subscription(
+        user_id=user_id,
+        stripe_subscription_id=stripe_subscription_id,
+        # status will be set by the webhook handler based on event data
+    )
+    db.add(new_sub)
+    # We expect a flush/commit to happen in the calling service after all updates for the event.
+    # await db.flush() # To get ID if needed immediately, but usually not required here.
+    return new_sub

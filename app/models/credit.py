@@ -6,7 +6,7 @@ from enum import Enum
 from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, DateTime, Text
 from sqlalchemy.orm import relationship
 
-from app.core.base import Base
+from app.core.base_model import Base # Import from new location
 
 
 class TransactionType(str, Enum):
@@ -17,6 +17,7 @@ class TransactionType(str, Enum):
     PLAN_RENEWAL = "plan_renewal"
     PLAN_UPGRADE = "plan_upgrade"
     ONE_TIME_PURCHASE = "one_time_purchase"
+    TRIAL_CREDIT_GRANT = "trial_credit_grant" # For the initial 10 free trial credits (FR-3)
 
 
 class UserCredit(Base):

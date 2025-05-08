@@ -9,7 +9,7 @@ pytestmark = pytest.mark.asyncio
 
 async def test_login_success(client, test_user):
     """Test successful login."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/login",
         json={"email": test_user["email"], "password": test_user["password"]}
     )
@@ -33,7 +33,7 @@ async def test_login_success(client, test_user):
 
 async def test_login_invalid_credentials(client, test_user):
     """Test login with invalid credentials."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/login",
         json={"email": test_user["email"], "password": "wrong_password"}
     )
@@ -44,7 +44,7 @@ async def test_login_invalid_credentials(client, test_user):
 
 async def test_register_success(client):
     """Test successful user registration."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json={"email": "newuser@example.com", "password": "password123"}
     )
@@ -59,7 +59,7 @@ async def test_register_duplicate_email(client, test_user):
     """Test registration with existing email."""
     # First registration already done in fixture
     # Attempt duplicate registration
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json={"email": test_user["email"], "password": "password123"}
     )
@@ -70,7 +70,7 @@ async def test_register_duplicate_email(client, test_user):
 
 async def test_register_invalid_email(client):
     """Test registration with invalid email format."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json={"email": "invalid-email", "password": "password123"}
     )
@@ -83,7 +83,7 @@ async def test_register_invalid_email(client):
 
 async def test_register_weak_password(client):
     """Test registration with weak password."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/register",
         json={"email": "test@example.com", "password": "short"}
     )
@@ -96,7 +96,7 @@ async def test_register_weak_password(client):
 
 async def test_get_current_user_profile(client, test_user_token):
     """Test retrieving the current user's profile."""
-    response = client.get(
+    response = await client.get( # Added await
         "/auth/me",
         headers={"Authorization": f"Bearer {test_user_token}"}
     )
@@ -108,7 +108,7 @@ async def test_get_current_user_profile(client, test_user_token):
 
 async def test_refresh_token(client, test_user_token):
     """Test refreshing a JWT token."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/refresh",
         json={"token": test_user_token}
     )
@@ -132,7 +132,7 @@ async def test_refresh_token(client, test_user_token):
 
 async def test_logout(client, test_user_token):
     """Test user logout."""
-    response = client.post(
+    response = await client.post( # Added await
         "/auth/logout",
         headers={"Authorization": f"Bearer {test_user_token}"}
     )

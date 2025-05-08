@@ -8,7 +8,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from decimal import Decimal
 
-from app.core.base import Base
+from app.core.base_model import Base # Import from new location
 
 
 class Plan(Base):
@@ -38,6 +38,13 @@ class Plan(Base):
     stripe_price_id = Column(String(100), nullable=True)
     stripe_product_id = Column(String(100), nullable=True)
     is_limited_free = Column(Boolean, default=False, nullable=False, server_default='false') # Added for Free Plan limitation
+    
+    # Additional fields for testing
+    is_trial_eligible = Column(Boolean, default=False, nullable=False)
+    is_public = Column(Boolean, default=True, nullable=False)
+    price_cents = Column(Integer, nullable=True)  # Alternative price representation
+    credits_awarded = Column(Integer, nullable=True)  # Alternative credit amount representation
+    trial_days = Column(Integer, nullable=True)  # Number of trial days
 
     # Relationships
     subscriptions = relationship("Subscription", back_populates="plan")
@@ -68,34 +75,48 @@ class Subscription(Base):
     auto_renew = Column(Boolean, default=True, nullable=False)
     last_renewal_date = Column(DateTime(timezone=True), nullable=True)
     status = Column(String(50), default="active", nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     
     # Stripe integration
     stripe_subscription_id = Column(String(100), nullable=True)
     stripe_customer_id = Column(String(100), nullable=True)
+    stripe_price_id = Column(String(100), nullable=True)
+    
+    # Additional fields for subscription management
+    trial_end_date = Column(DateTime(timezone=True), nullable=True)
+    current_period_start = Column(DateTime(timezone=True), nullable=True)
+    current_period_end = Column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end = Column(Boolean, default=False, nullable=False)
+    canceled_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
     user = relationship("User", back_populates="subscriptions")
     plan = relationship("Plan", back_populates="subscriptions")
 
 
-class UsedFreePlanCard(Base):
+class UsedTrialCardFingerprint(Base):
     """
-    Tracks credit card fingerprints used for limited free plans to enforce uniqueness.
+    Tracks credit card fingerprints used for free trials to enforce uniqueness (FR-4).
+    Renamed and enhanced from UsedFreePlanCard.
     """
-    __tablename__ = "used_free_plan_cards"
+    __tablename__ = "used_trial_card_fingerprints" # New table name
 
     id = Column(Integer, primary_key=True, index=True)
-    stripe_card_fingerprint = Column(String(255), nullable=False)
-    stripe_payment_method_id = Column(String(100), nullable=True) # Optional reference
-    stripe_subscription_id = Column(String(100), nullable=True) # Nullable initially, filled when subscription confirmed
-    stripe_customer_id = Column(String(100), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True) # Link to the user who attempted/used the trial
+    stripe_card_fingerprint = Column(String(255), nullable=False) # Stripe's card fingerprint
+    stripe_payment_method_id = Column(String(100), nullable=True) # Stripe PaymentMethod ID
+    stripe_subscription_id = Column(String(100), nullable=False, index=True) # Stripe Subscription ID that this trial fingerprint is associated with
+    stripe_customer_id = Column(String(100), nullable=False, index=True) # Stripe Customer ID
+    
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
+    # Relationships
+    user = relationship("User") # Relationship to User model
+
     __table_args__ = (
-        UniqueConstraint('stripe_card_fingerprint', name='uq_stripe_card_fingerprint'),
-        Index('ix_used_free_plan_cards_stripe_card_fingerprint', 'stripe_card_fingerprint'),
-        Index('ix_used_free_plan_cards_stripe_payment_method_id', 'stripe_payment_method_id'),
-        Index('ix_used_free_plan_cards_stripe_subscription_id', 'stripe_subscription_id'),
-        Index('ix_used_free_plan_cards_stripe_customer_id', 'stripe_customer_id'),
+        UniqueConstraint('stripe_card_fingerprint', name='uq_trial_card_fingerprint'), # CRITICAL: Enforces one trial per card fingerprint (FR-4)
+        Index('ix_trial_card_fingerprint_lookup', 'stripe_card_fingerprint'), # CRITICAL: For fast lookups (NFR: Performance ≤ 200 ms p95)
+        # Other indexes already added via individual column `index=True` flags.
     )

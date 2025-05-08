@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError # For race condition handling
 
 from app.models.credit import TransactionType
 from app.models.user import User
-from app.models.plan import Plan, UsedFreePlanCard # Import Plan and UsedFreePlanCard
+from app.models.plan import Plan, UsedTrialCardFingerprint # Import Plan and UsedTrialCardFingerprint (renamed)
 from app.schemas import credit_schemas
 from app.log.logging import logger
 
@@ -507,7 +507,7 @@ class TransactionService:
                                      event_type="free_plan_gate_db_check",
                                      fingerprint=fingerprint)
                         existing_card_result = await self.db.execute(
-                            select(UsedFreePlanCard).where(UsedFreePlanCard.stripe_card_fingerprint == fingerprint)
+                            select(UsedTrialCardFingerprint).where(UsedTrialCardFingerprint.stripe_card_fingerprint == fingerprint)
                         )
                         existing_card = existing_card_result.scalar_one_or_none()
 
@@ -525,7 +525,8 @@ class TransactionService:
                             logger.debug(f"Attempting to insert fingerprint {fingerprint} into used_free_plan_cards",
                                          event_type="free_plan_gate_db_insert_attempt",
                                          fingerprint=fingerprint)
-                            new_card_record = UsedFreePlanCard(
+                            new_card_record = UsedTrialCardFingerprint(
+                                user_id=user_id, # Add user_id
                                 stripe_card_fingerprint=fingerprint,
                                 stripe_payment_method_id=payment_method_id,
                                 stripe_customer_id=stripe_customer_id,

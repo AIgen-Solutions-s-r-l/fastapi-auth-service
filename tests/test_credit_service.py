@@ -2,6 +2,7 @@
 
 import pytest
 import pytest_asyncio
+import secrets # Added secrets
 from decimal import Decimal
 from datetime import datetime, UTC, timedelta
 from unittest.mock import patch, MagicMock, AsyncMock
@@ -26,9 +27,11 @@ class MockEmailService:
 
 @pytest_asyncio.fixture
 async def test_user(db: AsyncSession) -> User:
-    """Fixture for creating a test user."""
+    """Fixture for creating a test user with a unique email."""
+    unique_suffix = secrets.token_hex(4)
+    email = f"test_credit_{unique_suffix}@example.com"
     user = User(
-        email="test@example.com",
+        email=email, # Use unique email
         hashed_password="password",
         is_admin=False,  # Using correct fields from the User model
         is_verified=True,

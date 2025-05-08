@@ -2,14 +2,15 @@
 
 import pytest
 import asyncio
-from fastapi.testclient import TestClient
+import secrets # Added secrets
+from httpx import AsyncClient # Changed from fastapi.testclient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from app.main import app
+from app.main import app as app_instance
 from app.core.database import get_db
 from app.models.user import User
 from app.core.security import create_access_token
-from app.services.user_service import create_user
+from app.services.user_service import UserService # Changed import
 from datetime import timedelta, datetime, timezone
 
 # Create a test database
@@ -35,28 +36,32 @@ async def db():
         await conn.run_sync(User.metadata.drop_all)
 
 @pytest.fixture
-def client(db):
-    """Create a test client with a test database."""
+async def client(db: AsyncSession): # Added type hint for db
+    """Create an async test client with a test database."""
     async def override_get_db():
         yield db
     
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
+    app_instance.dependency_overrides[get_db] = override_get_db
+    async with AsyncClient(app=app_instance, base_url="http://test") as test_client: # Use AsyncClient and app_instance
         yield test_client
     
     # Reset dependency overrides
-    app.dependency_overrides = {}
+    app_instance.dependency_overrides.clear()
 
 @pytest.fixture
-async def test_user(db):
-    """Create a test user."""
+async def test_user(db: AsyncSession): # Added type hint for db
+    """Create a test user with a unique email."""
+    unique_suffix = secrets.token_hex(4)
+    email = f"test_{unique_suffix}@example.com"
+    password = "password123"
     user_data = {
-        "email": "test@example.com",
-        "password": "password123"
+        "email": email,
+        "password": password
     }
     
     # Create the user
-    user = await create_user(db, user_data["email"], user_data["password"])
+    user_service = UserService(db)
+    user = await user_service.create_user(user_data["email"], user_data["password"])
     
     # Set the user as verified
     user.is_verified = True
@@ -85,15 +90,19 @@ def test_user_token(test_user):
     return access_token
 
 @pytest.fixture
-async def test_admin_user(db):
-    """Create a test admin user."""
+async def test_admin_user(db: AsyncSession): # Added type hint for db
+    """Create a test admin user with a unique email."""
+    unique_suffix = secrets.token_hex(4)
+    email = f"admin_{unique_suffix}@example.com"
+    password = "adminpass123"
     user_data = {
-        "email": "admin@example.com",
-        "password": "adminpass123"
+        "email": email,
+        "password": password
     }
     
     # Create the user
-    user = await create_user(db, user_data["email"], user_data["password"])
+    user_service = UserService(db)
+    user = await user_service.create_user(user_data["email"], user_data["password"])
     
     # Set the user as verified and admin
     user.is_verified = True
@@ -121,3 +130,29 @@ def test_admin_token(test_admin_user):
     )
     
     return access_token
+
+@pytest.fixture
+async def test_user_with_profile_data(db: AsyncSession): # Added type hint for db
+    """Create a test user with profile data for status API tests with a unique email."""
+    unique_suffix = secrets.token_hex(4)
+    email = f"statususer_{unique_suffix}@example.com"
+    password = "statuspassword"
+    user_data = {
+        "email": email,
+        "password": password
+    }
+    
+    # Create the user
+    user_service = UserService(db)
+    user = await user_service.create_user(user_data["email"], user_data["password"])
+    
+    # Set the user as verified
+    user.is_verified = True
+    user.account_status = "active"
+    user.has_consumed_initial_trial = False
+    user.stripe_customer_id = "cus_test_status"
+    
+    await db.commit()
+    await db.refresh(user)
+    
+    return user
