@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.user_service import UserService
 from app.models.user import User
-from app.models.credit import UserCredit
+from app.models.credit import UserCredit, CreditTransaction, TransactionType
 from app.models.plan import Subscription, Plan
 from app.schemas.auth_schemas import UserStatusResponse, SubscriptionStatusResponse, SubscriptionStatusEnum, UserAccountStatusEnum # Added import
 from app.schemas.trial_schemas import TrialEligibilityResponse, TrialEligibilityReasonCode # Added for trial eligibility
@@ -631,20 +631,33 @@ async def test_get_trial_eligibility_eligible(
     """Test get_trial_eligibility when the user is eligible."""
     mock_user.has_consumed_initial_trial = False
     
-    # Mock the database call within get_trial_eligibility to return no relevant subscriptions
-    async_result_mock = MagicMock()
-    scalar_result_mock = MagicMock()
+    # Set up the mock to return different results for different queries
+    def mock_execute_side_effect(query):
+        query_str = str(query)
+        if "transaction_type.in_" in query_str:  # Purchase query
+            result_mock = AsyncMock()
+            result_mock.scalar_one_or_none = AsyncMock(return_value=None)
+            return result_mock
+        elif "transaction_type !=" in query_str:  # Payment history query
+            result_mock = AsyncMock()
+            result_mock.scalar_one_or_none = AsyncMock(return_value=None)
+            return result_mock
+        else:  # Subscription query
+            result_mock = AsyncMock()
+            scalars_mock = AsyncMock()
+            scalars_mock.all = MagicMock(return_value=[])
+            result_mock.scalars = MagicMock(return_value=scalars_mock)
+            return result_mock
     
-    mock_db_session.execute.return_value = async_result_mock
-    async_result_mock.scalars.return_value = scalar_result_mock
-    scalar_result_mock.all = MagicMock(return_value=[])
+    mock_db_session.execute.side_effect = mock_execute_side_effect
 
     response = await user_service.get_trial_eligibility(mock_user)
 
     assert response.is_eligible is True
     assert response.reason_code == TrialEligibilityReasonCode.ELIGIBLE
     assert response.message == "User is eligible for a free trial."
-    mock_db_session.execute.assert_called_once() # Ensure the subscription query was made
+    # The execute method should be called three times (purchase, payment, subscription queries)
+    assert mock_db_session.execute.call_count == 3
 
 
 @pytest.mark.asyncio
@@ -656,12 +669,17 @@ async def test_get_trial_eligibility_consumed_trial(
     """Test get_trial_eligibility when the user has already consumed their trial."""
     mock_user.has_consumed_initial_trial = True
 
+    # No need to set up mocks for DB queries as they shouldn't be called
+    # But reset any previous side_effect to avoid test interference
+    mock_db_session.execute.side_effect = None
+    mock_db_session.execute.reset_mock()
+
     response = await user_service.get_trial_eligibility(mock_user)
 
     assert response.is_eligible is False
     assert response.reason_code == TrialEligibilityReasonCode.TRIAL_CONSUMED
     assert response.message == "User has already consumed their initial free trial."
-    # No DB call for subscriptions should be made if has_consumed_initial_trial is true
+    # No DB calls should be made if has_consumed_initial_trial is true
     mock_db_session.execute.assert_not_called()
 
 
@@ -688,20 +706,33 @@ async def test_get_trial_eligibility_currently_in_trial(
         plan=mock_plan
     )
     
-    # Mock the database call within get_trial_eligibility
-    async_result_mock = MagicMock()
-    scalar_result_mock = MagicMock()
-
-    mock_db_session.execute.return_value = async_result_mock
-    async_result_mock.scalars.return_value = scalar_result_mock
-    scalar_result_mock.all = MagicMock(return_value=[active_trial_subscription])
+    # Set up the mock to return different results for different queries
+    def mock_execute_side_effect(query):
+        query_str = str(query)
+        if "transaction_type.in_" in query_str:  # Purchase query
+            result_mock = AsyncMock()
+            result_mock.scalar_one_or_none = AsyncMock(return_value=None)
+            return result_mock
+        elif "transaction_type !=" in query_str:  # Payment history query
+            result_mock = AsyncMock()
+            result_mock.scalar_one_or_none = AsyncMock(return_value=None)
+            return result_mock
+        else:  # Subscription query
+            result_mock = AsyncMock()
+            scalars_mock = AsyncMock()
+            scalars_mock.all = MagicMock(return_value=[active_trial_subscription])
+            result_mock.scalars = MagicMock(return_value=scalars_mock)
+            return result_mock
+    
+    mock_db_session.execute.side_effect = mock_execute_side_effect
 
     response = await user_service.get_trial_eligibility(mock_user)
 
     assert response.is_eligible is False
     assert response.reason_code == TrialEligibilityReasonCode.CURRENTLY_IN_TRIAL
     assert response.message == "User is currently in an active trial period."
-    mock_db_session.execute.assert_called_once()
+    # The execute method should be called three times (purchase, payment, subscription queries)
+    assert mock_db_session.execute.call_count == 3
 
 
 @pytest.mark.asyncio
@@ -731,19 +762,32 @@ async def test_get_trial_eligibility_active_subscription_past_trial_end_date(
         plan=mock_plan
     )
     
-    # Mock the database call within get_trial_eligibility
-    async_result_mock = MagicMock()
-    scalar_result_mock = MagicMock()
-
-    mock_db_session.execute.return_value = async_result_mock
-    async_result_mock.scalars.return_value = scalar_result_mock
-    scalar_result_mock.all = MagicMock(return_value=[active_paid_subscription])
+    # Set up the mock to return different results for different queries
+    def mock_execute_side_effect(query):
+        query_str = str(query)
+        if "transaction_type.in_" in query_str:  # Purchase query
+            result_mock = AsyncMock()
+            result_mock.scalar_one_or_none = AsyncMock(return_value=None)
+            return result_mock
+        elif "transaction_type !=" in query_str:  # Payment history query
+            result_mock = AsyncMock()
+            result_mock.scalar_one_or_none = AsyncMock(return_value=None)
+            return result_mock
+        else:  # Subscription query
+            result_mock = AsyncMock()
+            scalars_mock = AsyncMock()
+            scalars_mock.all = MagicMock(return_value=[active_paid_subscription])
+            result_mock.scalars = MagicMock(return_value=scalars_mock)
+            return result_mock
+    
+    mock_db_session.execute.side_effect = mock_execute_side_effect
 
     response = await user_service.get_trial_eligibility(mock_user)
 
     assert response.is_eligible is True # Eligible because current subscription is not a *current* trial
     assert response.reason_code == TrialEligibilityReasonCode.ELIGIBLE
-    mock_db_session.execute.assert_called_once()
+    # The execute method should be called three times (purchase, payment, subscription queries)
+    assert mock_db_session.execute.call_count == 3
 
 @pytest.mark.asyncio
 async def test_get_trial_eligibility_multiple_subscriptions_one_active_trial(
@@ -778,15 +822,125 @@ async def test_get_trial_eligibility_multiple_subscriptions_one_active_trial(
         is_active=True, plan=mock_plan
     )
     
-    async_result_mock = MagicMock()
-    scalar_result_mock = MagicMock()
-
-    mock_db_session.execute.return_value = async_result_mock
-    async_result_mock.scalars.return_value = scalar_result_mock
-    scalar_result_mock.all = MagicMock(return_value=[active_trial_subscription, past_subscription]) # Order shouldn't matter due to logic
+    # Set up the mock to return different results for different queries
+    def mock_execute_side_effect(query):
+        query_str = str(query)
+        if "transaction_type.in_" in query_str:  # Purchase query
+            result_mock = AsyncMock()
+            result_mock.scalar_one_or_none = AsyncMock(return_value=None)
+            return result_mock
+        elif "transaction_type !=" in query_str:  # Payment history query
+            result_mock = AsyncMock()
+            result_mock.scalar_one_or_none = AsyncMock(return_value=None)
+            return result_mock
+        else:  # Subscription query
+            result_mock = AsyncMock()
+            scalars_mock = AsyncMock()
+            scalars_mock.all = MagicMock(return_value=[active_trial_subscription, past_subscription]) # Order shouldn't matter due to logic
+            result_mock.scalars = MagicMock(return_value=scalars_mock)
+            return result_mock
+    
+    mock_db_session.execute.side_effect = mock_execute_side_effect
 
     response = await user_service.get_trial_eligibility(mock_user)
 
     assert response.is_eligible is False
     assert response.reason_code == TrialEligibilityReasonCode.CURRENTLY_IN_TRIAL
-    mock_db_session.execute.assert_called_once()
+    # The execute method should be called three times (purchase, payment, subscription queries)
+    assert mock_db_session.execute.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_get_trial_eligibility_previous_purchase(
+    user_service: UserService,
+    mock_user: User,
+    mock_db_session: AsyncMock
+):
+    """Test get_trial_eligibility when the user has previous purchases."""
+    mock_user.has_consumed_initial_trial = False
+    
+    # Create a purchase transaction
+    purchase_transaction = CreditTransaction(
+        id=100,
+        user_id=mock_user.id,
+        user_credit_id=1,
+        amount=50,
+        transaction_type=TransactionType.PLAN_PURCHASE.value
+    )
+    
+    # Set up the mock to return different results for different queries
+    def mock_execute_side_effect(query):
+        query_str = str(query)
+        if "transaction_type.in_" in query_str:  # Purchase query
+            result_mock = AsyncMock()
+            result_mock.scalar_one_or_none = AsyncMock(return_value=purchase_transaction)
+            return result_mock
+        elif "transaction_type !=" in query_str:  # Payment history query
+            result_mock = AsyncMock()
+            result_mock.scalar_one_or_none = AsyncMock(return_value=None)  # Not reached
+            return result_mock
+        else:  # Subscription query
+            result_mock = AsyncMock()
+            scalars_mock = AsyncMock()
+            scalars_mock.all = MagicMock(return_value=[])  # Not reached
+            result_mock.scalars = MagicMock(return_value=scalars_mock)
+            return result_mock
+    
+    mock_db_session.execute.side_effect = mock_execute_side_effect
+    
+    response = await user_service.get_trial_eligibility(mock_user)
+    
+    assert response.is_eligible is False
+    assert response.reason_code == TrialEligibilityReasonCode.PREVIOUS_PURCHASE
+    assert "previously made purchases" in response.message
+    
+    # The execute method should be called once for the purchase query
+    assert mock_db_session.execute.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_trial_eligibility_payment_history(
+    user_service: UserService,
+    mock_user: User,
+    mock_db_session: AsyncMock
+):
+    """Test get_trial_eligibility when the user has payment history."""
+    mock_user.has_consumed_initial_trial = False
+    
+    # Create a payment transaction
+    payment_transaction = CreditTransaction(
+        id=101,
+        user_id=mock_user.id,
+        user_credit_id=1,
+        amount=25,
+        transaction_type=TransactionType.CREDIT_ADDED.value
+    )
+    
+    # Set up the mock to return different results for different queries
+    def mock_execute_side_effect(query):
+        query_str = str(query)
+        if "transaction_type.in_" in query_str:  # Purchase query
+            result_mock = AsyncMock()
+            result_mock.scalar_one_or_none = AsyncMock(return_value=None)
+            return result_mock
+        elif "transaction_type !=" in query_str:  # Payment history query
+            result_mock = AsyncMock()
+            result_mock.scalar_one_or_none = AsyncMock(return_value=payment_transaction)
+            return result_mock
+        else:  # Subscription query
+            result_mock = AsyncMock()
+            scalars_mock = AsyncMock()
+            scalars_mock.all = MagicMock(return_value=[])  # Not reached
+            result_mock.scalars = MagicMock(return_value=scalars_mock)
+            return result_mock
+    
+    mock_db_session.execute.side_effect = mock_execute_side_effect
+    
+    response = await user_service.get_trial_eligibility(mock_user)
+    
+    assert response.is_eligible is False
+    assert response.reason_code == TrialEligibilityReasonCode.PAYMENT_HISTORY
+    assert "payment history" in response.message
+    
+    # The execute method should be called twice (once for purchase query, once for payment history)
+    assert mock_db_session.execute.call_count == 2

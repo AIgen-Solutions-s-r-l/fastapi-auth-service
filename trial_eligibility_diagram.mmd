@@ -1,0 +1,10 @@
+graph TD
+    A[Start] --> B{Has consumed initial trial?}
+    B -->|Yes| C[Not eligible: TRIAL_CONSUMED]
+    B -->|No| D{Has active trial subscription?}
+    D -->|Yes| E[Not eligible: CURRENTLY_IN_TRIAL]
+    D -->|No| F{Has payment history?}
+    F -->|Yes| G[Not eligible: PAYMENT_HISTORY]
+    F -->|No| H{Has previous purchases?}
+    H -->|Yes| I[Not eligible: PREVIOUS_PURCHASE]
+    H -->|No| J[Eligible for trial]
