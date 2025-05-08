@@ -1052,8 +1052,9 @@ class UserService:
                     )
             
             # Check for previous purchases - use the same query structure as in test_get_trial_eligibility_previous_purchase
-            purchase_query = (
-                select(CreditTransaction)
+            # We only need to check for existence, not fetch the actual transaction.
+            purchase_exists_query = (
+                select(CreditTransaction.id) # Select a single column for efficiency
                 .where(
                     CreditTransaction.user_id == user.id,
                     CreditTransaction.transaction_type.in_([
@@ -1061,31 +1062,30 @@ class UserService:
                         TransactionType.ONE_TIME_PURCHASE.value,
                         TransactionType.PLAN_UPGRADE.value
                     ])
-                )
+                ).exists()
             )
-            purchase_result = await self.db.execute(purchase_query)
-            purchase_transaction = await purchase_result.scalar_one_or_none()
-            
-            if purchase_transaction is not None:
+            has_previous_purchase = await self.db.scalar(select(purchase_exists_query))
+
+            if has_previous_purchase:
                 logger.info(f"User {user.id} is not eligible for trial: PREVIOUS_PURCHASE.")
                 return TrialEligibilityResponse(
                     is_eligible=False,
                     reason_code=TrialEligibilityReasonCode.PREVIOUS_PURCHASE,
                     message="User has previously made purchases and is not eligible for a free trial."
                 )
-            
+
             # Check for payment history - use the same query structure as in test_get_trial_eligibility_payment_history
-            payment_query = (
-                select(CreditTransaction)
+            # We only need to check for existence.
+            payment_exists_query = (
+                select(CreditTransaction.id) # Select a single column
                 .where(
                     CreditTransaction.user_id == user.id,
                     CreditTransaction.transaction_type != TransactionType.TRIAL_CREDIT_GRANT.value
-                )
+                ).exists()
             )
-            payment_result = await self.db.execute(payment_query)
-            payment_transaction = await payment_result.scalar_one_or_none()
-            
-            if payment_transaction is not None:
+            has_payment_history = await self.db.scalar(select(payment_exists_query))
+
+            if has_payment_history:
                 logger.info(f"User {user.id} is not eligible for trial: PAYMENT_HISTORY.")
                 return TrialEligibilityResponse(
                     is_eligible=False,
