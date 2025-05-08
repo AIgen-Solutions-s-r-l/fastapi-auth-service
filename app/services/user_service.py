@@ -830,7 +830,8 @@ class UserService:
             )
             # Do not raise HTTPException directly to allow specific messaging in the router
             return False, f"An unexpected error occurred: {str(e)}", None
-async def get_trial_eligibility(self, user: User) -> TrialEligibilityResponse:
+
+    async def get_trial_eligibility(self, user: User) -> TrialEligibilityResponse:
         """
         Determines if a user is eligible for a new free trial.
 
@@ -850,9 +851,12 @@ async def get_trial_eligibility(self, user: User) -> TrialEligibilityResponse:
 
         # To ensure we have the latest subscription data, especially `trial_end_date`
         # and related statuses, we query them directly.
+        # This is important because the 'user' object passed in might have stale subscription data
+        # if it was loaded earlier in a request lifecycle.
         query = (
             select(Subscription)
             .where(Subscription.user_id == user.id)
+            .options(selectinload(Subscription.plan)) # Eager load plan details if needed by other logic
             .order_by(Subscription.start_date.desc()) # Get the most recent ones first
         )
         result = await self.db.execute(query)

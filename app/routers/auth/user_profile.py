@@ -127,7 +127,7 @@ async def get_trial_eligibility_status(
             event_type="trial_eligibility_check",
             user_id=current_user.id,
             is_eligible=eligibility_response.is_eligible,
-            reason_code=eligibility_response.reason_code.value
+            reason_code=str(eligibility_response.reason_code) # Use str() for logging
         )
         return eligibility_response
     except Exception as e:
