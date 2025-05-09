@@ -224,7 +224,11 @@ class WebhookService:
         if not user_id:
             user_stmt = select(User.id).where(User.stripe_customer_id == stripe_customer_id)
             user_result = await self.db.execute(user_stmt)
-            user_id = await user_result.scalars().first()
+            try:
+                user_id = await user_result.scalars().first()
+            except TypeError:
+                # Handle case where first() returns None synchronously
+                user_id = user_result.scalars().first()
         
         if not user_id:
             logger.error(f"User ID not found for customer.subscription.created: {event_id}, Stripe Customer: {stripe_customer_id}", event_id=event_id, stripe_customer_id=stripe_customer_id)
@@ -327,7 +331,11 @@ class WebhookService:
                 # We only reach this point if user hasn't consumed trial and fingerprint is unique
                 # Ensure UserCredit record exists
                 user_credit = await self.db.execute(select(UserCredit).where(UserCredit.user_id == user_id))
-                user_credit_record = await user_credit.scalars().first()
+                try:
+                    user_credit_record = await user_credit.scalars().first()
+                except TypeError:
+                    # Handle case where first() returns None synchronously
+                    user_credit_record = user_credit.scalars().first()
                 if not user_credit_record:
                     user_credit_record = UserCredit(user_id=user_id, balance=0)
                     self.db.add(user_credit_record)
@@ -391,7 +399,11 @@ class WebhookService:
         if not user_id:
             user_stmt = select(User.id).where(User.stripe_customer_id == stripe_customer_id)
             user_result = await self.db.execute(user_stmt)
-            user_id = await user_result.scalars().first()
+            try:
+                user_id = await user_result.scalars().first()
+            except TypeError:
+                # Handle case where first() returns None synchronously
+                user_id = user_result.scalars().first()
 
         if not user_id:
             logger.error(f"User ID not found for customer.subscription.updated: {event_id}, Stripe Customer: {stripe_customer_id}", event_id=event_id, stripe_customer_id=stripe_customer_id)
@@ -400,7 +412,11 @@ class WebhookService:
         db_subscription = await self.db.execute(
             select(Subscription).where(Subscription.stripe_subscription_id == stripe_subscription_id)
         )
-        subscription_record = await db_subscription.scalars().first()
+        try:
+            subscription_record = await db_subscription.scalars().first()
+        except TypeError:
+            # Handle case where first() returns None synchronously
+            subscription_record = db_subscription.scalars().first()
 
         if not subscription_record:
             logger.warning(f"Local subscription record not found for stripe_subscription_id {stripe_subscription_id} during update. Creating one.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
@@ -499,11 +515,18 @@ class WebhookService:
         stripe_customer_id = invoice_data.customer
         stripe_subscription_id = invoice_data.subscription # Can be null for one-off invoices
 
-        user_id = invoice_data.customer_details.get("metadata", {}).get("user_id") # Assuming user_id is in customer metadata
+        # Safely access customer_details which might be None
+        user_id = None
+        if hasattr(invoice_data, 'customer_details') and invoice_data.customer_details is not None:
+            user_id = invoice_data.customer_details.get("metadata", {}).get("user_id")
         if not user_id and stripe_customer_id: # Fallback: try to get from our User table
             user_stmt = select(User.id).where(User.stripe_customer_id == stripe_customer_id)
             user_result = await self.db.execute(user_stmt)
-            user_id = await user_result.scalars().first()
+            try:
+                user_id = await user_result.scalars().first()
+            except TypeError:
+                # Handle case where first() returns None synchronously
+                user_id = user_result.scalars().first()
         
         if not user_id:
             logger.error(f"User ID not found for invoice.payment_succeeded: {event_id}, Stripe Customer: {stripe_customer_id}", event_id=event_id, stripe_customer_id=stripe_customer_id)
@@ -519,7 +542,11 @@ class WebhookService:
         # If related to a subscription, ensure subscription is marked active
         if stripe_subscription_id:
             db_sub = await self.db.execute(select(Subscription).where(Subscription.stripe_subscription_id == stripe_subscription_id))
-            subscription_record = await db_sub.scalars().first()
+            try:
+                subscription_record = await db_sub.scalars().first()
+            except TypeError:
+                # Handle case where first() returns None synchronously
+                subscription_record = db_sub.scalars().first()
             if subscription_record and subscription_record.status != 'active':
                 subscription_record.status = 'active' # Or whatever Stripe status is on the sub now
                 await self.db.merge(subscription_record)
