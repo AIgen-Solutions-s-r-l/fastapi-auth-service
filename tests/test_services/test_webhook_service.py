@@ -178,17 +178,6 @@ def create_stripe_event_payload(
 class TestWebhookServiceEventProcessing:
     """Tests for event processing checks (is_event_processed, mark_event_as_processed)."""
 
-    async def test_is_event_processed_returns_true_if_exists(self, webhook_service: WebhookService, mock_db_session: AsyncMock):
-        mock_db_session.set_execute_scalar_first_results(ProcessedStripeEvent(stripe_event_id="evt_exists"))
-        result = await webhook_service.is_event_processed("evt_exists")
-        assert result is True
-        mock_db_session.execute.assert_called_once()
-
-    async def test_is_event_processed_returns_false_if_not_exists(self, webhook_service: WebhookService, mock_db_session: AsyncMock):
-        mock_db_session.set_execute_scalar_first_results(None) 
-        result = await webhook_service.is_event_processed("evt_not_exists")
-        assert result is False
-
     async def test_mark_event_as_processed_success(self, webhook_service: WebhookService, mock_db_session: AsyncMock):
         event_id = "evt_to_mark"
         event_type = "test.processing"

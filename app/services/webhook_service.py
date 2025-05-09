@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy import func
+from sqlalchemy import func, exists
 
 from app.core.config import settings
 from app.log.logging import logger
@@ -29,20 +29,16 @@ class WebhookService:
 
     async def is_event_processed(self, event_id: str) -> bool:
         """Checks if a Stripe event has already been processed."""
-        stmt = select(ProcessedStripeEvent).where(ProcessedStripeEvent.stripe_event_id == event_id)
-        result = await self.db.execute(stmt)
-        scalars_result = result.scalars()
-        
-        # Handle both async and sync behavior of scalars_result.first()
         try:
-            # Try the expected async behavior first
-            processed_event = await scalars_result.first()
-            return processed_event is not None
-        except TypeError:
-            # If TypeError occurs (NoneType can't be used in await), use sync approach
-            # This is a fallback for when scalars_result.first() returns None synchronously
-            processed_event = scalars_result.first()
-            return processed_event is not None
+            # Use exists() for a simple boolean check without fetching the entire object
+            stmt = select(exists().where(ProcessedStripeEvent.stripe_event_id == event_id))
+            result = await self.db.execute(stmt)
+            # scalar() returns the first column of the first row directly
+            return result.scalar()
+        except Exception as e:
+            logger.error(f"Error checking if event {event_id} was processed: {e}", event_id=event_id, exc_info=True)
+            # In case of error, assume event was not processed to allow retry
+            return False
 
     async def mark_event_as_processed(self, event_id: str, event_type: str):
         """Marks a Stripe event as processed."""

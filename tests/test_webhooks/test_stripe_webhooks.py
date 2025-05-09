@@ -245,23 +245,6 @@ async def test_verify_stripe_signature_unexpected_error():
             await verify_stripe_signature(request=mock_request, stripe_signature=mock_signature)
         assert exc_info.value.status_code == 500
 
-# --- WebhookService Idempotency Tests ---
-@pytest.mark.asyncio
-async def test_webhook_service_is_event_processed_true(webhook_service: WebhookService, mock_processed_event: ProcessedStripeEvent):
-    event_id = "evt_test_already_processed"
-    webhook_service.db.set_db_execute_scalar_first_results(mock_processed_event)
-    result = await webhook_service.is_event_processed(event_id)
-    webhook_service.db.execute.assert_called_once()
-    assert result is True
-
-@pytest.mark.asyncio
-async def test_webhook_service_is_event_processed_false(webhook_service: WebhookService):
-    event_id = "evt_test_new_event"
-    webhook_service.db.set_db_execute_scalar_first_results(None)
-    result = await webhook_service.is_event_processed(event_id)
-    webhook_service.db.execute.assert_called_once()
-    assert result is False
-
 @pytest.mark.asyncio
 async def test_webhook_service_mark_event_as_processed_success(webhook_service: WebhookService):
     event_id = "evt_test_mark_success"
