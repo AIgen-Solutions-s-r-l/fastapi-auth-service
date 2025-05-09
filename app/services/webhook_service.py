@@ -125,58 +125,61 @@ class WebhookService:
             return
 
         # Card Uniqueness Gate (FR-4)
-        stmt = select(UsedTrialCardFingerprint).where(UsedTrialCardFingerprint.stripe_card_fingerprint == card_fingerprint)
-        result = await self.db.execute(stmt)
-        existing_fingerprint_use = await result.scalars().first()
+        # stmt = select(UsedTrialCardFingerprint).where(UsedTrialCardFingerprint.stripe_card_fingerprint == card_fingerprint)
+        # result = await self.db.execute(stmt)
+        # existing_fingerprint_use = await result.scalars().first()
 
-        if existing_fingerprint_use:
-            logger.warning(
-                f"Duplicate card fingerprint detected for trial attempt: User ID {user_id}, Fingerprint {card_fingerprint}",
-                event_id=event_id,
-                user_id=user_id,
-                card_fingerprint=card_fingerprint,
-                existing_use_user_id=existing_fingerprint_use.user_id,
-                existing_use_subscription_id=existing_fingerprint_use.stripe_subscription_id
-            )
-            # If a subscription was created by this checkout, attempt to cancel it immediately.
-            if stripe_subscription_id:
-                try:
-                    logger.info(f"Attempting to cancel Stripe subscription {stripe_subscription_id} due to duplicate fingerprint.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
-                    stripe.Subscription.delete(stripe_subscription_id) # Or update(cancel_at_period_end=True) then immediate cancel if preferred
-                    logger.info(f"Successfully canceled Stripe subscription {stripe_subscription_id}.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
-                except stripe.error.StripeError as e:
-                    logger.error(
-                        f"Stripe API error canceling subscription {stripe_subscription_id} due to duplicate fingerprint: {e}",
-                        event_id=event_id,
-                        stripe_subscription_id=stripe_subscription_id,
-                        exc_info=True
-                    )
+        # if existing_fingerprint_use:
+        #     logger.warning(
+        #         f"Duplicate card fingerprint detected for trial attempt: User ID {user_id}, Fingerprint {card_fingerprint}",
+        #         event_id=event_id,
+        #         user_id=user_id,
+        #         card_fingerprint=card_fingerprint,
+        #         existing_use_user_id=existing_fingerprint_use.user_id,
+        #         existing_use_subscription_id=existing_fingerprint_use.stripe_subscription_id
+        #     )
+        #     # If a subscription was created by this checkout, attempt to cancel it immediately.
+        #     if stripe_subscription_id:
+        #         try:
+        #             logger.info(f"Attempting to cancel Stripe subscription {stripe_subscription_id} due to duplicate fingerprint.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
+        #             stripe.Subscription.delete(stripe_subscription_id) # Or update(cancel_at_period_end=True) then immediate cancel if preferred
+        #             logger.info(f"Successfully canceled Stripe subscription {stripe_subscription_id}.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
+        #         except stripe.error.StripeError as e:
+        #             logger.error(
+        #                 f"Stripe API error canceling subscription {stripe_subscription_id} due to duplicate fingerprint: {e}",
+        #                 event_id=event_id,
+        #                 stripe_subscription_id=stripe_subscription_id,
+        #                 exc_info=True
+        #             )
             
-            # Update user status to 'trial_rejected' or similar
-            user = await self.db.get(User, user_id)
-            if user:
-                user.account_status = "trial_rejected" # Ensure this status is defined in User model/enum
-                try:
-                    await self.db.commit()
-                    logger.info(f"User {user_id} account_status set to 'trial_rejected'.", user_id=user_id, event_id=event_id)
-                except SQLAlchemyError as e:
-                    await self.db.rollback()
-                    logger.error(f"DB error updating user {user_id} status to trial_rejected: {e}", user_id=user_id, event_id=event_id, exc_info=True)
+        #     # Update user status to 'trial_rejected' or similar
+        #     user = await self.db.get(User, user_id)
+        #     if user:
+        #         user.account_status = "trial_rejected" # Ensure this status is defined in User model/enum
+        #         try:
+        #             await self.db.commit()
+        #             logger.info(f"User {user_id} account_status set to 'trial_rejected'.", user_id=user_id, event_id=event_id)
+        #         except SQLAlchemyError as e:
+        #             await self.db.rollback()
+        #             logger.error(f"DB error updating user {user_id} status to trial_rejected: {e}", user_id=user_id, event_id=event_id, exc_info=True)
 
 
-            # Publish user.trial.blocked event
-            await self.event_publisher.publish_user_trial_blocked(
-                user_id=user_id,
-                stripe_customer_id=stripe_customer_id,
-                stripe_subscription_id=stripe_subscription_id, # The one that was (attempted to be) created
-                reason="duplicate_card_fingerprint",
-                blocked_card_fingerprint=card_fingerprint
-            )
-            # logger.info(f"Published user.trial.blocked event for user {user_id}", user_id=user_id, event_id=event_id) # Covered by publisher log
+        #     # Publish user.trial.blocked event
+        #     await self.event_publisher.publish_user_trial_blocked(
+        #         user_id=user_id,
+        #         stripe_customer_id=stripe_customer_id,
+        #         stripe_subscription_id=stripe_subscription_id, # The one that was (attempted to be) created
+        #         reason="duplicate_card_fingerprint",
+        #         blocked_card_fingerprint=card_fingerprint
+        #     )
+        #     # logger.info(f"Published user.trial.blocked event for user {user_id}", user_id=user_id, event_id=event_id) # Covered by publisher log
 
-        else:
-            logger.info(
-                f"Card fingerprint {card_fingerprint} is unique for trial. User ID {user_id}.",
+        # else:
+        #     logger.info(
+        #         f"Card fingerprint {card_fingerprint} is unique for trial. User ID {user_id}.",
+        # Card duplication check disabled. Assuming card is unique.
+        logger.info(
+            f"Card fingerprint {card_fingerprint} processing for trial. User ID {user_id}. Duplication check disabled.",
                 event_id=event_id,
                 user_id=user_id,
                 card_fingerprint=card_fingerprint
@@ -267,49 +270,52 @@ class WebhookService:
                 # Get default_payment_method if it exists, otherwise use None
                 default_payment_method = getattr(subscription_data, 'default_payment_method', None)
                 
-                new_fingerprint_record = UsedTrialCardFingerprint(
-                    user_id=user_id,
-                    stripe_card_fingerprint=card_fingerprint,
-                    stripe_payment_method_id=default_payment_method,
-                    stripe_subscription_id=stripe_subscription_id,
-                    stripe_customer_id=stripe_customer_id
-                )
-                try:
-                    self.db.add(new_fingerprint_record)
-                    await self.db.flush() # Try to flush to catch unique constraint violation early
-                    logger.info(f"Stored unique card fingerprint {card_fingerprint} for trial subscription {stripe_subscription_id}.", event_id=event_id, card_fingerprint=card_fingerprint)
-                except IntegrityError: # uq_trial_card_fingerprint violation
-                    await self.db.rollback()
-                    logger.warning(
-                        f"Duplicate card fingerprint {card_fingerprint} detected during customer.subscription.created for trial. User ID {user_id}.",
-                        event_id=event_id, user_id=user_id, card_fingerprint=card_fingerprint
-                    )
-                    try:
-                        logger.info(f"Attempting to cancel Stripe trial subscription {stripe_subscription_id} due to duplicate fingerprint.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
-                        stripe.Subscription.delete(stripe_subscription_id)
-                        logger.info(f"Successfully canceled Stripe trial subscription {stripe_subscription_id}.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
-                        db_subscription.status = "canceled" # Update local subscription status
-                        await self.db.merge(db_subscription)
-                    except stripe.error.StripeError as e:
-                        logger.error(f"Stripe API error canceling trial subscription {stripe_subscription_id} due to duplicate fingerprint: {e}", event_id=event_id, exc_info=True)
+                # new_fingerprint_record = UsedTrialCardFingerprint(
+                #     user_id=user_id,
+                #     stripe_card_fingerprint=card_fingerprint,
+                #     stripe_payment_method_id=default_payment_method,
+                #     stripe_subscription_id=stripe_subscription_id,
+                #     stripe_customer_id=stripe_customer_id
+                # )
+                # try:
+                #     self.db.add(new_fingerprint_record)
+                #     await self.db.flush() # Try to flush to catch unique constraint violation early
+                #     logger.info(f"Stored unique card fingerprint {card_fingerprint} for trial subscription {stripe_subscription_id}.", event_id=event_id, card_fingerprint=card_fingerprint)
+                # except IntegrityError: # uq_trial_card_fingerprint violation
+                #     await self.db.rollback()
+                #     logger.warning(
+                #         f"Duplicate card fingerprint {card_fingerprint} detected during customer.subscription.created for trial. User ID {user_id}.",
+                #         event_id=event_id, user_id=user_id, card_fingerprint=card_fingerprint
+                #     )
+                #     try:
+                #         logger.info(f"Attempting to cancel Stripe trial subscription {stripe_subscription_id} due to duplicate fingerprint.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
+                #         stripe.Subscription.delete(stripe_subscription_id)
+                #         logger.info(f"Successfully canceled Stripe trial subscription {stripe_subscription_id}.", event_id=event_id, stripe_subscription_id=stripe_subscription_id)
+                #         db_subscription.status = "canceled" # Update local subscription status
+                #         await self.db.merge(db_subscription)
+                #     except stripe.error.StripeError as e:
+                #         logger.error(f"Stripe API error canceling trial subscription {stripe_subscription_id} due to duplicate fingerprint: {e}", event_id=event_id, exc_info=True)
                 
-                    user = await self.db.get(User, user_id)
-                    if user:
-                        user.account_status = "trial_rejected"
-                        await self.db.merge(user)
+                #     user = await self.db.get(User, user_id)
+                #     if user:
+                #         user.account_status = "trial_rejected"
+                #         await self.db.merge(user)
                     
-                    await self.event_publisher.publish_user_trial_blocked(
-                        user_id=user_id,
-                        stripe_customer_id=stripe_customer_id,
-                        stripe_subscription_id=stripe_subscription_id,
-                        reason="duplicate_card_fingerprint",
-                        blocked_card_fingerprint=card_fingerprint
-                    )
-                    # logger.info(f"Published user.trial.blocked event for user {user_id} due to duplicate fingerprint on subscription creation.", user_id=user_id, event_id=event_id) # Covered by publisher log
-                    await self.db.commit() # Commit changes (user status, subscription status)
-                    return # Stop processing, trial rejected
+                #     await self.event_publisher.publish_user_trial_blocked(
+                #         user_id=user_id,
+                #         stripe_customer_id=stripe_customer_id,
+                #         stripe_subscription_id=stripe_subscription_id,
+                #         reason="duplicate_card_fingerprint",
+                #         blocked_card_fingerprint=card_fingerprint
+                #     )
+                #     # logger.info(f"Published user.trial.blocked event for user {user_id} due to duplicate fingerprint on subscription creation.", user_id=user_id, event_id=event_id) # Covered by publisher log
+                #     await self.db.commit() # Commit changes (user status, subscription status)
+                #     return # Stop processing, trial rejected
 
-                # Grant Initial Credits & Update User (if fingerprint was unique)
+                # Card duplication check and fingerprint storage disabled.
+                logger.info(f"Card fingerprint {card_fingerprint} processing for trial subscription {stripe_subscription_id}. Duplication check and storage disabled.", event_id=event_id, card_fingerprint=card_fingerprint)
+
+                # Grant Initial Credits & Update User (assuming fingerprint was unique as check is disabled)
                 # We already have the user object from earlier check
                 
                 # We only reach this point if user hasn't consumed trial and fingerprint is unique
@@ -534,10 +540,10 @@ class WebhookService:
             stripe_customer_id=stripe_customer_id,
             stripe_subscription_id=stripe_subscription_id,
             stripe_invoice_id=invoice_data.id,
-            amount_paid=invoice_data.amount_paid,
-            currency=invoice_data.currency,
-            billing_reason=invoice_data.billing_reason,
-            invoice_pdf_url=invoice_data.invoice_pdf
+            amount_paid=getattr(invoice_data, 'amount_paid', 0), # Default to 0 if not present
+            currency=getattr(invoice_data, 'currency', None), # Default to None
+            billing_reason=getattr(invoice_data, 'billing_reason', None), # Default to None
+            invoice_pdf_url=getattr(invoice_data, 'invoice_pdf', None) # Default to None
         )
         # logger.info(f"Published user.invoice.paid event for user {user_id}, invoice {invoice_data.id}", user_id=user_id, event_id=event_id, stripe_invoice_id=invoice_data.id) # Covered by publisher log
 
@@ -636,9 +642,9 @@ class WebhookService:
             stripe_customer_id=stripe_customer_id,
             stripe_subscription_id=stripe_subscription_id,
             stripe_invoice_id=invoice_data.id,
-            stripe_charge_id=invoice_data.charge,
-            failure_reason=invoice_data.last_payment_error.message if invoice_data.last_payment_error else None,
-            next_payment_attempt_date=datetime.fromtimestamp(invoice_data.next_payment_attempt, timezone.utc) if invoice_data.next_payment_attempt else None
+            stripe_charge_id=getattr(invoice_data, 'charge', None), # Use getattr for safe access
+            failure_reason=getattr(invoice_data.last_payment_error, 'message', None) if hasattr(invoice_data, 'last_payment_error') and invoice_data.last_payment_error else None,
+            next_payment_attempt_date=datetime.fromtimestamp(invoice_data.next_payment_attempt, timezone.utc) if hasattr(invoice_data, 'next_payment_attempt') and invoice_data.next_payment_attempt else None
         )
         # logger.info(f"Published user.invoice.failed event for user {user_id}, invoice {invoice_data.id}", user_id=user_id, event_id=event_id, stripe_invoice_id=invoice_data.id) # Covered by publisher log
 

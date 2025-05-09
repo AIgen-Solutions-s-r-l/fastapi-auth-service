@@ -115,6 +115,13 @@ async def stripe_webhook_endpoint(
             event_type=event.type,
             exc_info=True
         )
+        # Attempt to rollback the session before raising, in case the handler left it in a bad state.
+        try:
+            await webhook_service.db.rollback()
+            logger.info(f"Database session rolled back for event {event.id} due to handler error.", event_id=event.id)
+        except Exception as db_err:
+            logger.error(f"Error during rollback attempt for event {event.id}: {db_err}", event_id=event.id, exc_info=True)
+        
         # Do NOT mark as processed here, so Stripe can retry for server-side errors
         raise HTTPException(status_code=500, detail=f"Error processing event {event.id} ({event.type}): {e}")
 

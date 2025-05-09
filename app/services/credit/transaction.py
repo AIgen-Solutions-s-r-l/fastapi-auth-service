@@ -520,63 +520,70 @@ class TransactionService:
                         logger.debug(f"Checking database for fingerprint: {fingerprint}",
                                      event_type="free_plan_gate_db_check",
                                      fingerprint=fingerprint)
-                        existing_card_result = await self.db.execute(
-                            select(UsedTrialCardFingerprint).where(UsedTrialCardFingerprint.stripe_card_fingerprint == fingerprint)
-                        )
-                        existing_card = existing_card_result.scalar_one_or_none()
+                        # existing_card_result = await self.db.execute(
+                        #     select(UsedTrialCardFingerprint).where(UsedTrialCardFingerprint.stripe_card_fingerprint == fingerprint)
+                        # )
+                        # existing_card = existing_card_result.scalar_one_or_none()
 
-                        # Adjusted validation: Block if plan is free AND card was already used for a free trial.
-                        if existing_card: # This implies plan.is_limited_free is True from the outer check on L455
-                            logger.warning(f"Card fingerprint {fingerprint} already used for a free plan. Blocking purchase of another free plan {plan_id} for user {user_id}.",
-                                         event_type="free_plan_gate_rejected_card_exists_for_free_plan",
-                                         user_id=user_id,
-                                         plan_id=plan_id,
-                                         subscription_id=transaction_id,
-                                         fingerprint=fingerprint,
-                                         existing_record_id=existing_card.id)
-                            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This card has already been used for a free subscription.")
-                        # If we are here, it means: plan.is_limited_free is True AND not existing_card (card is new for free trials).
-                        # So, record the card fingerprint for this free trial.
-                        else:
-                            logger.info(f"Card fingerprint {fingerprint} not used before for a free plan. Proceeding to record for free plan {plan_id}, user {user_id}.",
-                                        event_type="free_plan_gate_recording_new_fingerprint",
-                                        user_id=user_id,
-                                        plan_id=plan_id,
-                                        subscription_id=transaction_id,
-                                        fingerprint=fingerprint)
-                            try:
-                                new_card_record = UsedTrialCardFingerprint(
+                        # # Adjusted validation: Block if plan is free AND card was already used for a free trial.
+                        # if existing_card: # This implies plan.is_limited_free is True from the outer check on L455
+                        #     logger.warning(f"Card fingerprint {fingerprint} already used for a free plan. Blocking purchase of another free plan {plan_id} for user {user_id}.",
+                        #                  event_type="free_plan_gate_rejected_card_exists_for_free_plan",
+                        #                  user_id=user_id,
+                        #                  plan_id=plan_id,
+                        #                  subscription_id=transaction_id,
+                        #                  fingerprint=fingerprint,
+                        #                  existing_record_id=existing_card.id)
+                        #     raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This card has already been used for a free subscription.")
+                        # # If we are here, it means: plan.is_limited_free is True AND not existing_card (card is new for free trials).
+                        # # So, record the card fingerprint for this free trial.
+                        # else:
+                        #     logger.info(f"Card fingerprint {fingerprint} not used before for a free plan. Proceeding to record for free plan {plan_id}, user {user_id}.",
+                        #                 event_type="free_plan_gate_recording_new_fingerprint",
+                        #                 user_id=user_id,
+                        #                 plan_id=plan_id,
+                        #                 subscription_id=transaction_id,
+                        #                 fingerprint=fingerprint)
+                        #     try:
+                        #         new_card_record = UsedTrialCardFingerprint(
+                        #             user_id=user_id,
+                        #             stripe_card_fingerprint=fingerprint,
+                        #             stripe_payment_method_id=payment_method_id,
+                        #             stripe_customer_id=stripe_customer_id,
+                        #             stripe_subscription_id=transaction_id
+                        #         )
+                        #         self.db.add(new_card_record)
+                        #         await self.db.flush()
+                        #         logger.info(f"Successfully recorded fingerprint {fingerprint} for free plan subscription {transaction_id}, user {user_id}. Record ID: {new_card_record.id}.",
+                        #                     event_type="free_plan_gate_fingerprint_recorded",
+                        #                     user_id=user_id,
+                        #                     subscription_id=transaction_id,
+                        #                     fingerprint=fingerprint,
+                        #                     record_id=new_card_record.id)
+                        #     except IntegrityError:
+                        #         await self.db.rollback()
+                        #         logger.warning(f"Race condition detected: Card fingerprint {fingerprint} was inserted concurrently for user {user_id}.",
+                        #                      event_type="free_plan_gate_rejected_race_condition",
+                        #                      user_id=user_id,
+                        #                      subscription_id=transaction_id,
+                        #                      fingerprint=fingerprint)
+                        #         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This card has already been used for a free subscription (concurrent request).")
+                        #     except Exception as db_exc: # Catch other DB errors during insert
+                        #         await self.db.rollback()
+                        #         logger.error(f"Database error during free plan card insert for user {user_id}: {db_exc}",
+                        #                      event_type="free_plan_gate_db_insert_error",
+                        #                      user_id=user_id,
+                        #                      subscription_id=transaction_id,
+                        #                      fingerprint=fingerprint,
+                        #                      error=str(db_exc))
+                        #         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error during free plan card recording.")
+                        # Card duplication check and fingerprint storage disabled for limited free plan.
+                        logger.info(f"Card fingerprint {fingerprint} processing for limited free plan {plan_id}. User {user_id}. Duplication check and storage disabled.",
+                                    event_type="free_plan_card_check_disabled_transaction_service",
                                     user_id=user_id,
-                                    stripe_card_fingerprint=fingerprint,
-                                    stripe_payment_method_id=payment_method_id,
-                                    stripe_customer_id=stripe_customer_id,
-                                    stripe_subscription_id=transaction_id
-                                )
-                                self.db.add(new_card_record)
-                                await self.db.flush()
-                                logger.info(f"Successfully recorded fingerprint {fingerprint} for free plan subscription {transaction_id}, user {user_id}. Record ID: {new_card_record.id}.",
-                                            event_type="free_plan_gate_fingerprint_recorded",
-                                            user_id=user_id,
-                                            subscription_id=transaction_id,
-                                            fingerprint=fingerprint,
-                                            record_id=new_card_record.id)
-                            except IntegrityError:
-                                await self.db.rollback()
-                                logger.warning(f"Race condition detected: Card fingerprint {fingerprint} was inserted concurrently for user {user_id}.",
-                                             event_type="free_plan_gate_rejected_race_condition",
-                                             user_id=user_id,
-                                             subscription_id=transaction_id,
-                                             fingerprint=fingerprint)
-                                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This card has already been used for a free subscription (concurrent request).")
-                            except Exception as db_exc: # Catch other DB errors during insert
-                                await self.db.rollback()
-                                logger.error(f"Database error during free plan card insert for user {user_id}: {db_exc}",
-                                             event_type="free_plan_gate_db_insert_error",
-                                             user_id=user_id,
-                                             subscription_id=transaction_id,
-                                             fingerprint=fingerprint,
-                                             error=str(db_exc))
-                                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error during free plan card recording.")
+                                    subscription_id=transaction_id,
+                                    plan_id=plan_id,
+                                    card_fingerprint=fingerprint)
 
                 except HTTPException:
                     raise # Re-raise HTTP exceptions directly
