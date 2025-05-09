@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy import func
 
 from app.core.config import settings
 from app.log.logging import logger
@@ -31,13 +32,17 @@ class WebhookService:
         stmt = select(ProcessedStripeEvent).where(ProcessedStripeEvent.stripe_event_id == event_id)
         result = await self.db.execute(stmt)
         scalars_result = result.scalars()
+        
+        # Handle both async and sync behavior of scalars_result.first()
         try:
-            # Try to await the result (normal async behavior)
+            # Try the expected async behavior first
             processed_event = await scalars_result.first()
+            return processed_event is not None
         except TypeError:
-            # Handle case where first() returns None synchronously
+            # If TypeError occurs (NoneType can't be used in await), use sync approach
+            # This is a fallback for when scalars_result.first() returns None synchronously
             processed_event = scalars_result.first()
-        return processed_event is not None
+            return processed_event is not None
 
     async def mark_event_as_processed(self, event_id: str, event_type: str):
         """Marks a Stripe event as processed."""
