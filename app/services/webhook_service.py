@@ -31,7 +31,12 @@ class WebhookService:
         stmt = select(ProcessedStripeEvent).where(ProcessedStripeEvent.stripe_event_id == event_id)
         result = await self.db.execute(stmt)
         scalars_result = result.scalars()
-        processed_event = await scalars_result.first()
+        try:
+            # Try to await the result (normal async behavior)
+            processed_event = await scalars_result.first()
+        except TypeError:
+            # Handle case where first() returns None synchronously
+            processed_event = scalars_result.first()
         return processed_event is not None
 
     async def mark_event_as_processed(self, event_id: str, event_type: str):
