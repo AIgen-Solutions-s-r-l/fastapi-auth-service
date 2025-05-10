@@ -122,8 +122,33 @@ class WebhookService:
             # Return 200 to Stripe to prevent retries for this malformed event data from our side.
             return
 
-        card_fingerprint = await self.get_card_fingerprint_from_event(checkout_session, event_id)
+        # Attempt to associate stripe_customer_id with user
+        if user_id and stripe_customer_id:
+            user = await self.db.get(User, user_id)
+            if user:
+                if user.stripe_customer_id is None:
+                    user.stripe_customer_id = stripe_customer_id
+                    try:
+                        await self.db.commit()
+                        logger.info(f"Associated Stripe customer ID {stripe_customer_id} with user {user_id} from checkout session.", event_id=event_id, user_id=user_id, stripe_customer_id=stripe_customer_id)
+                    except SQLAlchemyError as e:
+                        await self.db.rollback()
+                        logger.error(f"DB error associating Stripe customer ID {stripe_customer_id} with user {user_id}: {e}", event_id=event_id, user_id=user_id, exc_info=True)
+                elif user.stripe_customer_id != stripe_customer_id:
+                    logger.warning(
+                        f"User {user_id} already has Stripe customer ID {user.stripe_customer_id}, but received {stripe_customer_id} in checkout session {checkout_session.id}. Not overwriting.",
+                        event_id=event_id, user_id=user_id, existing_stripe_customer_id=user.stripe_customer_id, new_stripe_customer_id=stripe_customer_id
+                    )
+                else: # user.stripe_customer_id == stripe_customer_id
+                    logger.info(f"User {user_id} already correctly associated with Stripe customer ID {stripe_customer_id}.", event_id=event_id, user_id=user_id)
+            else:
+                logger.warning(f"User {user_id} not found in DB, cannot associate Stripe customer ID {stripe_customer_id} from checkout session.", event_id=event_id, user_id=user_id)
+        elif not stripe_customer_id:
+            logger.warning(f"Stripe customer ID not found in checkout.session.completed event {event_id}. Cannot associate with user {user_id}.", event_id=event_id, user_id=user_id)
 
+
+        card_fingerprint = await self.get_card_fingerprint_from_event(checkout_session, event_id)
+ 
         if not card_fingerprint:
             logger.warning(f"Card fingerprint not found for checkout.session.completed: {event_id}. Cannot perform trial uniqueness check.", event_id=event_id)
             # Depending on policy, this might be an error or a pass-through if trial check is paramount.
@@ -233,6 +258,25 @@ class WebhookService:
         if not user_id:
             logger.error(f"User ID not found for customer.subscription.created: {event_id}, Stripe Customer: {stripe_customer_id}", event_id=event_id, stripe_customer_id=stripe_customer_id)
             return # Cannot proceed without user context
+
+        # Attempt to associate stripe_customer_id with user if not already set
+        # This needs to happen before the main commit for the subscription handling
+        user_for_stripe_id_update = await self.db.get(User, user_id)
+        if user_for_stripe_id_update:
+            if user_for_stripe_id_update.stripe_customer_id is None:
+                user_for_stripe_id_update.stripe_customer_id = stripe_customer_id
+                # The commit will happen later in the main flow of this handler
+                logger.info(f"Stripe customer ID {stripe_customer_id} will be associated with user {user_id} from subscription creation.", event_id=event_id, user_id=user_id, stripe_customer_id=stripe_customer_id)
+            elif user_for_stripe_id_update.stripe_customer_id != stripe_customer_id:
+                 logger.warning(
+                    f"User {user_id} already has Stripe customer ID {user_for_stripe_id_update.stripe_customer_id}, but subscription {stripe_subscription_id} is for customer {stripe_customer_id}. Not overwriting.",
+                    event_id=event_id, user_id=user_id, existing_stripe_customer_id=user_for_stripe_id_update.stripe_customer_id, new_stripe_customer_id=stripe_customer_id
+                )
+            else: # user.stripe_customer_id == stripe_customer_id
+                logger.info(f"User {user_id} already correctly associated with Stripe customer ID {stripe_customer_id} (subscription creation).", event_id=event_id, user_id=user_id)
+        else:
+            # This case should ideally not be reached if user_id was resolved successfully earlier
+            logger.warning(f"User {user_id} not found in DB when attempting to associate Stripe customer ID {stripe_customer_id} from subscription creation.", event_id=event_id, user_id=user_id)
 
         if subscription_status == 'trialing':
             card_fingerprint = await self.get_card_fingerprint_from_event(subscription_data, event_id)
