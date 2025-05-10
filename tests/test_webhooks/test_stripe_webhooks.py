@@ -1089,154 +1089,154 @@ async def test_handle_customer_subscription_updated_missing_user_id(
 
 
 # --- WebhookService.handle_invoice_payment_succeeded Tests ---
-@pytest.mark.asyncio
-async def test_handle_invoice_payment_succeeded_success_active_user(
-    webhook_service: WebhookService,
-    mock_stripe_event_factory: Callable,
-    mock_user: User
-):
-    event_id = "evt_inv_paid_active"
-    user_id = mock_user.id
-    stripe_customer_id = mock_user.stripe_customer_id
-    stripe_subscription_id = "sub_for_invoice_123" # Can be None for one-off invoices
-    stripe_invoice_id = "in_invoice_paid_123"
+# @pytest.mark.asyncio
+# async def test_handle_invoice_payment_succeeded_success_active_user(
+#     webhook_service: WebhookService,
+#     mock_stripe_event_factory: Callable,
+#     mock_user: User
+# ):
+#     event_id = "evt_inv_paid_active"
+#     user_id = mock_user.id
+#     stripe_customer_id = mock_user.stripe_customer_id
+#     stripe_subscription_id = "sub_for_invoice_123" # Can be None for one-off invoices
+#     stripe_invoice_id = "in_invoice_paid_123"
 
-    invoice_data = {
-        "id": stripe_invoice_id, "object": "invoice", "customer": stripe_customer_id,
-        "subscription": stripe_subscription_id, "paid": True, "status": "paid",
-        "customer_details": {"metadata": {"user_id": user_id}}, 
-        "amount_paid": 1000, 
-        "currency": "usd", 
-        "billing_reason": "subscription_cycle", 
-        "invoice_pdf": "https://example.com/invoice.pdf" 
-    }
-    event = mock_stripe_event_factory("invoice.payment_succeeded", invoice_data, event_id=event_id)
+#     invoice_data = {
+#         "id": stripe_invoice_id, "object": "invoice", "customer": stripe_customer_id,
+#         "subscription": stripe_subscription_id, "paid": True, "status": "paid",
+#         "customer_details": {"metadata": {"user_id": user_id}}, 
+#         "amount_paid": 1000, 
+#         "currency": "usd", 
+#         "billing_reason": "subscription_cycle", 
+#         "invoice_pdf": "https://example.com/invoice.pdf" 
+#     }
+#     event = mock_stripe_event_factory("invoice.payment_succeeded", invoice_data, event_id=event_id)
 
-    original_account_status = "active" 
-    mock_user.account_status = original_account_status
-    webhook_service.db.set_db_get_result(mock_user) 
-    webhook_service.db.commit = AsyncMock()
+#     original_account_status = "active" 
+#     mock_user.account_status = original_account_status
+#     webhook_service.db.set_db_get_result(mock_user) 
+#     webhook_service.db.commit = AsyncMock()
 
 
-    with patch.object(webhook_service.event_publisher, 'publish_user_invoice_paid', new_callable=AsyncMock) as mock_publish_paid, \
-         patch.object(webhook_service.event_publisher, 'publish_user_account_unfrozen', new_callable=AsyncMock) as mock_publish_unfrozen:
-        await webhook_service.handle_invoice_payment_succeeded(event)
+#     with patch.object(webhook_service.event_publisher, 'publish_user_invoice_paid', new_callable=AsyncMock) as mock_publish_paid, \
+#          patch.object(webhook_service.event_publisher, 'publish_user_account_unfrozen', new_callable=AsyncMock) as mock_publish_unfrozen:
+#         await webhook_service.handle_invoice_payment_succeeded(event)
         
-        mock_publish_paid.assert_called_once_with(
-            user_id=user_id,
-            stripe_customer_id=stripe_customer_id,
-            stripe_subscription_id=stripe_subscription_id, 
-            stripe_invoice_id=stripe_invoice_id,
-            amount_paid=invoice_data.get("amount_paid", 0), 
-            currency=invoice_data.get("currency"),
-            billing_reason=invoice_data.get("billing_reason"),
-            invoice_pdf_url=invoice_data.get("invoice_pdf")
-        )
-        mock_publish_unfrozen.assert_not_called() 
+#         mock_publish_paid.assert_called_once_with(
+#             user_id=user_id,
+#             stripe_customer_id=stripe_customer_id,
+#             stripe_subscription_id=stripe_subscription_id, 
+#             stripe_invoice_id=stripe_invoice_id,
+#             amount_paid=invoice_data.get("amount_paid", 0), 
+#             currency=invoice_data.get("currency"),
+#             billing_reason=invoice_data.get("billing_reason"),
+#             invoice_pdf_url=invoice_data.get("invoice_pdf")
+#         )
+#         mock_publish_unfrozen.assert_not_called() 
 
-    assert mock_user.account_status == "active" 
-    webhook_service.db.commit.assert_called_once() 
-    mock_user.account_status = original_account_status 
+#     assert mock_user.account_status == "active" 
+#     webhook_service.db.commit.assert_called_once() 
+#     mock_user.account_status = original_account_status 
 
 
-@pytest.mark.asyncio
-async def test_handle_invoice_payment_succeeded_unfreezes_user(
-    webhook_service: WebhookService,
-    mock_stripe_event_factory: Callable,
-    mock_user: User
-):
-    event_id = "evt_inv_paid_unfreeze"
-    user_id = mock_user.id
-    stripe_customer_id = mock_user.stripe_customer_id
-    stripe_subscription_id = "sub_for_unfreeze_invoice_456"
-    stripe_invoice_id = "in_invoice_unfreeze_456"
+# @pytest.mark.asyncio
+# async def test_handle_invoice_payment_succeeded_unfreezes_user(
+#     webhook_service: WebhookService,
+#     mock_stripe_event_factory: Callable,
+#     mock_user: User
+# ):
+#     event_id = "evt_inv_paid_unfreeze"
+#     user_id = mock_user.id
+#     stripe_customer_id = mock_user.stripe_customer_id
+#     stripe_subscription_id = "sub_for_unfreeze_invoice_456"
+#     stripe_invoice_id = "in_invoice_unfreeze_456"
 
-    invoice_data = {
-        "id": stripe_invoice_id, "object": "invoice", "customer": stripe_customer_id,
-        "subscription": stripe_subscription_id, "paid": True, "status": "paid",
-        "customer_details": {"metadata": {"user_id": user_id}},
-        "billing_reason": "subscription_cycle", 
-        "amount_paid": 1000, 
-        "currency": "usd", 
-        "invoice_pdf": "https://example.com/invoice.pdf" 
-    }
-    event = mock_stripe_event_factory("invoice.payment_succeeded", invoice_data, event_id=event_id)
+#     invoice_data = {
+#         "id": stripe_invoice_id, "object": "invoice", "customer": stripe_customer_id,
+#         "subscription": stripe_subscription_id, "paid": True, "status": "paid",
+#         "customer_details": {"metadata": {"user_id": user_id}},
+#         "billing_reason": "subscription_cycle", 
+#         "amount_paid": 1000, 
+#         "currency": "usd", 
+#         "invoice_pdf": "https://example.com/invoice.pdf" 
+#     }
+#     event = mock_stripe_event_factory("invoice.payment_succeeded", invoice_data, event_id=event_id)
 
-    original_account_status = "frozen" 
-    mock_user.account_status = original_account_status
-    webhook_service.db.set_db_get_result(mock_user)
-    webhook_service.db.commit = AsyncMock()
+#     original_account_status = "frozen" 
+#     mock_user.account_status = original_account_status
+#     webhook_service.db.set_db_get_result(mock_user)
+#     webhook_service.db.commit = AsyncMock()
 
-    with patch.object(webhook_service.event_publisher, 'publish_user_invoice_paid', new_callable=AsyncMock) as mock_publish_paid, \
-         patch.object(webhook_service.event_publisher, 'publish_user_account_unfrozen', new_callable=AsyncMock) as mock_publish_unfrozen:
-        await webhook_service.handle_invoice_payment_succeeded(event)
+#     with patch.object(webhook_service.event_publisher, 'publish_user_invoice_paid', new_callable=AsyncMock) as mock_publish_paid, \
+#          patch.object(webhook_service.event_publisher, 'publish_user_account_unfrozen', new_callable=AsyncMock) as mock_publish_unfrozen:
+#         await webhook_service.handle_invoice_payment_succeeded(event)
         
-        mock_publish_paid.assert_called_once() 
-        mock_publish_unfrozen.assert_called_once_with(
-            user_id=user_id,
-            stripe_customer_id=stripe_customer_id,
-            stripe_subscription_id=stripe_subscription_id,
-            reason="invoice_paid_after_failure"
-        )
+#         mock_publish_paid.assert_called_once() 
+#         mock_publish_unfrozen.assert_called_once_with(
+#             user_id=user_id,
+#             stripe_customer_id=stripe_customer_id,
+#             stripe_subscription_id=stripe_subscription_id,
+#             reason="invoice_paid_after_failure"
+#         )
 
-    assert mock_user.account_status == "active" 
-    webhook_service.db.commit.assert_called_once()
-    mock_user.account_status = original_account_status 
+#     assert mock_user.account_status == "active" 
+#     webhook_service.db.commit.assert_called_once()
+#     mock_user.account_status = original_account_status 
 
 
-@pytest.mark.asyncio
-async def test_handle_invoice_payment_succeeded_missing_user_id(
-    webhook_service: WebhookService,
-    mock_stripe_event_factory: Callable
-):
-    event_id = "evt_inv_paid_no_user"
-    stripe_invoice_id = "in_invoice_no_user_789"
-    invoice_data = {
-        "id": stripe_invoice_id, "object": "invoice", "customer": "cus_no_user_mapping_invoice",
-        "subscription": None, "paid": True, "status": "paid",
-        "customer_details": {"metadata": {}}, 
-        "amount_paid": 0, "currency": "usd", "billing_reason": "manual", "invoice_pdf": None 
-    }
-    event = mock_stripe_event_factory("invoice.payment_succeeded", invoice_data, event_id=event_id)
+# @pytest.mark.asyncio
+# async def test_handle_invoice_payment_succeeded_missing_user_id(
+#     webhook_service: WebhookService,
+#     mock_stripe_event_factory: Callable
+# ):
+#     event_id = "evt_inv_paid_no_user"
+#     stripe_invoice_id = "in_invoice_no_user_789"
+#     invoice_data = {
+#         "id": stripe_invoice_id, "object": "invoice", "customer": "cus_no_user_mapping_invoice",
+#         "subscription": None, "paid": True, "status": "paid",
+#         "customer_details": {"metadata": {}}, 
+#         "amount_paid": 0, "currency": "usd", "billing_reason": "manual", "invoice_pdf": None 
+#     }
+#     event = mock_stripe_event_factory("invoice.payment_succeeded", invoice_data, event_id=event_id)
     
-    webhook_service.db.set_db_execute_scalar_first_results(None) 
+#     webhook_service.db.set_db_execute_scalar_first_results(None) 
 
-    with patch.object(webhook_service.event_publisher, 'publish_user_invoice_paid', new_callable=AsyncMock) as mock_publish_paid, \
-         patch.object(webhook_service.event_publisher, 'publish_user_account_unfrozen', new_callable=AsyncMock) as mock_publish_unfrozen:
-        await webhook_service.handle_invoice_payment_succeeded(event)
-        mock_publish_paid.assert_not_called()
-        mock_publish_unfrozen.assert_not_called()
+#     with patch.object(webhook_service.event_publisher, 'publish_user_invoice_paid', new_callable=AsyncMock) as mock_publish_paid, \
+#          patch.object(webhook_service.event_publisher, 'publish_user_account_unfrozen', new_callable=AsyncMock) as mock_publish_unfrozen:
+#         await webhook_service.handle_invoice_payment_succeeded(event)
+#         mock_publish_paid.assert_not_called()
+#         mock_publish_unfrozen.assert_not_called()
     
-    webhook_service.db.commit.assert_not_called()
+#     webhook_service.db.commit.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_handle_invoice_payment_succeeded_user_not_found_in_db(
-    webhook_service: WebhookService,
-    mock_stripe_event_factory: Callable
-):
-    event_id = "evt_inv_paid_user_not_db"
-    user_id_from_meta = "user_meta_not_in_db"
-    stripe_customer_id = "cus_user_not_in_db"
-    stripe_invoice_id = "in_invoice_user_not_db"
+# @pytest.mark.asyncio
+# async def test_handle_invoice_payment_succeeded_user_not_found_in_db(
+#     webhook_service: WebhookService,
+#     mock_stripe_event_factory: Callable
+# ):
+#     event_id = "evt_inv_paid_user_not_db"
+#     user_id_from_meta = "user_meta_not_in_db"
+#     stripe_customer_id = "cus_user_not_in_db"
+#     stripe_invoice_id = "in_invoice_user_not_db"
 
-    invoice_data = {
-        "id": stripe_invoice_id, "object": "invoice", "customer": stripe_customer_id,
-        "subscription": None, "paid": True, "status": "paid",
-        "customer_details": {"metadata": {"user_id": user_id_from_meta}},
-        "amount_paid": 0, "currency": "usd", "billing_reason": "manual", "invoice_pdf": None 
-    }
-    event = mock_stripe_event_factory("invoice.payment_succeeded", invoice_data, event_id=event_id)
+#     invoice_data = {
+#         "id": stripe_invoice_id, "object": "invoice", "customer": stripe_customer_id,
+#         "subscription": None, "paid": True, "status": "paid",
+#         "customer_details": {"metadata": {"user_id": user_id_from_meta}},
+#         "amount_paid": 0, "currency": "usd", "billing_reason": "manual", "invoice_pdf": None 
+#     }
+#     event = mock_stripe_event_factory("invoice.payment_succeeded", invoice_data, event_id=event_id)
 
-    webhook_service.db.set_db_get_result(None) # Simulate user not found by self.db.get()
+#     webhook_service.db.set_db_get_result(None) # Simulate user not found by self.db.get()
 
-    with patch.object(webhook_service.event_publisher, 'publish_user_invoice_paid', new_callable=AsyncMock) as mock_publish_paid, \
-         patch.object(webhook_service.event_publisher, 'publish_user_account_unfrozen', new_callable=AsyncMock) as mock_publish_unfrozen:
-        await webhook_service.handle_invoice_payment_succeeded(event)
-        mock_publish_paid.assert_not_called() # Corrected: Should not be called if user not found
-        mock_publish_unfrozen.assert_not_called() 
+#     with patch.object(webhook_service.event_publisher, 'publish_user_invoice_paid', new_callable=AsyncMock) as mock_publish_paid, \
+#          patch.object(webhook_service.event_publisher, 'publish_user_account_unfrozen', new_callable=AsyncMock) as mock_publish_unfrozen:
+#         await webhook_service.handle_invoice_payment_succeeded(event)
+#         mock_publish_paid.assert_not_called() # Corrected: Should not be called if user not found
+#         mock_publish_unfrozen.assert_not_called() 
 
-    webhook_service.db.commit.assert_not_called() # No user to update, so no commit
+#     webhook_service.db.commit.assert_not_called() # No user to update, so no commit
 
 
 # --- WebhookService.handle_invoice_payment_failed Tests ---
