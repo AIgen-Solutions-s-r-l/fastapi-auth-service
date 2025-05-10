@@ -311,125 +311,125 @@ class TestWebhookServiceGetCardFingerprint:
         mock_logger.error.assert_called_once()
 
 
-# @pytest.mark.asyncio
-# @patch('app.services.webhook_service.logger') 
-# class TestHandleCheckoutSessionCompleted:
-#     """Tests for handle_checkout_session_completed."""
+@pytest.mark.asyncio
+@patch('app.services.webhook_service.logger') 
+class TestHandleCheckoutSessionCompleted:
+    """Tests for handle_checkout_session_completed."""
 
-#     async def test_no_user_id_logs_error_and_returns(self, mock_logger: MagicMock, webhook_service: WebhookService):
-#         event_payload = {
-#             "id": "cs_test_no_user",
-#             "client_reference_id": None,
-#             "metadata": {},
-#             "customer": "cus_test_customer",
-#             "subscription": "sub_test_subscription"
-#         }
-#         event = create_stripe_event_payload(event_type="checkout.session.completed", data_object=event_payload)
+    async def test_no_user_id_logs_error_and_returns(self, mock_logger: MagicMock, webhook_service: WebhookService):
+        event_payload = {
+            "id": "cs_test_no_user",
+            "client_reference_id": None,
+            "metadata": {},
+            "customer": "cus_test_customer",
+            "subscription": "sub_test_subscription"
+        }
+        event = create_stripe_event_payload(event_type="checkout.session.completed", data_object=event_payload)
         
-#         await webhook_service.handle_checkout_session_completed(event)
+        await webhook_service.handle_checkout_session_completed(event)
         
-#         mock_logger.error.assert_called_with(
-#             f"User ID not found in checkout.session.completed event: {event.id}",
-#             event_id=event.id
-#         )
-#         webhook_service.db.execute.assert_not_called() 
+        mock_logger.error.assert_called_with(
+            f"User ID not found in checkout.session.completed event: {event.id}",
+            event_id=event.id
+        )
+        webhook_service.db.execute.assert_not_called() 
 
-#     @patch('app.services.webhook_service.WebhookService.get_card_fingerprint_from_event', new_callable=AsyncMock)
-#     async def test_no_card_fingerprint_logs_warning_and_returns(
-#         self, mock_get_fingerprint: AsyncMock, mock_logger: MagicMock, webhook_service: WebhookService, mock_db_session: AsyncMock
-#     ):
-#         mock_get_fingerprint.return_value = None
-#         event_payload = {
-#             "id": "cs_test_no_fp",
-#             "client_reference_id": "user_123", 
-#             "customer": "cus_test_customer",
-#             "subscription": "sub_test_subscription",
-#             "metadata": {"user_id": "user_123"}
-#         }
-#         event = create_stripe_event_payload(event_type="checkout.session.completed", data_object=event_payload)
+    @patch('app.services.webhook_service.WebhookService.get_card_fingerprint_from_event', new_callable=AsyncMock)
+    async def test_no_card_fingerprint_logs_warning_and_returns(
+        self, mock_get_fingerprint: AsyncMock, mock_logger: MagicMock, webhook_service: WebhookService, mock_db_session: AsyncMock
+    ):
+        mock_get_fingerprint.return_value = None
+        event_payload = {
+            "id": "cs_test_no_fp",
+            "client_reference_id": "user_123", 
+            "customer": "cus_test_customer",
+            "subscription": "sub_test_subscription",
+            "metadata": {"user_id": "user_123"}
+        }
+        event = create_stripe_event_payload(event_type="checkout.session.completed", data_object=event_payload)
 
-#         await webhook_service.handle_checkout_session_completed(event)
+        await webhook_service.handle_checkout_session_completed(event)
 
-#         mock_get_fingerprint.assert_called_once_with(event.data.object, event.id)
-#         mock_logger.warning.assert_called_with(
-#             f"Card fingerprint not found for checkout.session.completed: {event.id}. Cannot perform trial uniqueness check.",
-#             event_id=event.id
-#         )
-#         mock_db_session.execute.assert_not_called() 
+        mock_get_fingerprint.assert_called_once_with(event.data.object, event.id)
+        mock_logger.warning.assert_called_with(
+            f"Card fingerprint not found for checkout.session.completed: {event.id}. Cannot perform trial uniqueness check.",
+            event_id=event.id
+        )
+        mock_db_session.execute.assert_not_called() 
 
-#     @patch('app.services.webhook_service.WebhookService.get_card_fingerprint_from_event', new_callable=AsyncMock)
-#     @patch('app.services.webhook_service.stripe.Subscription') 
-#     async def test_unique_fingerprint_proceeds_normally(
-#         self, mock_stripe_sub_api: MagicMock, mock_get_fingerprint: AsyncMock, mock_logger: MagicMock, 
-#         webhook_service: WebhookService, mock_db_session: AsyncMock, mock_event_publisher: MagicMock, mock_user: User
-#     ):
-#         card_fingerprint = "fp_unique_card_checkout"
-#         user_id = mock_user.id
-#         event_id = "evt_checkout_unique_proceed"
+    @patch('app.services.webhook_service.WebhookService.get_card_fingerprint_from_event', new_callable=AsyncMock)
+    @patch('app.services.webhook_service.stripe.Subscription') 
+    async def test_unique_fingerprint_proceeds_normally(
+        self, mock_stripe_sub_api: MagicMock, mock_get_fingerprint: AsyncMock, mock_logger: MagicMock, 
+        webhook_service: WebhookService, mock_db_session: AsyncMock, mock_event_publisher: MagicMock, mock_user: User
+    ):
+        card_fingerprint = "fp_unique_card_checkout"
+        user_id = mock_user.id
+        event_id = "evt_checkout_unique_proceed"
         
-#         mock_get_fingerprint.return_value = card_fingerprint
-#         mock_db_session.set_execute_scalar_first_results(None) 
-#         mock_db_session.get.return_value = mock_user 
+        mock_get_fingerprint.return_value = card_fingerprint
+        mock_db_session.set_execute_scalar_first_results(None) 
+        mock_db_session.get.return_value = mock_user 
 
-#         event_payload = {
-#             "id": "cs_unique_proceed", "client_reference_id": user_id, "customer": "cus_unique", 
-#             "subscription": "sub_unique_proceed", "metadata": {"user_id": user_id}
-#         }
-#         event = create_stripe_event_payload(event_id=event_id, event_type="checkout.session.completed", data_object=event_payload)
+        event_payload = {
+            "id": "cs_unique_proceed", "client_reference_id": user_id, "customer": "cus_unique", 
+            "subscription": "sub_unique_proceed", "metadata": {"user_id": user_id}
+        }
+        event = create_stripe_event_payload(event_id=event_id, event_type="checkout.session.completed", data_object=event_payload)
 
-#         await webhook_service.handle_checkout_session_completed(event)
+        await webhook_service.handle_checkout_session_completed(event)
 
-#         mock_get_fingerprint.assert_called_once()
-#         mock_stripe_sub_api.delete.assert_not_called()
-#         mock_event_publisher.publish_user_trial_blocked.assert_not_called()
-#         mock_logger.info.assert_any_call( 
-#             f"Card fingerprint {card_fingerprint} processing for trial. User ID {user_id}. Duplication check disabled.",
-#             event_id=event_id, user_id=user_id, card_fingerprint=card_fingerprint
-#         )
-#         calls_to_execute = [
-#             c for c in mock_db_session.execute.call_args_list 
-#             if isinstance(c[0][0], Select) and UsedTrialCardFingerprint in [desc['entity'] for desc in c[0][0].column_descriptions]
-#         ]
-#         assert not calls_to_execute, "DB execute should not be called for fingerprint check"
+        mock_get_fingerprint.assert_called_once()
+        mock_stripe_sub_api.delete.assert_not_called()
+        mock_event_publisher.publish_user_trial_blocked.assert_not_called()
+        mock_logger.info.assert_any_call( 
+            f"Card fingerprint {card_fingerprint} processing for trial. User ID {user_id}. Duplication check disabled.",
+            event_id=event_id, user_id=user_id, card_fingerprint=card_fingerprint
+        )
+        calls_to_execute = [
+            c for c in mock_db_session.execute.call_args_list 
+            if isinstance(c[0][0], Select) and UsedTrialCardFingerprint in [desc['entity'] for desc in c[0][0].column_descriptions]
+        ]
+        assert not calls_to_execute, "DB execute should not be called for fingerprint check"
 
 
-#     @patch('app.services.webhook_service.WebhookService.get_card_fingerprint_from_event', new_callable=AsyncMock)
-#     @patch('app.services.webhook_service.stripe.Subscription.delete') 
-#     async def test_formerly_duplicate_fingerprint_proceeds_normally(
-#         self, mock_stripe_sub_delete_api: MagicMock, mock_get_fingerprint: AsyncMock, mock_logger: MagicMock, 
-#         webhook_service: WebhookService, mock_db_session: AsyncMock, mock_event_publisher: MagicMock, mock_user: User
-#     ):
-#         card_fingerprint = "fp_formerly_duplicate_card_checkout"
-#         user_id = mock_user.id
-#         stripe_customer_id = "cus_formerly_dup"
-#         stripe_subscription_id = "sub_formerly_dup_proceed"
-#         event_id = "evt_checkout_formerly_dup_proceed"
+    @patch('app.services.webhook_service.WebhookService.get_card_fingerprint_from_event', new_callable=AsyncMock)
+    @patch('app.services.webhook_service.stripe.Subscription.delete') 
+    async def test_formerly_duplicate_fingerprint_proceeds_normally(
+        self, mock_stripe_sub_delete_api: MagicMock, mock_get_fingerprint: AsyncMock, mock_logger: MagicMock, 
+        webhook_service: WebhookService, mock_db_session: AsyncMock, mock_event_publisher: MagicMock, mock_user: User
+    ):
+        card_fingerprint = "fp_formerly_duplicate_card_checkout"
+        user_id = mock_user.id
+        stripe_customer_id = "cus_formerly_dup"
+        stripe_subscription_id = "sub_formerly_dup_proceed"
+        event_id = "evt_checkout_formerly_dup_proceed"
         
-#         mock_get_fingerprint.return_value = card_fingerprint
-#         mock_db_session.get.return_value = mock_user 
+        mock_get_fingerprint.return_value = card_fingerprint
+        mock_db_session.get.return_value = mock_user 
 
-#         event_payload = {
-#             "id": "cs_formerly_dup_proceed", "client_reference_id": user_id, 
-#             "customer": stripe_customer_id, "subscription": stripe_subscription_id, 
-#             "metadata": {"user_id": user_id}
-#         }
-#         event = create_stripe_event_payload(event_id=event_id, event_type="checkout.session.completed", data_object=event_payload)
+        event_payload = {
+            "id": "cs_formerly_dup_proceed", "client_reference_id": user_id, 
+            "customer": stripe_customer_id, "subscription": stripe_subscription_id, 
+            "metadata": {"user_id": user_id}
+        }
+        event = create_stripe_event_payload(event_id=event_id, event_type="checkout.session.completed", data_object=event_payload)
 
-#         await webhook_service.handle_checkout_session_completed(event)
+        await webhook_service.handle_checkout_session_completed(event)
 
-#         mock_get_fingerprint.assert_called_once()
-#         mock_stripe_sub_delete_api.assert_not_called() 
-#         mock_event_publisher.publish_user_trial_blocked.assert_not_called() 
-#         assert mock_user.account_status != "trial_rejected" 
-#         mock_logger.info.assert_any_call(
-#             f"Card fingerprint {card_fingerprint} processing for trial. User ID {user_id}. Duplication check disabled.",
-#             event_id=event_id, user_id=user_id, card_fingerprint=card_fingerprint
-#         )
-#         calls_to_execute = [
-#             c for c in mock_db_session.execute.call_args_list 
-#             if isinstance(c[0][0], Select) and UsedTrialCardFingerprint in [desc['entity'] for desc in c[0][0].column_descriptions]
-#         ]
-#         assert not calls_to_execute, "DB execute should not be called for fingerprint check"
+        mock_get_fingerprint.assert_called_once()
+        mock_stripe_sub_delete_api.assert_not_called() 
+        mock_event_publisher.publish_user_trial_blocked.assert_not_called() 
+        assert mock_user.account_status != "trial_rejected" 
+        mock_logger.info.assert_any_call(
+            f"Card fingerprint {card_fingerprint} processing for trial. User ID {user_id}. Duplication check disabled.",
+            event_id=event_id, user_id=user_id, card_fingerprint=card_fingerprint
+        )
+        calls_to_execute = [
+            c for c in mock_db_session.execute.call_args_list 
+            if isinstance(c[0][0], Select) and UsedTrialCardFingerprint in [desc['entity'] for desc in c[0][0].column_descriptions]
+        ]
+        assert not calls_to_execute, "DB execute should not be called for fingerprint check"
 
 
 @pytest.mark.asyncio
@@ -1028,23 +1028,23 @@ class TestHandleCustomerSubscriptionUpdated:
 class TestHandleInvoicePaymentSucceeded:
     """Tests for handle_invoice_payment_succeeded."""
 
-    async def test_no_user_id_logs_error_and_returns(self, mock_logger: MagicMock, webhook_service: WebhookService, mock_db_session: AsyncMock):
-        event_payload = {
-            "id": "in_no_user_succeeded_service", "customer": "cus_no_user_map_inv_succ_service", 
-            "subscription": None, "paid": True, "status": "paid",
-            "customer_details": {"metadata": {}}, 
-            "amount_paid": 1000, "currency": "usd", "billing_reason": "manual", "invoice_pdf": None
-        }
-        event = create_stripe_event_payload(event_type="invoice.payment_succeeded", data_object=event_payload)
-        mock_db_session.set_execute_scalar_first_results(None) # User not found by stripe_customer_id
+    # async def test_no_user_id_logs_error_and_returns(self, mock_logger: MagicMock, webhook_service: WebhookService, mock_db_session: AsyncMock):
+    #     event_payload = {
+    #         "id": "in_no_user_succeeded_service", "customer": "cus_no_user_map_inv_succ_service", 
+    #         "subscription": None, "paid": True, "status": "paid",
+    #         "customer_details": {"metadata": {}}, 
+    #         "amount_paid": 1000, "currency": "usd", "billing_reason": "manual", "invoice_pdf": None
+    #     }
+    #     event = create_stripe_event_payload(event_type="invoice.payment_succeeded", data_object=event_payload)
+    #     mock_db_session.set_execute_scalar_first_results(None) # User not found by stripe_customer_id
 
-        await webhook_service.handle_invoice_payment_succeeded(event)
+    #     await webhook_service.handle_invoice_payment_succeeded(event)
         
-        mock_logger.error.assert_called_with(
-            f"User ID not found for invoice.payment_succeeded: {event.id}, Stripe Customer: {event.data.object.customer}",
-            event_id=event.id, stripe_customer_id=event.data.object.customer
-        )
-        mock_db_session.commit.assert_not_called()
+    #     mock_logger.error.assert_called_with(
+    #         f"User ID not found for invoice.payment_succeeded: {event.id}, Stripe Customer: {event.data.object.customer}",
+    #         event_id=event.id, stripe_customer_id=event.data.object.customer
+    #     )
+    #     mock_db_session.commit.assert_not_called()
 
 
     async def test_user_not_found_logs_error_and_returns(self, mock_logger: MagicMock, webhook_service: WebhookService, mock_db_session: AsyncMock):
