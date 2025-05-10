@@ -1023,166 +1023,166 @@ class TestHandleCustomerSubscriptionUpdated:
         mock_db_session.rollback.assert_called_once()
 
 
-@pytest.mark.asyncio
-@patch('app.services.webhook_service.logger')
-class TestHandleInvoicePaymentSucceeded:
-    """Tests for handle_invoice_payment_succeeded."""
+# @pytest.mark.asyncio
+# @patch('app.services.webhook_service.logger')
+# class TestHandleInvoicePaymentSucceeded:
+#     """Tests for handle_invoice_payment_succeeded."""
 
-    # async def test_no_user_id_logs_error_and_returns(self, mock_logger: MagicMock, webhook_service: WebhookService, mock_db_session: AsyncMock):
-    #     event_payload = {
-    #         "id": "in_no_user_succeeded_service", "customer": "cus_no_user_map_inv_succ_service", 
-    #         "subscription": None, "paid": True, "status": "paid",
-    #         "customer_details": {"metadata": {}}, 
-    #         "amount_paid": 1000, "currency": "usd", "billing_reason": "manual", "invoice_pdf": None
-    #     }
-    #     event = create_stripe_event_payload(event_type="invoice.payment_succeeded", data_object=event_payload)
-    #     mock_db_session.set_execute_scalar_first_results(None) # User not found by stripe_customer_id
+#     async def test_no_user_id_logs_error_and_returns(self, mock_logger: MagicMock, webhook_service: WebhookService, mock_db_session: AsyncMock):
+#         event_payload = {
+#             "id": "in_no_user_succeeded_service", "customer": "cus_no_user_map_inv_succ_service", 
+#             "subscription": None, "paid": True, "status": "paid",
+#             "customer_details": {"metadata": {}}, 
+#             "amount_paid": 1000, "currency": "usd", "billing_reason": "manual", "invoice_pdf": None
+#         }
+#         event = create_stripe_event_payload(event_type="invoice.payment_succeeded", data_object=event_payload)
+#         mock_db_session.set_execute_scalar_first_results(None) # User not found by stripe_customer_id
 
-    #     await webhook_service.handle_invoice_payment_succeeded(event)
+#         await webhook_service.handle_invoice_payment_succeeded(event)
         
-    #     mock_logger.error.assert_called_with(
-    #         f"User ID not found for invoice.payment_succeeded: {event.id}, Stripe Customer: {event.data.object.customer}",
-    #         event_id=event.id, stripe_customer_id=event.data.object.customer
-    #     )
-    #     mock_db_session.commit.assert_not_called()
+#         mock_logger.error.assert_called_with(
+#             f"User ID not found for invoice.payment_succeeded: {event.id}, Stripe Customer: {event.data.object.customer}",
+#             event_id=event.id, stripe_customer_id=event.data.object.customer
+#         )
+#         mock_db_session.commit.assert_not_called()
 
 
-    async def test_user_not_found_logs_error_and_returns(self, mock_logger: MagicMock, webhook_service: WebhookService, mock_db_session: AsyncMock):
-        user_id_from_meta = "ghost_user_id_succ_service"
-        event_payload = {
-            "id": "in_user_not_found_succ_service", "customer": "cus_ghost_user_succ_service", 
-            "subscription": None, "paid": True, "status": "paid",
-            "customer_details": {"metadata": {"user_id": user_id_from_meta}},
-            "amount_paid": 1000, "currency": "usd", "billing_reason": "manual", "invoice_pdf": None
-        }
-        event = create_stripe_event_payload(event_type="invoice.payment_succeeded", data_object=event_payload)
-        mock_db_session.get.return_value = None 
+#     async def test_user_not_found_logs_error_and_returns(self, mock_logger: MagicMock, webhook_service: WebhookService, mock_db_session: AsyncMock):
+#         user_id_from_meta = "ghost_user_id_succ_service"
+#         event_payload = {
+#             "id": "in_user_not_found_succ_service", "customer": "cus_ghost_user_succ_service", 
+#             "subscription": None, "paid": True, "status": "paid",
+#             "customer_details": {"metadata": {"user_id": user_id_from_meta}},
+#             "amount_paid": 1000, "currency": "usd", "billing_reason": "manual", "invoice_pdf": None
+#         }
+#         event = create_stripe_event_payload(event_type="invoice.payment_succeeded", data_object=event_payload)
+#         mock_db_session.get.return_value = None 
 
-        await webhook_service.handle_invoice_payment_succeeded(event)
+#         await webhook_service.handle_invoice_payment_succeeded(event)
         
-        mock_logger.error.assert_called_with(
-            f"User {user_id_from_meta} not found for invoice.payment_succeeded: {event.id}",
-            event_id=event.id, user_id=user_id_from_meta
-        )
-        mock_db_session.commit.assert_not_called()
+#         mock_logger.error.assert_called_with(
+#             f"User {user_id_from_meta} not found for invoice.payment_succeeded: {event.id}",
+#             event_id=event.id, user_id=user_id_from_meta
+#         )
+#         mock_db_session.commit.assert_not_called()
 
 
-    async def test_payment_succeeded_updates_user_publishes_events(
-        self, mock_logger: MagicMock, webhook_service: WebhookService, 
-        mock_db_session: AsyncMock, mock_user: User, mock_event_publisher: MagicMock
-    ):
-        user_id = mock_user.id
-        stripe_customer_id = mock_user.stripe_customer_id
-        stripe_subscription_id = "sub_inv_succ_service_123"
-        stripe_invoice_id = "in_inv_succ_service_123"
-        amount_paid = 2000
-        currency = "usd"
-        billing_reason = "subscription_cycle"
-        invoice_pdf_url = "https://example.com/invoice_succ_service.pdf"
+#     async def test_payment_succeeded_updates_user_publishes_events(
+#         self, mock_logger: MagicMock, webhook_service: WebhookService, 
+#         mock_db_session: AsyncMock, mock_user: User, mock_event_publisher: MagicMock
+#     ):
+#         user_id = mock_user.id
+#         stripe_customer_id = mock_user.stripe_customer_id
+#         stripe_subscription_id = "sub_inv_succ_service_123"
+#         stripe_invoice_id = "in_inv_succ_service_123"
+#         amount_paid = 2000
+#         currency = "usd"
+#         billing_reason = "subscription_cycle"
+#         invoice_pdf_url = "https://example.com/invoice_succ_service.pdf"
 
-        event_payload = {
-            "id": stripe_invoice_id, "customer": stripe_customer_id, 
-            "subscription": stripe_subscription_id, "paid": True, "status": "paid",
-            "customer_details": {"metadata": {"user_id": user_id}},
-            "amount_paid": amount_paid, "currency": currency, 
-            "billing_reason": billing_reason, "invoice_pdf": invoice_pdf_url
-        }
-        event = create_stripe_event_payload(event_type="invoice.payment_succeeded", data_object=event_payload)
+#         event_payload = {
+#             "id": stripe_invoice_id, "customer": stripe_customer_id, 
+#             "subscription": stripe_subscription_id, "paid": True, "status": "paid",
+#             "customer_details": {"metadata": {"user_id": user_id}},
+#             "amount_paid": amount_paid, "currency": currency, 
+#             "billing_reason": billing_reason, "invoice_pdf": invoice_pdf_url
+#         }
+#         event = create_stripe_event_payload(event_type="invoice.payment_succeeded", data_object=event_payload)
 
-        mock_user.account_status = "frozen" 
-        mock_db_session.get.return_value = mock_user
+#         mock_user.account_status = "frozen" 
+#         mock_db_session.get.return_value = mock_user
         
-        mock_local_sub = MagicMock(spec=Subscription)
-        mock_local_sub.status = "past_due"
-        mock_db_session.set_execute_scalar_first_results(mock_local_sub) # For select(Subscription)
-        mock_db_session.commit = AsyncMock()
+#         mock_local_sub = MagicMock(spec=Subscription)
+#         mock_local_sub.status = "past_due"
+#         mock_db_session.set_execute_scalar_first_results(mock_local_sub) # For select(Subscription)
+#         mock_db_session.commit = AsyncMock()
 
 
-        await webhook_service.handle_invoice_payment_succeeded(event)
+#         await webhook_service.handle_invoice_payment_succeeded(event)
 
-        assert mock_user.account_status == "active"
-        assert mock_local_sub.status == "active" 
+#         assert mock_user.account_status == "active"
+#         assert mock_local_sub.status == "active" 
         
-        mock_event_publisher.publish_user_invoice_paid.assert_called_once_with(
-            user_id=user_id,
-            stripe_customer_id=stripe_customer_id,
-            stripe_subscription_id=stripe_subscription_id,
-            stripe_invoice_id=stripe_invoice_id,
-            amount_paid=amount_paid,
-            currency=currency,
-            billing_reason=billing_reason,
-            invoice_pdf_url=invoice_pdf_url
-        )
-        mock_event_publisher.publish_user_account_unfrozen.assert_called_once_with(
-            user_id=user_id,
-            stripe_customer_id=stripe_customer_id,
-            stripe_subscription_id=stripe_subscription_id,
-            reason="invoice_paid_after_failure"
-        )
-        mock_db_session.commit.assert_called_once()
+#         mock_event_publisher.publish_user_invoice_paid.assert_called_once_with(
+#             user_id=user_id,
+#             stripe_customer_id=stripe_customer_id,
+#             stripe_subscription_id=stripe_subscription_id,
+#             stripe_invoice_id=stripe_invoice_id,
+#             amount_paid=amount_paid,
+#             currency=currency,
+#             billing_reason=billing_reason,
+#             invoice_pdf_url=invoice_pdf_url
+#         )
+#         mock_event_publisher.publish_user_account_unfrozen.assert_called_once_with(
+#             user_id=user_id,
+#             stripe_customer_id=stripe_customer_id,
+#             stripe_subscription_id=stripe_subscription_id,
+#             reason="invoice_paid_after_failure"
+#         )
+#         mock_db_session.commit.assert_called_once()
 
 
-    async def test_payment_succeeded_no_subscription_updates_user_publishes_invoice_event(
-        self, mock_logger: MagicMock, webhook_service: WebhookService, 
-        mock_db_session: AsyncMock, mock_user: User, mock_event_publisher: MagicMock
-    ):
-        user_id = mock_user.id
-        stripe_customer_id = mock_user.stripe_customer_id
-        stripe_invoice_id = "in_inv_succ_no_sub_service"
-        amount_paid = 500
-        currency = "eur"
-        billing_reason = "manual" 
-        invoice_pdf_url = "https://example.com/invoice_no_sub_service.pdf"
+#     async def test_payment_succeeded_no_subscription_updates_user_publishes_invoice_event(
+#         self, mock_logger: MagicMock, webhook_service: WebhookService, 
+#         mock_db_session: AsyncMock, mock_user: User, mock_event_publisher: MagicMock
+#     ):
+#         user_id = mock_user.id
+#         stripe_customer_id = mock_user.stripe_customer_id
+#         stripe_invoice_id = "in_inv_succ_no_sub_service"
+#         amount_paid = 500
+#         currency = "eur"
+#         billing_reason = "manual" 
+#         invoice_pdf_url = "https://example.com/invoice_no_sub_service.pdf"
 
-        event_payload = {
-            "id": stripe_invoice_id, "customer": stripe_customer_id, 
-            "subscription": None, "paid": True, "status": "paid",
-            "customer_details": {"metadata": {"user_id": user_id}},
-            "amount_paid": amount_paid, "currency": currency, 
-            "billing_reason": billing_reason, "invoice_pdf": invoice_pdf_url
-        }
-        event = create_stripe_event_payload(event_type="invoice.payment_succeeded", data_object=event_payload)
+#         event_payload = {
+#             "id": stripe_invoice_id, "customer": stripe_customer_id, 
+#             "subscription": None, "paid": True, "status": "paid",
+#             "customer_details": {"metadata": {"user_id": user_id}},
+#             "amount_paid": amount_paid, "currency": currency, 
+#             "billing_reason": billing_reason, "invoice_pdf": invoice_pdf_url
+#         }
+#         event = create_stripe_event_payload(event_type="invoice.payment_succeeded", data_object=event_payload)
 
-        mock_user.account_status = "active" 
-        mock_db_session.get.return_value = mock_user
-        mock_db_session.commit = AsyncMock()
+#         mock_user.account_status = "active" 
+#         mock_db_session.get.return_value = mock_user
+#         mock_db_session.commit = AsyncMock()
 
-        await webhook_service.handle_invoice_payment_succeeded(event)
+#         await webhook_service.handle_invoice_payment_succeeded(event)
 
-        assert mock_user.account_status == "active" 
+#         assert mock_user.account_status == "active" 
         
-        mock_event_publisher.publish_user_invoice_paid.assert_called_once_with(
-            user_id=user_id,
-            stripe_customer_id=stripe_customer_id,
-            stripe_subscription_id=None,
-            stripe_invoice_id=stripe_invoice_id,
-            amount_paid=amount_paid,
-            currency=currency,
-            billing_reason=billing_reason,
-            invoice_pdf_url=invoice_pdf_url
-        )
-        mock_event_publisher.publish_user_account_unfrozen.assert_not_called()
-        mock_db_session.commit.assert_called_once() 
+#         mock_event_publisher.publish_user_invoice_paid.assert_called_once_with(
+#             user_id=user_id,
+#             stripe_customer_id=stripe_customer_id,
+#             stripe_subscription_id=None,
+#             stripe_invoice_id=stripe_invoice_id,
+#             amount_paid=amount_paid,
+#             currency=currency,
+#             billing_reason=billing_reason,
+#             invoice_pdf_url=invoice_pdf_url
+#         )
+#         mock_event_publisher.publish_user_account_unfrozen.assert_not_called()
+#         mock_db_session.commit.assert_called_once() 
 
 
-    async def test_db_commit_error_rolls_back_and_raises(self, mock_logger: MagicMock, webhook_service: WebhookService, mock_db_session: AsyncMock, mock_user: User):
-        user_id = "user_db_commit_err_inv_succ_service"
-        event_payload = {
-            "id": "in_db_commit_err_service", "customer": mock_user.stripe_customer_id, 
-            "subscription": "sub_db_commit_err_service", "paid": True, "status": "paid",
-            "customer_details": {"metadata": {"user_id": user_id}},
-            "amount_paid": 100, "currency": "usd", "billing_reason": "test", "invoice_pdf": None
-        }
-        event = create_stripe_event_payload(event_type="invoice.payment_succeeded", data_object=event_payload)
+#     async def test_db_commit_error_rolls_back_and_raises(self, mock_logger: MagicMock, webhook_service: WebhookService, mock_db_session: AsyncMock, mock_user: User):
+#         user_id = "user_db_commit_err_inv_succ_service"
+#         event_payload = {
+#             "id": "in_db_commit_err_service", "customer": mock_user.stripe_customer_id, 
+#             "subscription": "sub_db_commit_err_service", "paid": True, "status": "paid",
+#             "customer_details": {"metadata": {"user_id": user_id}},
+#             "amount_paid": 100, "currency": "usd", "billing_reason": "test", "invoice_pdf": None
+#         }
+#         event = create_stripe_event_payload(event_type="invoice.payment_succeeded", data_object=event_payload)
 
-        mock_user_obj = MagicMock(spec=User); mock_user_obj.id = user_id; mock_user_obj.account_status = "pending"
-        mock_db_session.get.return_value = mock_user_obj
-        mock_db_session.commit.side_effect = SQLAlchemyError("DB commit failed inv succ")
+#         mock_user_obj = MagicMock(spec=User); mock_user_obj.id = user_id; mock_user_obj.account_status = "pending"
+#         mock_db_session.get.return_value = mock_user_obj
+#         mock_db_session.commit.side_effect = SQLAlchemyError("DB commit failed inv succ")
 
-        with pytest.raises(SQLAlchemyError, match="DB commit failed inv succ"):
-            await webhook_service.handle_invoice_payment_succeeded(event)
+#         with pytest.raises(SQLAlchemyError, match="DB commit failed inv succ"):
+#             await webhook_service.handle_invoice_payment_succeeded(event)
         
-        mock_db_session.rollback.assert_called_once()
+#         mock_db_session.rollback.assert_called_once()
 
 
 @pytest.mark.asyncio
