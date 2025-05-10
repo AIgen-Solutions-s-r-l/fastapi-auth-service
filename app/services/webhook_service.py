@@ -522,11 +522,7 @@ class WebhookService:
         if not user_id and stripe_customer_id: # Fallback: try to get from our User table
             user_stmt = select(User.id).where(User.stripe_customer_id == stripe_customer_id)
             user_result = await self.db.execute(user_stmt)
-            try:
-                user_id = await user_result.scalars().first()
-            except TypeError:
-                # Handle case where first() returns None synchronously
-                user_id = user_result.scalars().first()
+            user_id = user_result.scalars().first()
         
         if not user_id:
             logger.error(f"User ID not found for invoice.payment_succeeded: {event_id}, Stripe Customer: {stripe_customer_id}", event_id=event_id, stripe_customer_id=stripe_customer_id)
@@ -542,11 +538,7 @@ class WebhookService:
         # If related to a subscription, ensure subscription is marked active
         if stripe_subscription_id:
             db_sub = await self.db.execute(select(Subscription).where(Subscription.stripe_subscription_id == stripe_subscription_id))
-            try:
-                subscription_record = await db_sub.scalars().first()
-            except TypeError:
-                # Handle case where first() returns None synchronously
-                subscription_record = db_sub.scalars().first()
+            subscription_record = db_sub.scalars().first()
             if subscription_record and subscription_record.status != 'active':
                 subscription_record.status = 'active' # Or whatever Stripe status is on the sub now
                 await self.db.merge(subscription_record)
