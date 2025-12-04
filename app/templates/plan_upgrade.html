@@ -121,15 +121,15 @@ user-select: none;
             <a href="{{ dashboard_link }}" class="button">View Dashboard</a>
         </p>
         
-        <p>If you have any questions about your upgrade or need assistance, please contact our <a href="mailto:help@laboro.co">support team</a>.</p>
+        <p>If you have any questions about your upgrade or need assistance, please contact our <a href="mailto:{{ support_email }}">support team</a>.</p>
 
         <br>
-        <p>Thank you,<br>LABORO Support Team</p>
-        
+        <p>Thank you,<br>{{ company_name }} Support Team</p>
+
         <div class="footer">
             <p>This is an automated message, please do not reply to this email.</p>
-            <p>LABORO S.R.L, Via Guglielmo Marconi, 45, 40122 Bologna BO, Italy - VAT Code: 04284191204</p>
-            <p>LABORO © 2025</p>
+            <p>{{ company_legal_name }}, {{ company_address }}{% if company_vat %} - VAT Code: {{ company_vat }}{% endif %}</p>
+            <p>{{ company_name }} © {{ current_year }}</p>
         </div>
     </div>
 </body>

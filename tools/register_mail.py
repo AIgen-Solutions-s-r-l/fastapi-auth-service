@@ -17,11 +17,12 @@ API_ENDPOINT = "http://localhost:8001/auth/register"
 VERIFY_ENDPOINT = "http://localhost:8001/auth/verify-email"
 
 # PostgreSQL connection details (as globals)
-PG_HOST = "172.17.0.1"
-PG_PORT = 5432
-PG_USER = "testuser"
-PG_PASSWORD = "testpassword"
-PG_DATABASE = "main_db"
+# These should be overridden via command line arguments or environment variables
+PG_HOST = os.getenv("PG_HOST", "localhost")
+PG_PORT = int(os.getenv("PG_PORT", "5432"))
+PG_USER = os.getenv("PG_USER", "")
+PG_PASSWORD = os.getenv("PG_PASSWORD", "")
+PG_DATABASE = os.getenv("PG_DATABASE", "auth_db")
 
 def get_pg_connection():
     """

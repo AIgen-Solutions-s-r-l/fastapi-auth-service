@@ -71,15 +71,15 @@
             <a href="{{ login_link }}" class="button">Go to Login</a>
         </div>
         
-        <p>If you did not make this change, please contact our <a href="mailto:help@laboro.co">support team</a> immediately.</p>
-        
+        <p>If you did not make this change, please contact our <a href="mailto:{{ support_email }}">support team</a> immediately.</p>
+
         <br>
-        <p>Thank you,<br>LABORO Support Team</p>
+        <p>Thank you,<br>{{ company_name }} Support Team</p>
 
         <div class="footer">
             <p>This is an automated message, please do not reply to this email.</p>
-            <p>LABORO S.R.L, Via Guglielmo Marconi, 45, 40122 Bologna BO, Italy - VAT Code: 04284191204</p>
-            <p>LABORO © 2025</p>
+            <p>{{ company_legal_name }}, {{ company_address }}{% if company_vat %} - VAT Code: {{ company_vat }}{% endif %}</p>
+            <p>{{ company_name }} © {{ current_year }}</p>
         </div>
     </div>
 </body>

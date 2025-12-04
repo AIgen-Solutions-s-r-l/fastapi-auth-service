@@ -1,15 +1,20 @@
 import asyncio
+import os
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from app.models.user import User, PasswordResetToken
 from app.core.security import get_password_hash
+from app.core.config import settings
 from datetime import datetime, UTC, timedelta
 import secrets
 import string
 
 async def create_test_user():
-    # Create database engine and session
-    engine = create_async_engine("postgresql+asyncpg://testuser:testpassword@172.17.0.1:5432/main_db")
+    # Create database engine and session using settings
+    database_url = settings.database_url
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable is required")
+    engine = create_async_engine(database_url)
     async_session = sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )

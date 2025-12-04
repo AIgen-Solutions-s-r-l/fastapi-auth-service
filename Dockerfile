@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-LABEL org.opencontainers.image.source=https://github.com/AIHawk-Startup/auth_service
+LABEL org.opencontainers.image.source=https://github.com/AIgen-Solutions-s-r-l/fastapi-auth-service
 
 # Install poetry
 RUN pip install poetry

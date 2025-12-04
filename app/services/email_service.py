@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List, Union, Tuple
 from pathlib import Path
 import os
+import re
 
 from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,18 @@ from app.core.email import send_email, send_email_with_retry
 from app.core.config import settings
 from app.models.user import User
 from app.log.logging import logger
+
+
+def _get_whitelabel_context() -> Dict[str, Any]:
+    """Get whitelabel context variables from settings."""
+    return {
+        "company_name": settings.COMPANY_NAME,
+        "company_legal_name": settings.COMPANY_LEGAL_NAME,
+        "company_address": settings.COMPANY_ADDRESS,
+        "company_vat": settings.COMPANY_VAT,
+        "support_email": settings.SUPPORT_EMAIL,
+        "current_year": datetime.now(timezone.utc).year,
+    }
 
 
 class EmailService:
@@ -86,20 +99,20 @@ class EmailService:
     ) -> None:
         """
         Send an email using a template with retry logic.
-        
+
         Args:
             template_name: Name of the template file (without .html extension)
             subject: Email subject line
             recipients: List of recipient email addresses
             context: Dictionary of template variables
-            
+
         Raises:
             HTTPException: If email sending fails
         """
         try:
             # Get the template file path
             template_path = Path(__file__).parent.parent / "templates" / f"{template_name}.html"
-            
+
             # Check if template exists
             if not template_path.exists():
                 logger.error(f"Email template not found: {template_name}",
@@ -109,17 +122,40 @@ class EmailService:
                     status_code=500,
                     detail=f"Email template {template_name} not found"
                 )
-            
+
+            # Merge whitelabel context with provided context
+            full_context = {**_get_whitelabel_context(), **context}
+
             # Render the template
             with open(template_path, "r") as f:
                 template_content = f.read()
-            
-            # Simple template rendering (In a real implementation, use Jinja2 properly)
+
+            # Process Jinja2-style conditionals {% if var %}...{% endif %}
             rendered_content = template_content
-            for key, value in context.items():
+
+            # Handle {% if var %}content{% endif %} patterns
+            if_pattern = r'\{%\s*if\s+(\w+)\s*%\}(.*?)\{%\s*endif\s*%\}'
+
+            def replace_if(match):
+                var_name = match.group(1)
+                content = match.group(2)
+                var_value = full_context.get(var_name, "")
+                if var_value:
+                    # Process the content inside the if block for variable substitution
+                    inner_content = content
+                    for key, value in full_context.items():
+                        placeholder = "{{ " + key + " }}"
+                        inner_content = inner_content.replace(placeholder, str(value))
+                    return inner_content
+                return ""
+
+            rendered_content = re.sub(if_pattern, replace_if, rendered_content, flags=re.DOTALL)
+
+            # Simple template variable rendering
+            for key, value in full_context.items():
                 placeholder = "{{ " + key + " }}"
                 rendered_content = rendered_content.replace(placeholder, str(value))
-            
+
             # Send the email using SendGrid with retry logic
             self.background_tasks.add_task(
                 send_email_with_retry,  # Use the retry version
@@ -127,14 +163,14 @@ class EmailService:
                 recipients=recipients,
                 body=rendered_content
             )
-            
+
             logger.info(
                 f"Queued email: {template_name}",
                 event_type="email_queued",
                 template=template_name,
                 recipients=recipients
             )
-            
+
         except Exception as e:
             logger.error(
                 f"Failed to send email: {str(e)}",

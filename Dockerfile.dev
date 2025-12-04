@@ -22,19 +22,10 @@ COPY ./alembic /app/alembic/
 COPY ./run_api_server.py /app/
 
 # Set environment variables
+# NOTE: Secrets should be passed at runtime via docker run -e or docker-compose
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    # Use host.docker.internal to connect to services on the host machine
-    DATABASE_URL="postgresql+asyncpg://testuser:testpassword@host.docker.internal:5432/main_db" \
-    # Development-specific settings
     DEBUG=true \
-    # Frontend URL for development
-    FRONTEND_URL="http://localhost:3000" \
-    # Stripe configuration
-    STRIPE_SECRET_KEY="sk_test_REMOVED" \
-    STRIPE_WEBHOOK_SECRET="whsec_REMOVED_secret" \
-    STRIPE_API_VERSION="2023-10-16" \
-    # Set host to 0.0.0.0 to make the server accessible outside the container
     HOST="0.0.0.0" \
     PORT="8001"
 

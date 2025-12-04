@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     # enable_logstash: bool = os.getenv("ENABLE_LOGSTASH", "True").lower() == "true"
 
     # Database settings
-    database_url: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://testuser:testpassword@172.17.0.1:5432/main_db")
-    test_database_url: str = os.getenv("TEST_DATABASE_URL", "postgresql+asyncpg://testuser:testpassword@172.17.0.1:5432/test_db")
+    database_url: str = os.getenv("DATABASE_URL", "")
+    test_database_url: str = os.getenv("TEST_DATABASE_URL", "")
 
     # Authentication settings
     secret_key: str = os.getenv("SECRET_KEY", "your-secret-key-here")
@@ -36,14 +36,21 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
     # Email settings (SendGrid via Azure)
-    SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "SG.REMOVED")
+    SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "")
     SENDGRID_HOST: str = os.getenv("SENDGRID_HOST", "https://api.sendgrid.com")
-    AZURE_DOMAIN: str = os.getenv("AZURE_DOMAIN", "laborolabs.com")
-    EMAIL_FROM_NAME: str = os.getenv("EMAIL_FROM_NAME", "Laboro Auth Service")
-    EMAIL_FROM_ADDRESS: str = os.getenv("EMAIL_FROM_ADDRESS", f"noreply@{os.getenv('AZURE_DOMAIN', 'laborolabs.com')}")
+    AZURE_DOMAIN: str = os.getenv("AZURE_DOMAIN", "example.com")
+    EMAIL_FROM_NAME: str = os.getenv("EMAIL_FROM_NAME", "Auth Service")
+    EMAIL_FROM_ADDRESS: str = os.getenv("EMAIL_FROM_ADDRESS", f"noreply@{os.getenv('AZURE_DOMAIN', 'example.com')}")
 
     # Frontend URL for reset link
-    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://pre.laboro.co")
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+    # Whitelabel settings
+    COMPANY_NAME: str = os.getenv("COMPANY_NAME", "Your Company")
+    COMPANY_LEGAL_NAME: str = os.getenv("COMPANY_LEGAL_NAME", "Your Company Inc.")
+    COMPANY_ADDRESS: str = os.getenv("COMPANY_ADDRESS", "123 Main Street, City, Country")
+    COMPANY_VAT: str = os.getenv("COMPANY_VAT", "")
+    SUPPORT_EMAIL: str = os.getenv("SUPPORT_EMAIL", "support@example.com")
     
     # Stripe settings
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
@@ -56,11 +63,11 @@ class Settings(BaseSettings):
     # Google OAuth settings
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
-    GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "https://pre.laboro.co/api/auth/google-callback")
+    GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:3000/api/auth/google-callback")
     OAUTH_SCOPES: str = os.getenv("OAUTH_SCOPES", "openid email profile")
     
     # Service-to-service authentication
-    INTERNAL_API_KEY: str = os.getenv("INTERNAL_API_KEY", "INTERNAL_API_KEY_REMOVED")
+    INTERNAL_API_KEY: str = os.getenv("INTERNAL_API_KEY", "")
     
 settings = Settings()
 
