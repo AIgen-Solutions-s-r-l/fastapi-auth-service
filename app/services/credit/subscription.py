@@ -166,30 +166,28 @@ class SubscriptionService:
                       event_type="stripe_subscription_cancel_at_period_end",
                       subscription_id=subscription_id,
                       stripe_subscription_id=subscription.stripe_subscription_id)
-            
+
             try:
-                import stripe
-                import asyncio
-                
+                from app.services import stripe_async
+
                 # Set cancel_at_period_end to True
-                await asyncio.to_thread(
-                    stripe.Subscription.modify,
+                await stripe_async.Subscription.modify(
                     subscription.stripe_subscription_id,
                     cancel_at_period_end=True
                 )
-                
+
                 logger.info(f"Stripe subscription set to cancel at period end: {subscription.stripe_subscription_id}",
                           event_type="stripe_subscription_cancel_at_period_end_success",
                           subscription_id=subscription_id,
                           stripe_subscription_id=subscription.stripe_subscription_id)
-                
+
             except Exception as e:
                 logger.error(f"Error setting Stripe subscription to cancel at period end: {str(e)}",
                            event_type="stripe_subscription_cancel_at_period_end_error",
                            subscription_id=subscription_id,
                            stripe_subscription_id=subscription.stripe_subscription_id,
                            error=str(e))
-                
+
                 # Continue anyway, but log the error
             
         subscription.auto_renew = auto_renew

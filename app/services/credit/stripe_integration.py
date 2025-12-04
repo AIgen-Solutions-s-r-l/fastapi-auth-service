@@ -3,13 +3,13 @@
 from typing import Optional, Dict, Any, List
 from datetime import datetime, UTC
 from decimal import Decimal
-import asyncio
 
 from sqlalchemy import select
 from app.models.user import User
 from app.models.plan import Subscription
 from app.core.config import settings
 from app.log.logging import logger
+from app.services import stripe_async  # Async Stripe wrappers
 import stripe
 
 
@@ -64,10 +64,7 @@ class StripeIntegrationService:
             
             # Try to find as PaymentIntent (one-time purchases)
             try:
-                payment_intent = await asyncio.to_thread(
-                    stripe.PaymentIntent.retrieve,
-                    transaction_id
-                )
+                payment_intent = await stripe_async.PaymentIntent.retrieve(transaction_id)
                 
                 if payment_intent:
                     logger.info(f"Transaction verified as PaymentIntent: {transaction_id}",
@@ -100,10 +97,7 @@ class StripeIntegrationService:
             # Try to find as Subscription
             subscription = None  # Initialize subscription variable
             try:
-                subscription = await asyncio.to_thread(
-                    stripe.Subscription.retrieve,
-                    transaction_id
-                )
+                subscription = await stripe_async.Subscription.retrieve(transaction_id)
                 
                 # Add debug logging to understand what's happening with the subscription object
                 logger.debug(f"Subscription object retrieved: {subscription is not None}",
@@ -253,8 +247,7 @@ class StripeIntegrationService:
             
             # Verify subscription in Stripe
             try:
-                stripe_subscription = await asyncio.to_thread(
-                    stripe.Subscription.retrieve,
+                stripe_subscription = await stripe_async.Subscription.retrieve(
                     subscription.stripe_subscription_id
                 )
                 
@@ -344,10 +337,7 @@ class StripeIntegrationService:
         
         try:
             # Cancel the subscription immediately
-            result = await asyncio.to_thread(
-                stripe.Subscription.delete,
-                stripe_subscription_id
-            )
+            result = await stripe_async.Subscription.cancel(stripe_subscription_id)
             
             if result and result.get("status") == "canceled":
                 logger.info(f"Stripe subscription cancelled: {stripe_subscription_id}", 
@@ -383,29 +373,26 @@ class StripeIntegrationService:
                   stripe_subscription_id=stripe_subscription_id)
         
         try:
-            subscription = await asyncio.to_thread(
-                stripe.Subscription.retrieve,
-                stripe_subscription_id
-            )
-            
+            subscription = await stripe_async.Subscription.retrieve(stripe_subscription_id)
+
             if not subscription:
-                logger.warning(f"Stripe subscription not found: {stripe_subscription_id}", 
+                logger.warning(f"Stripe subscription not found: {stripe_subscription_id}",
                              event_type="stripe_subscription_not_found",
                              stripe_subscription_id=stripe_subscription_id)
                 return False
-            
+
             is_active = subscription.status in ['active', 'trialing']
-            
-            logger.info(f"Stripe subscription verification result: {is_active}", 
+
+            logger.info(f"Stripe subscription verification result: {is_active}",
                       event_type="stripe_subscription_verification_result",
                       stripe_subscription_id=stripe_subscription_id,
                       status=subscription.status,
                       is_active=is_active)
-            
+
             return is_active
-            
+
         except Exception as e:
-            logger.error(f"Error verifying Stripe subscription: {str(e)}", 
+            logger.error(f"Error verifying Stripe subscription: {str(e)}",
                        event_type="stripe_subscription_verification_error",
                        stripe_subscription_id=stripe_subscription_id,
                        error=str(e))

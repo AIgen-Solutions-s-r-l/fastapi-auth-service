@@ -15,6 +15,7 @@ from app.core.db_utils import get_or_create_subscription # Helper for subscripti
 # from app.services.user_service import UserService # To update user status
 # from app.services.credit_service import CreditService # To grant credits
 from app.services.internal_event_publisher import InternalEventPublisher # To publish events
+from app.services import stripe_async  # Async Stripe wrappers
 from datetime import datetime, timezone # For trial_end_date
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -70,15 +71,15 @@ class WebhookService:
 
         try:
             if payment_intent_id:
-                payment_intent = stripe.PaymentIntent.retrieve(payment_intent_id, expand=["payment_method"])
+                payment_intent = await stripe_async.PaymentIntent.retrieve(payment_intent_id, expand=["payment_method"])
                 if payment_intent.payment_method and isinstance(payment_intent.payment_method, stripe.PaymentMethod) and payment_intent.payment_method.card:
                     fingerprint = payment_intent.payment_method.card.fingerprint
             elif setup_intent_id:
-                setup_intent = stripe.SetupIntent.retrieve(setup_intent_id, expand=["payment_method"])
+                setup_intent = await stripe_async.SetupIntent.retrieve(setup_intent_id, expand=["payment_method"])
                 if setup_intent.payment_method and isinstance(setup_intent.payment_method, stripe.PaymentMethod) and setup_intent.payment_method.card:
                     fingerprint = setup_intent.payment_method.card.fingerprint
             elif default_payment_method_id and isinstance(default_payment_method_id, str): # Check if it's a subscription event
-                payment_method = stripe.PaymentMethod.retrieve(default_payment_method_id)
+                payment_method = await stripe_async.PaymentMethod.retrieve(default_payment_method_id)
                 if payment_method.card:
                     fingerprint = payment_method.card.fingerprint
             

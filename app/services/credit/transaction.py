@@ -5,7 +5,6 @@ from decimal import Decimal
 from typing import Optional, Tuple, Dict, Any
 import uuid
 import stripe # Ensure stripe is imported
-import asyncio # For async stripe calls
 
 from fastapi import HTTPException, status, BackgroundTasks
 from sqlalchemy import select
@@ -16,7 +15,7 @@ from app.models.user import User
 from app.models.plan import Plan, UsedTrialCardFingerprint # Import Plan and UsedTrialCardFingerprint (renamed)
 from app.schemas import credit_schemas
 from app.log.logging import logger
-
+from app.services import stripe_async  # Async Stripe wrappers
 
 from app.services.credit.decorators import db_error_handler
 from app.services.credit.utils import calculate_credits_from_payment, calculate_renewal_date
@@ -478,8 +477,7 @@ class TransactionService:
                     logger.debug(f"Retrieving Stripe subscription with expanded payment method: {transaction_id}",
                                  event_type="stripe_retrieve_sub_expanded",
                                  subscription_id=transaction_id)
-                    stripe_sub = await asyncio.to_thread(
-                        stripe.Subscription.retrieve,
+                    stripe_sub = await stripe_async.Subscription.retrieve(
                         transaction_id, # This is the stripe_subscription_id
                         expand=["default_payment_method"]
                     )
@@ -496,10 +494,7 @@ class TransactionService:
                     logger.debug(f"Retrieving Stripe payment method: {payment_method_id}",
                                  event_type="stripe_retrieve_pm",
                                  payment_method_id=payment_method_id)
-                    payment_method = await asyncio.to_thread(
-                        stripe.PaymentMethod.retrieve,
-                        payment_method_id
-                    )
+                    payment_method = await stripe_async.PaymentMethod.retrieve(payment_method_id)
 
                     if not payment_method or not payment_method.card or not payment_method.card.fingerprint:
                         logger.error(f"Payment method {payment_method_id} is not a card or fingerprint is missing.",

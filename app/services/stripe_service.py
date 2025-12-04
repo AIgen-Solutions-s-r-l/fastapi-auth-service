@@ -5,7 +5,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from datetime import datetime, timezone
-from typing import Optional # Add missing import
+from typing import Optional
 
 from app.core.config import settings
 from app.models.user import User
@@ -13,9 +13,10 @@ from app.models.plan import Subscription # Import Subscription from plan model
 from app.models.plan import Plan # Assuming Plan model exists
 from app.log.logging import logger
 from app.core.db_exceptions import DatabaseException
-from app.core.exceptions import NotFoundError # Import from correct location
+from app.core.exceptions import NotFoundError
+from app.services import stripe_async
 
-# Initialize Stripe API key
+# Initialize Stripe API key (also done in stripe_async module)
 stripe.api_key = settings.STRIPE_SECRET_KEY
 stripe.api_version = settings.STRIPE_API_VERSION
 
@@ -108,7 +109,7 @@ class StripeService:
                 user_id=user_id,
                 stripe_subscription_id=stripe_subscription_id
             )
-            stripe_sub = stripe.Subscription.retrieve(stripe_subscription_id)
+            stripe_sub = await stripe_async.Subscription.retrieve(stripe_subscription_id)
 
             if stripe_sub.status == 'canceled':
                 logger.warning(
@@ -149,7 +150,7 @@ class StripeService:
                 user_id=user_id,
                 stripe_subscription_id=stripe_subscription_id
             )
-            updated_stripe_sub = stripe.Subscription.update(
+            updated_stripe_sub = await stripe_async.Subscription.modify(
                 stripe_subscription_id,
                 cancel_at_period_end=True,
                 # You could pass the cancellation reason to Stripe metadata if desired

@@ -4,7 +4,6 @@ from datetime import datetime, UTC, timedelta
 from typing import Optional, Dict, Any, Tuple
 import secrets
 import string
-import asyncio
 from unittest.mock import AsyncMock  # For testing
 
 from fastapi import HTTPException, status, BackgroundTasks
@@ -30,6 +29,7 @@ from app.schemas.auth_schemas import ( # Import Enums explicitly
 from app.schemas.trial_schemas import TrialEligibilityResponse, TrialEligibilityReasonCode # Added for trial eligibility
 from app.services.email_service import EmailService
 from app.services.stripe_service import StripeService # Added
+from app.services import stripe_async  # Async Stripe wrappers
 from app.log.logging import logger
 from app.core.config import settings # Added for Stripe API key
 
@@ -198,17 +198,7 @@ class UserService:
 
             if stripe_sub_id_db:
                 try:
-                    # Ensure Stripe API key is set for this specific call
-                    # This is a bit redundant if StripeService init already does it,
-                    # but good for direct stripe calls.
-                    if not stripe.api_key:
-                        stripe.api_key = settings.STRIPE_SECRET_KEY
-                        stripe.api_version = settings.STRIPE_API_VERSION
-
-                    stripe_sub = await asyncio.to_thread(
-                        stripe.Subscription.retrieve,
-                        stripe_sub_id_db
-                    )
+                    stripe_sub = await stripe_async.Subscription.retrieve(stripe_sub_id_db)
                     if stripe_sub:
                         stripe_subscription_status = stripe_sub["status"]
                         if stripe_sub.get("trial_end"):
