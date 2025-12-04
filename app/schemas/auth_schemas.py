@@ -1,9 +1,42 @@
 """Pydantic models for authentication-related request and response schemas."""
 
-from typing import Optional
+import re
+from typing import Optional, List
 from datetime import datetime # Added for datetime type hint
 from enum import Enum # Added for SubscriptionStatusEnum
 from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
+
+
+def validate_password_complexity(password: str) -> List[str]:
+    """
+    Validate password complexity requirements.
+    Returns a list of validation errors, empty if password is valid.
+
+    Requirements:
+    - Minimum 8 characters
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one digit
+    - At least one special character
+    """
+    errors = []
+
+    if len(password) < 8:
+        errors.append("Password must be at least 8 characters long")
+
+    if not re.search(r'[A-Z]', password):
+        errors.append("Password must contain at least one uppercase letter")
+
+    if not re.search(r'[a-z]', password):
+        errors.append("Password must contain at least one lowercase letter")
+
+    if not re.search(r'\d', password):
+        errors.append("Password must contain at least one digit")
+
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\\/`~;\'']', password):
+        errors.append("Password must contain at least one special character (!@#$%^&*(),.?\":{}|<>_-+=[]\\/'`~;)")
+
+    return errors
 
 class GoogleAuthRequest(BaseModel):
     """Request to initiate Google OAuth flow."""
@@ -49,10 +82,23 @@ class LoginRequest(BaseModel):
 class UserCreate(BaseModel):
     """Pydantic model for creating a new user."""
     email: EmailStr
-    password: str = Field(..., min_length=8, description="Password must be at least 8 characters long")
+    password: str = Field(
+        ...,
+        min_length=8,
+        description="Password must be at least 8 characters with uppercase, lowercase, digit, and special character"
+    )
     email_verification_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v):
+        """Validate password complexity requirements."""
+        errors = validate_password_complexity(v)
+        if errors:
+            raise ValueError("; ".join(errors))
+        return v
 
 
 class Token(BaseModel):
@@ -73,21 +119,25 @@ class RefreshToken(BaseModel):
 class PasswordChange(BaseModel):
     """Pydantic model for password change request."""
     current_password: str
-    # Allow empty string through validation for testing
-    new_password: str = Field(..., description="New password must be at least 8 characters long")
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        description="New password must meet complexity requirements"
+    )
 
     model_config = ConfigDict(from_attributes=True)
-    
+
     @field_validator('new_password')
     @classmethod
     def validate_new_password(cls, v):
-        # Skip validation for empty string and test values to let the API handle it
-        if v == '' or v == 'new':
+        """Validate new password complexity requirements."""
+        # Skip validation for empty string to let the API handle it with proper error message
+        if v == '':
             return v
-        
-        # Normal validation for real passwords
-        if len(v) < 8:
-            raise ValueError("New password must be at least 8 characters long")
+
+        errors = validate_password_complexity(v)
+        if errors:
+            raise ValueError("; ".join(errors))
         return v
 
 
@@ -99,7 +149,22 @@ class PasswordResetRequest(BaseModel):
 class PasswordReset(BaseModel):
     """Schema for password reset with token."""
     token: str
-    new_password: str
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        description="New password must meet complexity requirements"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, v):
+        """Validate new password complexity requirements."""
+        errors = validate_password_complexity(v)
+        if errors:
+            raise ValueError("; ".join(errors))
+        return v
 
 
 class EmailChange(BaseModel):

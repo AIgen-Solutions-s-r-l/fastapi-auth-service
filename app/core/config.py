@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     # Stripe settings
     STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
     STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "") # Secret for verifying webhook signatures
-    STRIPE_API_VERSION: str = os.getenv("STRIPE_API_VERSION", "2022-11-15")
+    STRIPE_API_VERSION: str = os.getenv("STRIPE_API_VERSION", "2024-06-20")
     STRIPE_FREE_TRIAL_PRICE_ID: str = os.getenv("STRIPE_FREE_TRIAL_PRICE_ID", "price_free_trial")
     FREE_TRIAL_DAYS: int = int(os.getenv("FREE_TRIAL_DAYS", "7"))
     FREE_TRIAL_CREDITS: int = int(os.getenv("FREE_TRIAL_CREDITS", "10"))
