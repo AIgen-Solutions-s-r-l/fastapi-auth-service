@@ -1,7 +1,14 @@
 import os
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.log.logging import logger
+
+
+def parse_cors_origins(origins_str: str) -> List[str]:
+    """Parse comma-separated CORS origins string into a list."""
+    if not origins_str:
+        return []
+    return [origin.strip() for origin in origins_str.split(",") if origin.strip()]
 
 
 class Settings(BaseSettings):
@@ -68,7 +75,35 @@ class Settings(BaseSettings):
     
     # Service-to-service authentication
     INTERNAL_API_KEY: str = os.getenv("INTERNAL_API_KEY", "")
-    
+
+    # CORS settings
+    CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "http://localhost:3000")
+    CORS_ALLOW_CREDENTIALS: bool = os.getenv("CORS_ALLOW_CREDENTIALS", "true").lower() == "true"
+    CORS_ALLOW_METHODS: str = os.getenv("CORS_ALLOW_METHODS", "GET,POST,PUT,DELETE,OPTIONS,PATCH")
+    CORS_ALLOW_HEADERS: str = os.getenv("CORS_ALLOW_HEADERS", "Authorization,Content-Type,X-API-Key")
+    CORS_MAX_AGE: int = int(os.getenv("CORS_MAX_AGE", "600"))
+
+    # Rate limiting settings
+    RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+    RATE_LIMIT_DEFAULT: str = os.getenv("RATE_LIMIT_DEFAULT", "100/minute")
+    RATE_LIMIT_AUTH: str = os.getenv("RATE_LIMIT_AUTH", "10/minute")
+    RATE_LIMIT_STORAGE_URI: str = os.getenv("RATE_LIMIT_STORAGE_URI", "memory://")
+
+    @property
+    def cors_origins_list(self) -> List[str]:
+        """Get CORS origins as a list."""
+        return parse_cors_origins(self.CORS_ORIGINS)
+
+    @property
+    def cors_methods_list(self) -> List[str]:
+        """Get CORS methods as a list."""
+        return parse_cors_origins(self.CORS_ALLOW_METHODS)
+
+    @property
+    def cors_headers_list(self) -> List[str]:
+        """Get CORS headers as a list."""
+        return parse_cors_origins(self.CORS_ALLOW_HEADERS)
+
 settings = Settings()
 
 

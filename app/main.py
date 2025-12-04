@@ -9,12 +9,13 @@ from fastapi_sqlalchemy import DBSessionMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings, validate_email_config, validate_internal_api_key, validate_oauth_config
-from app.core.exceptions import AuthException 
-from app.core.error_handlers import (validation_exception_handler, auth_exception_handler, 
+from app.core.exceptions import AuthException
+from app.core.error_handlers import (validation_exception_handler, auth_exception_handler,
                                    http_exception_handler, generic_exception_handler,
                                    database_exception_handler, sqlalchemy_exception_handler)
 from app.log.logging import logger, InterceptHandler
 from app.core.db_exceptions import DatabaseException
+from app.middleware.rate_limit import setup_rate_limiting, limiter
 from app.routers.auth import router as auth_router
 from app.routers.healthcheck_router import router as healthcheck_router
 from app.routers.credit_router import router as credit_router
@@ -103,16 +104,26 @@ logger.info(
 # Configure CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
-    max_age=600,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
+    allow_methods=settings.cors_methods_list,
+    allow_headers=settings.cors_headers_list,
+    max_age=settings.CORS_MAX_AGE,
+)
+
+# Log CORS configuration at startup
+logger.info(
+    "CORS configured",
+    origins=settings.cors_origins_list,
+    methods=settings.cors_methods_list,
+    credentials=settings.CORS_ALLOW_CREDENTIALS
 )
 
 # Add DB session middleware
 app.add_middleware(DBSessionMiddleware, db_url=settings.database_url)
+
+# Setup rate limiting
+setup_rate_limiting(app)
 
 # Register exception handlers
 app.add_exception_handler(RequestValidationError, validation_exception_handler)

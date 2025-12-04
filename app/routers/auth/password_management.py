@@ -2,7 +2,7 @@
 
 from typing import Dict, Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from jose import jwt
@@ -16,6 +16,7 @@ from app.services.email_service import EmailService
 from app.core.auth import get_current_active_user
 from app.core.config import settings
 from app.log.logging import logger
+from app.middleware.rate_limit import limiter
 
 router = APIRouter()
 
@@ -93,10 +94,13 @@ async def change_password(
 @router.post(
     "/password-reset-request",
     responses={
-        200: {"description": "Password reset link sent if account exists"}
+        200: {"description": "Password reset link sent if account exists"},
+        429: {"description": "Too many requests"}
     }
 )
+@limiter.limit(settings.RATE_LIMIT_AUTH)
 async def request_password_reset(
+    http_request: Request,
     request: PasswordResetRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)

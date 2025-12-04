@@ -3,12 +3,13 @@
 from datetime import timedelta, datetime, timezone
 from typing import Dict, Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
+from app.core.config import settings
 from app.core.exceptions import UserAlreadyExistsError, UserNotFoundError, InvalidCredentialsError
 from app.core.security import create_access_token
 from app.core.auth import get_internal_service
@@ -16,6 +17,7 @@ from app.schemas.auth_schemas import LoginRequest, Token, UserCreate, UserRespon
 from app.services.user_service import UserService
 from app.models.user import User
 from app.log.logging import logger
+from app.middleware.rate_limit import limiter
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -26,10 +28,13 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
     description="Authenticate user and return JWT token",
     responses={
         200: {"description": "Successfully authenticated"},
-        401: {"description": "Invalid credentials"}
+        401: {"description": "Invalid credentials"},
+        429: {"description": "Too many requests"}
     }
 )
+@limiter.limit(settings.RATE_LIMIT_AUTH)
 async def login(
+        request: Request,
         credentials: LoginRequest,
         db: AsyncSession = Depends(get_db)
 ) -> Token:
@@ -93,10 +98,13 @@ async def login(
                 }
             }
         },
-        409: {"description": "Email already exists"}
+        409: {"description": "Email already exists"},
+        429: {"description": "Too many requests"}
     }
 )
+@limiter.limit(settings.RATE_LIMIT_AUTH)
 async def register_user(
+        request: Request,
         user: UserCreate,
         background_tasks: BackgroundTasks,
         db: AsyncSession = Depends(get_db)
