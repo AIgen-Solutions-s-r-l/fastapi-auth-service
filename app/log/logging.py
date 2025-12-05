@@ -10,6 +10,24 @@ from loguru import logger as loguru_logger
 import logging
 import inspect
 
+
+def get_request_id_for_logging() -> str:
+    """
+    Get the current request ID for logging purposes.
+
+    This function safely imports and retrieves the request ID from the middleware,
+    avoiding circular imports.
+
+    Returns:
+        The current request ID or "no-request-id" if not in a request context.
+    """
+    try:
+        from app.middleware.request_id import get_request_id
+        request_id = get_request_id()
+        return request_id if request_id else "no-request-id"
+    except ImportError:
+        return "no-request-id"
+
 class LogConfig:
     def __init__(self):
         self.enviroment = os.getenv('ENVIRONMENT', 'development')
@@ -73,6 +91,9 @@ class DatadogHandler(StreamHandler):
                 except Exception:
                     record.extra.pop(key)
 
+        # Get request_id from extra or context
+        request_id = record.extra.get("request_id", get_request_id_for_logging())
+
         log = {
             "status": log_level,
             "ddsource": "loguru",
@@ -81,6 +102,7 @@ class DatadogHandler(StreamHandler):
             "service": logconfig.service,
             "timestamp": str(record.created),
             "hostname": logconfig.hostname,
+            "request_id": request_id,
             **record.extra,
         }
 
@@ -93,16 +115,29 @@ class DatadogHandler(StreamHandler):
         self.api_instance.submit_log(content_encoding=ContentEncoding.DEFLATE, body=http_log)
 
 
+def request_id_patcher(record):
+    """Loguru patcher to add request_id to each log record."""
+    record["extra"]["request_id"] = get_request_id_for_logging()
+
+
 def init_logging():
     try:
         # Configura il logger di loguru
         loguru_logger.remove()  # Rimuove il logger predefinito di loguru
 
-        # Aggiungi un handler per la console
-        loguru_logger.add(sys.stdout, format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS Z}</green> | "
-    "<level>{level: <8}</level> | "
-    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | <level>{message}</level> | <level>{extra}</level>",
-      level=logconfig.loglevel)
+        # Configure logger with request ID patcher
+        loguru_logger.configure(patcher=request_id_patcher)
+
+        # Aggiungi un handler per la console with request_id in format
+        loguru_logger.add(
+            sys.stdout,
+            format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS Z}</green> | "
+                   "<level>{level: <8}</level> | "
+                   "<blue>[{extra[request_id]}]</blue> | "
+                   "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
+                   "<level>{message}</level> | <level>{extra}</level>",
+            level=logconfig.loglevel
+        )
         
         dd_api_key = os.getenv("DD_API_KEY")
 

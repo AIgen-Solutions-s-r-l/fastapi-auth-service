@@ -7,6 +7,7 @@ from app.log.logging import logger
 from app.core.exceptions import AuthException
 from app.core.responses import DecimalJSONResponse
 from app.core.db_exceptions import DatabaseException
+from app.middleware.request_id import get_request_id
 
 async def auth_exception_handler(request: Request, exc: AuthException) -> DecimalJSONResponse:
     """Handle authentication exceptions."""
@@ -92,22 +93,32 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> Decima
 
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError) -> DecimalJSONResponse:
     """Handle SQLAlchemy exceptions."""
+    request_id = get_request_id()
     logger.error(
         f'SQLAlchemy error on {request.url}: {exc}',
         event_type='db_sqlalchemy_error',
         error_type=type(exc).__name__,
         exc_info=True
     )
-    
+
     return DecimalJSONResponse(
         status_code=500,
-        content={"error": "DatabaseError", "message": "A database error occurred. Please try again later."}
+        content={
+            "error": "DatabaseError",
+            "message": "A database error occurred. Please try again later.",
+            "request_id": request_id
+        }
     )
 
 async def generic_exception_handler(request: Request, exc: Exception) -> DecimalJSONResponse:
     """Handle generic exceptions."""
+    request_id = get_request_id()
     logger.error(f'Unhandled error on {request.url}: {exc}', exc_info=True)
     return DecimalJSONResponse(
         status_code=500,
-        content={"error": "InternalServerError", "message": "An unexpected error occurred."}
+        content={
+            "error": "InternalServerError",
+            "message": "An unexpected error occurred.",
+            "request_id": request_id
+        }
     )

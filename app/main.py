@@ -16,6 +16,7 @@ from app.core.error_handlers import (validation_exception_handler, auth_exceptio
 from app.log.logging import logger, InterceptHandler
 from app.core.db_exceptions import DatabaseException
 from app.middleware.rate_limit import setup_rate_limiting, limiter
+from app.middleware.request_id import setup_request_id_middleware
 from app.routers.auth import router as auth_router
 from app.routers.healthcheck_router import router as healthcheck_router
 from app.routers.credit_router import router as credit_router
@@ -101,6 +102,9 @@ logger.info(
     "Initializing application"
 )
 
+# Setup request ID middleware (must be early in the chain to track all requests)
+setup_request_id_middleware(app)
+
 # Configure CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -109,6 +113,7 @@ app.add_middleware(
     allow_methods=settings.cors_methods_list,
     allow_headers=settings.cors_headers_list,
     max_age=settings.CORS_MAX_AGE,
+    expose_headers=["X-Request-ID"],  # Expose request ID header to clients
 )
 
 # Log CORS configuration at startup
