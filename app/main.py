@@ -11,6 +11,7 @@ from fastapi_sqlalchemy import DBSessionMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings, validate_email_config, validate_internal_api_key, validate_oauth_config
+from app.core.secrets_validator import validate_secrets_on_startup
 from app.core.exceptions import AuthException
 from app.core.error_handlers import (validation_exception_handler, auth_exception_handler,
                                    http_exception_handler, generic_exception_handler,
@@ -45,6 +46,17 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for FastAPI application with graceful shutdown."""
     # Startup
     logger.info("Starting application", status="starting", event="service_startup")
+
+    # Validate secrets and sensitive configuration
+    secrets_valid, secrets_details = validate_secrets_on_startup(settings)
+    if not secrets_valid:
+        logger.critical(
+            "Application starting with critical secrets validation failures",
+            event_type="startup_secrets_critical",
+            issues=secrets_details.get("issues", [])
+        )
+        # In production, you might want to prevent startup here
+        # raise RuntimeError("Critical secrets validation failures - cannot start safely")
 
     # Validate email configuration
     email_config_valid, validation_details = validate_email_config()
