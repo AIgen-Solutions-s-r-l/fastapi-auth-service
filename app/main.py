@@ -20,6 +20,7 @@ from app.core.db_exceptions import DatabaseException
 from app.middleware.rate_limit import setup_rate_limiting, limiter
 from app.middleware.request_id import setup_request_id_middleware
 from app.middleware.security_headers import setup_security_headers
+from app.core.versioning import APIVersion, include_versioned_router
 from app.routers.auth import router as auth_router
 from app.routers.healthcheck_router import router as healthcheck_router, set_shutdown_state
 from app.routers.credit_router import router as credit_router
@@ -290,11 +291,48 @@ async def root():
     logger.debug("Root endpoint accessed",event="endpoint_access",endpoint="root",method="GET")
     return {"message": "authService is up and running!"}
 
-# Include routers
+
+@app.get("/api/versions", tags=["API Info"])
+async def get_api_versions():
+    """
+    Get information about supported API versions.
+
+    Returns a list of all supported API versions with their status.
+    Use this endpoint to discover which API versions are available.
+    """
+    return {
+        "current_version": APIVersion.latest().value,
+        "supported_versions": [
+            {
+                "version": version.value,
+                "status": "stable" if version == APIVersion.latest() else "supported",
+                "base_path": f"/{version.value}"
+            }
+            for version in APIVersion.supported()
+        ],
+        "deprecation_notice": "Non-versioned endpoints (e.g., /auth/*) are deprecated. Please migrate to versioned endpoints (e.g., /v1/auth/*)"
+    }
+
+# Include routers with API versioning
+# Versioned API routes (v1)
+include_versioned_router(app, auth_router, "auth", [APIVersion.V1])
+include_versioned_router(app, credit_router, "credits", [APIVersion.V1])
+include_versioned_router(app, stripe_webhooks_router, "webhooks", [APIVersion.V1], tags=["Webhooks"])
+
+# Legacy routes (for backward compatibility - will be deprecated)
 app.include_router(auth_router, prefix="/auth")
-app.include_router(healthcheck_router)
 app.include_router(credit_router)
-app.include_router(stripe_webhooks_router, prefix="/webhooks", tags=["Webhooks"]) # New router
+app.include_router(stripe_webhooks_router, prefix="/webhooks", tags=["Webhooks"])
+
+# Non-versioned routes (health checks should be version-agnostic)
+app.include_router(healthcheck_router)
+
+logger.info(
+    "API routes registered",
+    event="routes_registered",
+    api_version=APIVersion.latest().value,
+    supported_versions=[v.value for v in APIVersion.supported()]
+)
 
 # @app.get("/test-log")
 # async def test_log():
