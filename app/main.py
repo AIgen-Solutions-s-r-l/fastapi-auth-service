@@ -89,12 +89,104 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down application", status="stopping", event="service_shutdown")
 
 
-# Initialize FastAPI app
+# OpenAPI tags metadata for API documentation
+tags_metadata = [
+    {
+        "name": "Authentication",
+        "description": "User authentication operations including login, registration, and token management."
+    },
+    {
+        "name": "OAuth",
+        "description": "OAuth 2.0 social authentication with Google."
+    },
+    {
+        "name": "Password",
+        "description": "Password management including change and reset operations."
+    },
+    {
+        "name": "Email",
+        "description": "Email verification and change operations."
+    },
+    {
+        "name": "User Profile",
+        "description": "User profile and status information."
+    },
+    {
+        "name": "Credits",
+        "description": "Credit balance and transaction operations."
+    },
+    {
+        "name": "Subscriptions",
+        "description": "Subscription management operations."
+    },
+    {
+        "name": "Webhooks",
+        "description": "Webhook endpoints for external service integrations."
+    },
+    {
+        "name": "Health",
+        "description": "Service health check endpoints."
+    },
+    {
+        "name": "Internal",
+        "description": "Internal service-to-service endpoints (requires API key)."
+    }
+]
+
+# Initialize FastAPI app with comprehensive OpenAPI documentation
 app = FastAPI(
     title="Auth Service API",
-    description="Authentication service",
+    description="""
+## Authentication Microservice
+
+A comprehensive authentication service providing:
+
+* **User Authentication** - Email/password login and registration
+* **OAuth 2.0** - Social authentication with Google
+* **JWT Tokens** - Secure access token management
+* **Email Verification** - Account verification via email
+* **Password Management** - Secure password change and reset
+* **Credit System** - User credit balance and transactions
+* **Stripe Integration** - Payment processing and subscriptions
+
+### Authentication
+
+Most endpoints require authentication via JWT Bearer token:
+```
+Authorization: Bearer <access_token>
+```
+
+Internal service endpoints require API key authentication:
+```
+X-API-Key: <internal_api_key>
+```
+
+### Rate Limiting
+
+Authentication endpoints are rate-limited to prevent brute force attacks.
+Rate limit headers are included in responses:
+- `X-RateLimit-Limit`: Maximum requests per window
+- `X-RateLimit-Remaining`: Remaining requests in current window
+- `X-RateLimit-Reset`: Time when the rate limit resets
+
+### Request Tracking
+
+All requests include a unique request ID for tracing:
+- Sent in `X-Request-ID` response header
+- Included in error responses for debugging
+""",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    openapi_tags=tags_metadata,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    swagger_ui_parameters={
+        "persistAuthorization": True,
+        "displayRequestDuration": True,
+        "filter": True,
+        "syntaxHighlight.theme": "monokai"
+    }
 )
 
 # Log application startup

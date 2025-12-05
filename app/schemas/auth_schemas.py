@@ -97,10 +97,28 @@ class AccountLinkRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     """Pydantic model for login request."""
-    email: EmailStr
-    password: str = Field(..., min_length=1, max_length=128)
+    email: EmailStr = Field(
+        ...,
+        description="User's email address",
+        examples=["user@example.com"]
+    )
+    password: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        description="User's password",
+        examples=["SecureP@ss123"]
+    )
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "email": "user@example.com",
+                "password": "SecureP@ss123"
+            }
+        }
+    )
 
     @field_validator('email')
     @classmethod
@@ -140,10 +158,26 @@ class UserCreate(BaseModel):
 
 class Token(BaseModel):
     """Pydantic model for token response."""
-    access_token: str
-    token_type: str
+    access_token: str = Field(
+        ...,
+        description="JWT access token for authentication",
+        examples=["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."]
+    )
+    token_type: str = Field(
+        default="bearer",
+        description="Token type (always 'bearer')",
+        examples=["bearer"]
+    )
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+                "token_type": "bearer"
+            }
+        }
+    )
 
 
 class RefreshToken(BaseModel):
@@ -250,20 +284,62 @@ class ResendVerification(BaseModel):
 
 class UserResponse(BaseModel):
     """Schema for user response data."""
-    email: EmailStr
-    is_verified: bool
-    auth_type: str
+    email: EmailStr = Field(
+        ...,
+        description="User's email address",
+        examples=["user@example.com"]
+    )
+    is_verified: bool = Field(
+        ...,
+        description="Whether the user's email has been verified",
+        examples=[True]
+    )
+    auth_type: str = Field(
+        ...,
+        description="Authentication type: 'password', 'google', or 'both'",
+        examples=["password"]
+    )
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "email": "user@example.com",
+                "is_verified": True,
+                "auth_type": "password"
+            }
+        }
+    )
 
 
 class RegistrationResponse(BaseModel):
     """Schema for registration response."""
-    message: str
-    email: EmailStr
-    verification_sent: bool
+    message: str = Field(
+        ...,
+        description="Registration status message",
+        examples=["User registered successfully"]
+    )
+    email: EmailStr = Field(
+        ...,
+        description="Registered user's email address",
+        examples=["user@example.com"]
+    )
+    verification_sent: bool = Field(
+        ...,
+        description="Whether a verification email was sent",
+        examples=[True]
+    )
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "message": "User registered successfully",
+                "email": "user@example.com",
+                "verification_sent": True
+            }
+        }
+    )
 
 # --- Schemas for User Status API ---
 
