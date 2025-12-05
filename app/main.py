@@ -1,9 +1,11 @@
 """FastAPI application entry point for the Authentication Service."""
 
+import signal
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware 
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi_sqlalchemy import DBSessionMiddleware
 from sqlalchemy.exc import SQLAlchemyError
@@ -17,8 +19,9 @@ from app.log.logging import logger, InterceptHandler
 from app.core.db_exceptions import DatabaseException
 from app.middleware.rate_limit import setup_rate_limiting, limiter
 from app.middleware.request_id import setup_request_id_middleware
+from app.middleware.security_headers import setup_security_headers
 from app.routers.auth import router as auth_router
-from app.routers.healthcheck_router import router as healthcheck_router
+from app.routers.healthcheck_router import router as healthcheck_router, set_shutdown_state
 from app.routers.credit_router import router as credit_router
 from app.routers.webhooks.stripe_webhooks import router as stripe_webhooks_router # Corrected import
 import logging
@@ -26,12 +29,22 @@ import logging
 #try to intercept standard messages toward your Loguru
 logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
+# Graceful shutdown state
+_shutdown_event = asyncio.Event()
+_active_requests = 0
+
+
+def get_shutdown_event() -> asyncio.Event:
+    """Get the shutdown event for coordination."""
+    return _shutdown_event
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan context manager for FastAPI application."""
+    """Lifespan context manager for FastAPI application with graceful shutdown."""
     # Startup
     logger.info("Starting application", status="starting", event="service_startup")
-    
+
     # Validate email configuration
     email_config_valid, validation_details = validate_email_config()
     if not email_config_valid:
@@ -48,8 +61,8 @@ async def lifespan(app: FastAPI):
             component="email",
             warnings=validation_details.get("warnings", [])
         )
-    
-    
+
+
     # Validate internal API key configuration
     internal_api_key_valid, api_key_validation_details = validate_internal_api_key()
     if not internal_api_key_valid:
@@ -66,7 +79,7 @@ async def lifespan(app: FastAPI):
             component="internal_service_auth",
             warnings=api_key_validation_details.get("warnings", [])
         )
-    
+
     # Validate OAuth configuration
     oauth_config_valid, oauth_validation_details = validate_oauth_config()
     if not oauth_config_valid:
@@ -83,10 +96,47 @@ async def lifespan(app: FastAPI):
             component="oauth",
             warnings=oauth_validation_details.get("warnings", [])
         )
-    
+
+    logger.info("Application startup complete", status="running", event="service_ready")
+
     yield
-    # Shutdown
-    logger.info("Shutting down application", status="stopping", event="service_shutdown")
+
+    # Graceful shutdown
+    logger.info("Initiating graceful shutdown", status="stopping", event="service_shutdown_start")
+
+    # Signal shutdown to health checks (readiness probe will start failing)
+    _shutdown_event.set()
+    set_shutdown_state(True)
+
+    # Give time for load balancer to stop sending traffic (Kubernetes grace period)
+    shutdown_grace_seconds = 5
+    logger.info(
+        f"Waiting {shutdown_grace_seconds}s for load balancer to drain traffic",
+        event="shutdown_drain",
+        grace_seconds=shutdown_grace_seconds
+    )
+    await asyncio.sleep(shutdown_grace_seconds)
+
+    # Wait for active requests to complete (with timeout)
+    max_wait_seconds = 30
+    waited = 0
+    while _active_requests > 0 and waited < max_wait_seconds:
+        logger.info(
+            f"Waiting for {_active_requests} active requests to complete",
+            event="shutdown_waiting",
+            active_requests=_active_requests
+        )
+        await asyncio.sleep(1)
+        waited += 1
+
+    if _active_requests > 0:
+        logger.warning(
+            f"Forcing shutdown with {_active_requests} requests still active",
+            event="shutdown_forced",
+            active_requests=_active_requests
+        )
+
+    logger.info("Application shutdown complete", status="stopped", event="service_shutdown_complete")
 
 
 # OpenAPI tags metadata for API documentation
@@ -196,6 +246,10 @@ logger.info(
 
 # Setup request ID middleware (must be early in the chain to track all requests)
 setup_request_id_middleware(app)
+
+# Setup security headers middleware
+setup_security_headers(app)
+logger.info("Security headers middleware configured", event="middleware_setup", middleware="security_headers")
 
 # Configure CORS middleware
 app.add_middleware(

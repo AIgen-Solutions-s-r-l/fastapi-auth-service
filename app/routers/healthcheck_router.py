@@ -13,6 +13,15 @@ from app.schemas.health_schemas import (
     ReadinessResponse, LivenessResponse
 )
 
+# Flag to track shutdown state for readiness probe
+_is_shutting_down = False
+
+
+def set_shutdown_state(shutting_down: bool):
+    """Set the shutdown state for health checks."""
+    global _is_shutting_down
+    _is_shutting_down = shutting_down
+
 router = APIRouter(tags=["Health"])
 
 # Track service start time for uptime calculation
@@ -121,9 +130,18 @@ async def readiness_probe():
     Kubernetes-style readiness probe.
 
     Checks if all required dependencies are available and the service
-    can accept traffic. Returns 503 if any critical check fails.
+    can accept traffic. Returns 503 if any critical check fails or if
+    the service is shutting down (for graceful shutdown support).
     """
     checks = {}
+
+    # Check if service is shutting down (for graceful shutdown)
+    checks["not_shutting_down"] = not _is_shutting_down
+    if _is_shutting_down:
+        logger.info(
+            "Readiness check returning not ready due to shutdown",
+            event_type="readiness_shutdown"
+        )
 
     # Check database connectivity
     try:
