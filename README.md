@@ -412,16 +412,107 @@ All endpoints are rate-limited to prevent abuse:
 
 - **🔒 Security**
   - CORS middleware with configurable origins
-  - Request validation
-  - Structured error handling
+  - Request validation and input sanitization
+  - Structured error handling with request ID tracking
   - Environment-based configurations
   - Multi-layered authentication
+  - Security headers (X-Frame-Options, X-Content-Type-Options, etc.)
+  - Secrets validation at startup
+  - Rate limiting per endpoint
+  - Request timeout protection (30s default)
 
 - **💳 Payment Integration**
   - Stripe integration for payment processing
   - Subscription management
   - Webhook handling for payment events
   - Secure payment method storage
+
+- **🔄 API Versioning**
+  - URL path-based versioning (`/v1/auth/*`, `/v1/credits/*`)
+  - Version discovery endpoint (`/api/versions`)
+  - Backward compatibility with legacy routes
+  - Deprecation tracking for old endpoints
+
+- **🏥 Health Checks**
+  - Kubernetes-style probes (`/healthcheck/live`, `/healthcheck/ready`)
+  - Full health check with component status (`/healthcheck/full`)
+  - Database connectivity monitoring
+  - Graceful shutdown support
+
+## 🛡️ Security Features
+
+### Security Headers
+
+All responses include security headers to protect against common web vulnerabilities:
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `X-Content-Type-Options` | `nosniff` | Prevent MIME type sniffing |
+| `X-Frame-Options` | `DENY` | Prevent clickjacking |
+| `X-XSS-Protection` | `1; mode=block` | Enable XSS filtering |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Control referrer information |
+| `Cache-Control` | `no-store, no-cache` | Prevent caching of sensitive data |
+| `Permissions-Policy` | Restrictive | Limit browser feature access |
+
+### Request ID Tracking
+
+Every request is assigned a unique ID for distributed tracing:
+- Generated automatically or accepted via `X-Request-ID` header
+- Included in all log entries for correlation
+- Returned in error responses for debugging
+- Enables end-to-end request tracking across services
+
+### Secrets Validation
+
+At startup, the service validates all secrets and configurations:
+- **Critical**: Missing or weak JWT secret key, missing database URL
+- **Warning**: Missing Stripe/OAuth/Email configuration
+- **Info**: Non-essential optional features
+
+Example startup log:
+```
+Secrets validation passed with warnings
+WARNING: SENDGRID_API_KEY - SendGrid API key is not set
+```
+
+### Request Timeout
+
+Requests are automatically terminated after 30 seconds to prevent resource exhaustion:
+- Configurable timeout duration
+- Excluded paths: `/healthcheck/*`, `/docs`, `/redoc`
+- Returns `504 Gateway Timeout` with request ID
+
+## 🔢 API Versioning
+
+### Versioned Endpoints
+
+All API endpoints are available under version prefixes:
+
+```
+/v1/auth/login          # Versioned (recommended)
+/v1/auth/register
+/v1/credits/balance
+/v1/webhooks/stripe
+
+/auth/login             # Legacy (deprecated)
+```
+
+### Version Discovery
+
+```bash
+GET /api/versions
+```
+
+Response:
+```json
+{
+  "current_version": "v1",
+  "supported_versions": [
+    {"version": "v1", "status": "stable", "base_path": "/v1"}
+  ],
+  "deprecation_notice": "Non-versioned endpoints are deprecated..."
+}
+```
 
 ## 📋 Prerequisites
 
@@ -550,6 +641,34 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 ### Production Mode
 ```sh
 uvicorn app.main:app --host 0.0.0.0 --port 80
+```
+
+### Docker Deployment
+
+Build and run using the optimized multi-stage Dockerfile:
+
+```sh
+# Build the image
+docker build -t auth-service:latest .
+
+# Run the container
+docker run -p 8080:8080 \
+  -e DATABASE_URL="postgresql+asyncpg://user:pass@host/db" \
+  -e SECRET_KEY="your-secure-secret-key" \
+  auth-service:latest
+```
+
+**Docker Features:**
+- 🏗️ Multi-stage build for minimal image size
+- 👤 Non-root user for security (appuser:appgroup)
+- 🏥 Built-in health check using `/healthcheck/live`
+- 📦 Only production dependencies included
+- 🔒 Minimal attack surface with slim base image
+
+**Health Check:**
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/healthcheck/live || exit 1
 ```
 
 ## 🛠️ Development Tools
