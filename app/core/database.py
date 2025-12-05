@@ -26,33 +26,28 @@ from app.core.db_exceptions import (
 database_url = settings.test_database_url if os.getenv(
     "PYTEST_RUNNING") == "true" else settings.database_url
 
-# Connection pool settings
-pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
-max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "10"))
-pool_timeout = int(os.getenv("DB_POOL_TIMEOUT", "30"))
-pool_recycle = int(os.getenv("DB_POOL_RECYCLE", "1800"))  # 30 minutes
-
-# Log database initialization
+# Log database initialization with settings from centralized config
 logger.info(
     "Database initialization",
     event_type="database_init",
-    database_url=database_url,
+    database_url=database_url[:50] + "..." if len(database_url) > 50 else database_url,
     test_mode=os.getenv("PYTEST_RUNNING") == "true",
-    pool_size=pool_size,
-    max_overflow=max_overflow,
-    pool_timeout=pool_timeout,
-    pool_recycle=pool_recycle
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_timeout=settings.DB_POOL_TIMEOUT,
+    pool_recycle=settings.DB_POOL_RECYCLE,
+    pool_pre_ping=settings.DB_POOL_PRE_PING
 )
 
-# Create engine with enhanced connection pool settings
+# Create engine with connection pool settings from centralized config
 engine = create_async_engine(
     database_url,
-    echo=False,
-    pool_size=pool_size,
-    max_overflow=max_overflow,
-    pool_timeout=pool_timeout,
-    pool_recycle=pool_recycle,
-    pool_pre_ping=True  # Verify connections before usage
+    echo=settings.DB_ECHO,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_timeout=settings.DB_POOL_TIMEOUT,
+    pool_recycle=settings.DB_POOL_RECYCLE,
+    pool_pre_ping=settings.DB_POOL_PRE_PING
 )
 
 # Create session factory

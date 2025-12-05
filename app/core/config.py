@@ -92,6 +92,14 @@ class Settings(BaseSettings):
     # Security settings for input validation
     ALLOWED_REDIRECT_DOMAINS: str = os.getenv("ALLOWED_REDIRECT_DOMAINS", "")
 
+    # Database connection pool settings
+    DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "5"))
+    DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+    DB_POOL_TIMEOUT: int = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+    DB_POOL_RECYCLE: int = int(os.getenv("DB_POOL_RECYCLE", "1800"))
+    DB_POOL_PRE_PING: bool = os.getenv("DB_POOL_PRE_PING", "true").lower() == "true"
+    DB_ECHO: bool = os.getenv("DB_ECHO", "false").lower() == "true"
+
     @property
     def allowed_redirect_domains_list(self) -> List[str]:
         """Get allowed redirect domains as a list."""
