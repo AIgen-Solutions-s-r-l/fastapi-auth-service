@@ -1,6 +1,7 @@
-"""Error handlers for the application."""
+"""Error handlers for the application with consistent request_id tracking."""
 from fastapi import Request, HTTPException
 from fastapi.exceptions import RequestValidationError
+from typing import Dict, Any
 
 from sqlalchemy.exc import SQLAlchemyError
 from app.log.logging import logger
@@ -8,6 +9,39 @@ from app.core.exceptions import AuthException
 from app.core.responses import DecimalJSONResponse
 from app.core.db_exceptions import DatabaseException
 from app.middleware.request_id import get_request_id
+
+
+def _build_error_response(
+    error: str,
+    message: str,
+    status_code: int,
+    details: Any = None,
+    include_request_id: bool = True
+) -> Dict[str, Any]:
+    """
+    Build a consistent error response structure.
+
+    All error responses follow the same format for consistency:
+    - error: Error type identifier (e.g., "ValidationError", "AuthError")
+    - message: Human-readable error message
+    - request_id: Unique request identifier for debugging (if enabled)
+    - details: Additional error details (optional)
+    """
+    response = {
+        "error": error,
+        "message": message
+    }
+
+    if include_request_id:
+        request_id = get_request_id()
+        if request_id:
+            response["request_id"] = request_id
+
+    if details is not None:
+        response["details"] = details
+
+    return response
+
 
 async def auth_exception_handler(request: Request, exc: AuthException) -> DecimalJSONResponse:
     """Handle authentication exceptions."""
@@ -66,59 +100,105 @@ async def database_exception_handler(request: Request, exc: DatabaseException) -
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> DecimalJSONResponse:
     """Handle validation exceptions."""
-    logger.error(f'Validation error on {request.url}: {exc.errors()}')
+    request_id = get_request_id()
+    logger.warning(
+        f'Validation error on {request.url}',
+        event_type='validation_error',
+        path=str(request.url),
+        method=request.method,
+        errors=exc.errors()
+    )
     return DecimalJSONResponse(
         status_code=422,
-        content={
-            "error": "ValidationError",
-            "message": "Invalid request data",
-            "details": exc.errors()
-        }
+        content=_build_error_response(
+            error="ValidationError",
+            message="Invalid request data",
+            status_code=422,
+            details=exc.errors()
+        )
     )
 
 async def http_exception_handler(request: Request, exc: HTTPException) -> DecimalJSONResponse:
     """Handle HTTP exceptions."""
-    logger.error(f'HTTP error on {request.url}: {exc.detail}')
+    # Use warning for client errors (4xx), error for server errors (5xx)
+    log_level = logger.warning if 400 <= exc.status_code < 500 else logger.error
+    log_level(
+        f'HTTP error on {request.url}',
+        event_type='http_error',
+        status_code=exc.status_code,
+        path=str(request.url),
+        method=request.method,
+        detail=str(exc.detail)[:200]  # Truncate for logging
+    )
+
     # If detail is already a dict with message, keep it as is
     if isinstance(exc.detail, dict) and "message" in exc.detail:
+        response = exc.detail.copy()
+        request_id = get_request_id()
+        if request_id:
+            response["request_id"] = request_id
         return DecimalJSONResponse(
             status_code=exc.status_code,
-            content={"detail": exc.detail}
+            content=response
         )
-    # Otherwise return the string detail directly
+
+    # Map status codes to error types
+    error_type_map = {
+        400: "BadRequest",
+        401: "Unauthorized",
+        403: "Forbidden",
+        404: "NotFound",
+        405: "MethodNotAllowed",
+        409: "Conflict",
+        429: "RateLimitExceeded",
+    }
+    error_type = error_type_map.get(exc.status_code, "HTTPError")
+
     return DecimalJSONResponse(
         status_code=exc.status_code,
-        content={"detail": str(exc.detail)}
+        content=_build_error_response(
+            error=error_type,
+            message=str(exc.detail),
+            status_code=exc.status_code
+        )
     )
 
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError) -> DecimalJSONResponse:
     """Handle SQLAlchemy exceptions."""
-    request_id = get_request_id()
     logger.error(
-        f'SQLAlchemy error on {request.url}: {exc}',
+        f'SQLAlchemy error on {request.url}',
         event_type='db_sqlalchemy_error',
         error_type=type(exc).__name__,
+        path=str(request.url),
+        method=request.method,
         exc_info=True
     )
 
     return DecimalJSONResponse(
         status_code=500,
-        content={
-            "error": "DatabaseError",
-            "message": "A database error occurred. Please try again later.",
-            "request_id": request_id
-        }
+        content=_build_error_response(
+            error="DatabaseError",
+            message="A database error occurred. Please try again later.",
+            status_code=500
+        )
     )
 
+
 async def generic_exception_handler(request: Request, exc: Exception) -> DecimalJSONResponse:
-    """Handle generic exceptions."""
-    request_id = get_request_id()
-    logger.error(f'Unhandled error on {request.url}: {exc}', exc_info=True)
+    """Handle generic/unhandled exceptions."""
+    logger.error(
+        f'Unhandled error on {request.url}',
+        event_type='unhandled_error',
+        error_type=type(exc).__name__,
+        path=str(request.url),
+        method=request.method,
+        exc_info=True
+    )
     return DecimalJSONResponse(
         status_code=500,
-        content={
-            "error": "InternalServerError",
-            "message": "An unexpected error occurred.",
-            "request_id": request_id
-        }
+        content=_build_error_response(
+            error="InternalServerError",
+            message="An unexpected error occurred.",
+            status_code=500
+        )
     )
