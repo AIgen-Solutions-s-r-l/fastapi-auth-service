@@ -21,6 +21,7 @@ from app.core.db_exceptions import DatabaseException
 from app.middleware.rate_limit import setup_rate_limiting, limiter
 from app.middleware.request_id import setup_request_id_middleware
 from app.middleware.security_headers import setup_security_headers
+from app.middleware.timeout import setup_timeout_middleware
 from app.core.versioning import APIVersion, include_versioned_router
 from app.routers.auth import router as auth_router
 from app.routers.healthcheck_router import router as healthcheck_router, set_shutdown_state
@@ -263,6 +264,10 @@ setup_request_id_middleware(app)
 # Setup security headers middleware
 setup_security_headers(app)
 logger.info("Security headers middleware configured", event="middleware_setup", middleware="security_headers")
+
+# Setup request timeout middleware (30 seconds default)
+setup_timeout_middleware(app, timeout_seconds=30.0)
+logger.info("Timeout middleware configured", event="middleware_setup", middleware="timeout", timeout_seconds=30.0)
 
 # Configure CORS middleware
 app.add_middleware(
