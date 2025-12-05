@@ -89,6 +89,16 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH: str = os.getenv("RATE_LIMIT_AUTH", "10/minute")
     RATE_LIMIT_STORAGE_URI: str = os.getenv("RATE_LIMIT_STORAGE_URI", "memory://")
 
+    # Security settings for input validation
+    ALLOWED_REDIRECT_DOMAINS: str = os.getenv("ALLOWED_REDIRECT_DOMAINS", "")
+
+    @property
+    def allowed_redirect_domains_list(self) -> List[str]:
+        """Get allowed redirect domains as a list."""
+        if not self.ALLOWED_REDIRECT_DOMAINS:
+            return []
+        return [d.strip() for d in self.ALLOWED_REDIRECT_DOMAINS.split(",") if d.strip()]
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Get CORS origins as a list."""

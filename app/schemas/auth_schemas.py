@@ -6,6 +6,8 @@ from datetime import datetime # Added for datetime type hint
 from enum import Enum # Added for SubscriptionStatusEnum
 from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 
+from app.core.validation import normalize_email, validate_redirect_uri
+
 
 def validate_password_complexity(password: str) -> List[str]:
     """
@@ -40,17 +42,39 @@ def validate_password_complexity(password: str) -> List[str]:
 
 class GoogleAuthRequest(BaseModel):
     """Request to initiate Google OAuth flow."""
-    redirect_uri: Optional[str] = None
-    
+    redirect_uri: Optional[str] = Field(None, max_length=2048)
+
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('redirect_uri')
+    @classmethod
+    def validate_redirect(cls, v):
+        """Validate redirect URI to prevent open redirect attacks."""
+        if v is None:
+            return v
+        is_valid, error = validate_redirect_uri(v)
+        if not is_valid:
+            raise ValueError(error)
+        return v
 
 class GoogleAuthCallback(BaseModel):
     """Callback from Google OAuth."""
-    code: str
-    state: Optional[str] = None
-    redirect_uri: Optional[str] = None
-    
+    code: str = Field(..., min_length=1, max_length=2048)
+    state: Optional[str] = Field(None, max_length=512)
+    redirect_uri: Optional[str] = Field(None, max_length=2048)
+
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('redirect_uri')
+    @classmethod
+    def validate_redirect(cls, v):
+        """Validate redirect URI to prevent open redirect attacks."""
+        if v is None:
+            return v
+        is_valid, error = validate_redirect_uri(v)
+        if not is_valid:
+            raise ValueError(error)
+        return v
 
 class OAuthProfile(BaseModel):
     """OAuth provider user profile."""
@@ -74,9 +98,15 @@ class AccountLinkRequest(BaseModel):
 class LoginRequest(BaseModel):
     """Pydantic model for login request."""
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=1, max_length=128)
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('email')
+    @classmethod
+    def normalize_email_field(cls, v):
+        """Normalize email to lowercase and strip whitespace."""
+        return normalize_email(v)
 
 
 class UserCreate(BaseModel):
@@ -85,11 +115,18 @@ class UserCreate(BaseModel):
     password: str = Field(
         ...,
         min_length=8,
+        max_length=128,
         description="Password must be at least 8 characters with uppercase, lowercase, digit, and special character"
     )
-    email_verification_url: Optional[str] = None
+    email_verification_url: Optional[str] = Field(None, max_length=2048)
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('email')
+    @classmethod
+    def normalize_email_field(cls, v):
+        """Normalize email to lowercase and strip whitespace."""
+        return normalize_email(v)
 
     @field_validator('password')
     @classmethod
@@ -118,10 +155,11 @@ class RefreshToken(BaseModel):
 
 class PasswordChange(BaseModel):
     """Pydantic model for password change request."""
-    current_password: str
+    current_password: str = Field(..., min_length=1, max_length=128)
     new_password: str = Field(
         ...,
         min_length=8,
+        max_length=128,
         description="New password must meet complexity requirements"
     )
 
@@ -145,13 +183,22 @@ class PasswordResetRequest(BaseModel):
     """Schema for password reset request."""
     email: EmailStr
 
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('email')
+    @classmethod
+    def normalize_email_field(cls, v):
+        """Normalize email to lowercase and strip whitespace."""
+        return normalize_email(v)
+
 
 class PasswordReset(BaseModel):
     """Schema for password reset with token."""
-    token: str
+    token: str = Field(..., min_length=32, max_length=256)
     new_password: str = Field(
         ...,
         min_length=8,
+        max_length=128,
         description="New password must meet complexity requirements"
     )
 
@@ -170,14 +217,20 @@ class PasswordReset(BaseModel):
 class EmailChange(BaseModel):
     """Pydantic model for email change request."""
     new_email: EmailStr
-    current_password: str
+    current_password: str = Field(..., min_length=1, max_length=128)
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('new_email')
+    @classmethod
+    def normalize_email_field(cls, v):
+        """Normalize email to lowercase and strip whitespace."""
+        return normalize_email(v)
 
 
 class VerifyEmail(BaseModel):
     """Schema for email verification."""
-    token: str
+    token: str = Field(..., min_length=32, max_length=256)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -187,6 +240,12 @@ class ResendVerification(BaseModel):
     email: EmailStr
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('email')
+    @classmethod
+    def normalize_email_field(cls, v):
+        """Normalize email to lowercase and strip whitespace."""
+        return normalize_email(v)
 
 
 class UserResponse(BaseModel):
